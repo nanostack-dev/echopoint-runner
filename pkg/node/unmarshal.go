@@ -5,7 +5,7 @@ import (
 	"fmt"
 )
 
-// UnmarshalNode unmarshals JSON into the appropriate typed node based on the type field
+// UnmarshalNode unmarshals JSON into the appropriate typed node based on the type field.
 func UnmarshalNode(data []byte) (AnyNode, error) {
 	var peek struct {
 		Type Type `json:"type"`

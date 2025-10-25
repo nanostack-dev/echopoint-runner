@@ -1,10 +1,11 @@
-package flow
+package flow_test
 
 import (
 	"os"
 	"testing"
 
 	"github.com/nanostack-dev/echopoint-flow-engine/pkg/edge"
+	"github.com/nanostack-dev/echopoint-flow-engine/pkg/flow"
 	"github.com/nanostack-dev/echopoint-flow-engine/pkg/node"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -13,7 +14,7 @@ import (
 func TestSimpleParseFromJson(t *testing.T) {
 	file, err := os.ReadFile("test.json")
 	require.NoError(t, err, "should read test.json file")
-	flow, err := ParseFromJSON(file)
+	flow, err := flow.ParseFromJSON(file)
 	require.NoError(t, err, "should parse from json")
 	require.NotNil(t, flow, "flow should not be nil")
 
@@ -94,7 +95,7 @@ func TestSimpleParseFromJson(t *testing.T) {
 			require.True(t, ok, "body should be a map")
 			assert.Equal(t, "User creation failed", body["error"], "error message should match")
 
-			assert.Len(t, data.Assertions, 0, "should have 0 assertions")
+			assert.Empty(t, data.Assertions, "should have 0 assertions")
 		},
 	)
 
@@ -117,9 +118,9 @@ func TestSimpleParseFromJson(t *testing.T) {
 
 func TestParseFromJSON_InvalidJSON(t *testing.T) {
 	invalidJSON := []byte(`{"invalid": "json"`)
-	flow, err := ParseFromJSON(invalidJSON)
-	assert.Error(t, err, "should return error for invalid JSON")
-	assert.Nil(t, flow, "flow should be nil on error")
+	flowResult, err := flow.ParseFromJSON(invalidJSON)
+	require.Error(t, err, "should return error for invalid JSON")
+	assert.Nil(t, flowResult, "flow should be nil on error")
 }
 
 func TestParseFromJSON_EmptyNodes(t *testing.T) {
@@ -130,8 +131,8 @@ func TestParseFromJSON_EmptyNodes(t *testing.T) {
 		"nodes": [],
 		"edges": []
 	}`)
-	flow, err := ParseFromJSON(emptyNodesJSON)
+	flowResult, err := flow.ParseFromJSON(emptyNodesJSON)
 	require.NoError(t, err, "should parse successfully")
-	assert.Len(t, flow.Nodes, 0, "should have 0 nodes")
-	assert.Len(t, flow.Edges, 0, "should have 0 edges")
+	assert.Empty(t, flowResult.Nodes, "should have 0 nodes")
+	assert.Empty(t, flowResult.Edges, "should have 0 edges")
 }

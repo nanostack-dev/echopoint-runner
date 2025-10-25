@@ -2,7 +2,7 @@ package operators
 
 import "fmt"
 
-// EqualsOperator checks if the actual value equals the expected value
+// EqualsOperator checks if the actual value equals the expected value.
 type EqualsOperator struct {
 	Expected interface{} `json:"expected"`
 }
@@ -10,8 +10,8 @@ type EqualsOperator struct {
 func (o EqualsOperator) Validate(actual interface{}) (bool, error) {
 	// Handle string comparison
 	if expectedStr, ok := o.Expected.(string); ok {
-		actualStr, ok := actual.(string)
-		if !ok {
+		actualStr, stringOk := actual.(string)
+		if !stringOk {
 			return false, fmt.Errorf("expected string but got %T", actual)
 		}
 		return actualStr == expectedStr, nil
@@ -27,8 +27,8 @@ func (o EqualsOperator) Validate(actual interface{}) (bool, error) {
 
 	// Handle boolean comparison
 	if expectedBool, ok := o.Expected.(bool); ok {
-		actualBool, ok := actual.(bool)
-		if !ok {
+		actualBool, boolOk := actual.(bool)
+		if !boolOk {
 			return false, fmt.Errorf("expected boolean but got %T", actual)
 		}
 		return actualBool == expectedBool, nil
@@ -42,7 +42,7 @@ func (o EqualsOperator) GetType() OperatorType {
 	return OperatorTypeEquals
 }
 
-// toFloat64 converts various numeric types to float64
+// toFloat64 converts various numeric types to float64.
 func toFloat64(val interface{}) (float64, bool) {
 	switch v := val.(type) {
 	case float64:

@@ -5,7 +5,7 @@ type StatusCodeAssertion struct {
 	Expected int
 }
 
-func (a StatusCodeAssertion) Validate(response interface{}) bool {
+func (a StatusCodeAssertion) Validate(_ interface{}) bool {
 	return true
 }
 

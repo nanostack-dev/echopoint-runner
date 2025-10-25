@@ -1,8 +1,8 @@
 package extractors
 
-import "fmt"
+import "errors"
 
-// StatusCodeExtractor extracts the HTTP status code from a response
+// StatusCodeExtractor extracts the HTTP status code from a response.
 type StatusCodeExtractor struct{}
 
 func (e StatusCodeExtractor) Extract(response interface{}) (interface{}, error) {
@@ -10,7 +10,7 @@ func (e StatusCodeExtractor) Extract(response interface{}) (interface{}, error) 
 		return httpResp.StatusCode, nil
 	}
 
-	return nil, fmt.Errorf("response is not an HTTP response")
+	return nil, errors.New("response is not an HTTP response")
 }
 
 func (e StatusCodeExtractor) GetType() ExtractorType {

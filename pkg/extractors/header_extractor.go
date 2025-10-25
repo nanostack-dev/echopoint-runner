@@ -1,8 +1,11 @@
 package extractors
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
 
-// HeaderExtractor extracts HTTP header values from a response
+// HeaderExtractor extracts HTTP header values from a response.
 type HeaderExtractor struct {
 	HeaderName string `json:"headerName"`
 }
@@ -15,7 +18,7 @@ func (e HeaderExtractor) Extract(response interface{}) (interface{}, error) {
 		return nil, fmt.Errorf("header %s not found", e.HeaderName)
 	}
 
-	return nil, fmt.Errorf("response is not an HTTP response")
+	return nil, errors.New("response is not an HTTP response")
 }
 
 func (e HeaderExtractor) GetType() ExtractorType {

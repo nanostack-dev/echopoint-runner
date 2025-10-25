@@ -1,17 +1,18 @@
-package engine
+package engine_test
 
 import (
-	"fmt"
+	"errors"
 	"testing"
 
 	"github.com/nanostack-dev/echopoint-flow-engine/pkg/edge"
+	"github.com/nanostack-dev/echopoint-flow-engine/pkg/engine"
 	"github.com/nanostack-dev/echopoint-flow-engine/pkg/flow"
 	"github.com/nanostack-dev/echopoint-flow-engine/pkg/node"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// MockNode is a test node that tracks execution
+// MockNode is a test node that tracks execution.
 type MockNode struct {
 	id          string
 	nodeType    node.Type
@@ -31,7 +32,7 @@ func (n *MockNode) GetType() node.Type {
 func (n *MockNode) Execute() (bool, error) {
 	n.executed = true
 	if n.shouldError {
-		return false, fmt.Errorf("mock error")
+		return false, errors.New("mock error")
 	}
 	return n.shouldPass, nil
 }
@@ -50,17 +51,10 @@ func TestNewFlowEngine_Success(t *testing.T) {
 		Version: "1.0",
 	}
 
-	engine, err := NewFlowEngine(flowInstance, &Options{})
+	flowEngine, err := engine.NewFlowEngine(flowInstance, &engine.Options{})
 
 	require.NoError(t, err)
-	assert.NotNil(t, engine)
-	assert.Equal(t, 2, len(engine.nodeMap))
-	assert.Equal(t, node1, engine.nodeMap["node1"])
-	assert.Equal(t, node2, engine.nodeMap["node2"])
-	assert.Equal(t, 0, engine.nodeEdgeInput[node1])
-	assert.Equal(t, 1, engine.nodeEdgeInput[node2])
-	assert.Equal(t, 1, len(engine.nodeEdgeOutput[node1]))
-	assert.Equal(t, node2, engine.nodeEdgeOutput[node1][0])
+	assert.NotNil(t, flowEngine)
 }
 
 func TestNewFlowEngine_SourceNodeNotFound(t *testing.T) {
@@ -75,7 +69,7 @@ func TestNewFlowEngine_SourceNodeNotFound(t *testing.T) {
 		Version: "1.0",
 	}
 
-	engine, err := NewFlowEngine(flowInstance, &Options{})
+	engine, err := engine.NewFlowEngine(flowInstance, &engine.Options{})
 
 	require.Error(t, err)
 	assert.Nil(t, engine)
@@ -94,7 +88,7 @@ func TestNewFlowEngine_TargetNodeNotFound(t *testing.T) {
 		Version: "1.0",
 	}
 
-	engine, err := NewFlowEngine(flowInstance, &Options{})
+	engine, err := engine.NewFlowEngine(flowInstance, &engine.Options{})
 
 	require.Error(t, err)
 	assert.Nil(t, engine)
@@ -116,7 +110,7 @@ func TestFlowEngine_Execute_LinearFlow(t *testing.T) {
 		Version: "1.0",
 	}
 
-	engine, err := NewFlowEngine(flowInstance, &Options{})
+	engine, err := engine.NewFlowEngine(flowInstance, &engine.Options{})
 	require.NoError(t, err)
 
 	err = engine.Execute()
@@ -143,8 +137,8 @@ func TestFlowEngine_Execute_ParallelFlow(t *testing.T) {
 	}
 
 	var executionOrder []string
-	engine, err := NewFlowEngine(
-		flowInstance, &Options{
+	engine, err := engine.NewFlowEngine(
+		flowInstance, &engine.Options{
 			BeforeExecution: func(n node.AnyNode) {
 				executionOrder = append(executionOrder, n.GetID())
 			},
@@ -177,7 +171,7 @@ func TestFlowEngine_Execute_BranchingFlow(t *testing.T) {
 		Version: "1.0",
 	}
 
-	engine, err := NewFlowEngine(flowInstance, &Options{})
+	engine, err := engine.NewFlowEngine(flowInstance, &engine.Options{})
 	require.NoError(t, err)
 
 	err = engine.Execute()
@@ -203,7 +197,7 @@ func TestFlowEngine_Execute_NodeFailsWithError(t *testing.T) {
 		Version: "1.0",
 	}
 
-	engine, err := NewFlowEngine(flowInstance, &Options{})
+	engine, err := engine.NewFlowEngine(flowInstance, &engine.Options{})
 	require.NoError(t, err)
 
 	err = engine.Execute()
@@ -230,7 +224,7 @@ func TestFlowEngine_Execute_NodeDoesNotPass(t *testing.T) {
 		Version: "1.0",
 	}
 
-	engine, err := NewFlowEngine(flowInstance, &Options{})
+	engine, err := engine.NewFlowEngine(flowInstance, &engine.Options{})
 	require.NoError(t, err)
 
 	err = engine.Execute()
@@ -249,7 +243,7 @@ func TestFlowEngine_Execute_NoNodes(t *testing.T) {
 		Version: "1.0",
 	}
 
-	engine, err := NewFlowEngine(flowInstance, &Options{})
+	engine, err := engine.NewFlowEngine(flowInstance, &engine.Options{})
 	require.NoError(t, err)
 
 	err = engine.Execute()
@@ -272,7 +266,7 @@ func TestFlowEngine_Execute_CycleDetection(t *testing.T) {
 		Version: "1.0",
 	}
 
-	engine, err := NewFlowEngine(flowInstance, &Options{})
+	engine, err := engine.NewFlowEngine(flowInstance, &engine.Options{})
 	require.NoError(t, err)
 
 	err = engine.Execute()
@@ -297,8 +291,8 @@ func TestFlowEngine_Execute_WithBeforeAndAfterCallbacks(t *testing.T) {
 		Version: "1.0",
 	}
 
-	engine, err := NewFlowEngine(
-		flowInstance, &Options{
+	engine, err := engine.NewFlowEngine(
+		flowInstance, &engine.Options{
 			BeforeExecution: func(n node.AnyNode) {
 				beforeCalls = append(beforeCalls, n.GetID())
 			},
@@ -319,37 +313,4 @@ func TestFlowEngine_Execute_WithBeforeAndAfterCallbacks(t *testing.T) {
 	assert.Equal(
 		t, []string{"node1", "node2"}, afterCalls, "afterExecution should be called for each node",
 	)
-}
-
-func TestFlowEngine_FoundNodeWithoutInput(t *testing.T) {
-	node1 := &MockNode{id: "node1", nodeType: node.TypeRequest, shouldPass: true}
-	node2 := &MockNode{id: "node2", nodeType: node.TypeRequest, shouldPass: true}
-	node3 := &MockNode{id: "node3", nodeType: node.TypeRequest, shouldPass: true}
-
-	flowInstance := flow.Flow{
-		Name:  "Test Flow",
-		Nodes: []node.AnyNode{node1, node2, node3},
-		Edges: []edge.Edge{
-			{ID: "e1", Source: "node1", Target: "node2", Type: "success"},
-		},
-		Version: "1.0",
-	}
-
-	engine, err := NewFlowEngine(flowInstance, &Options{})
-	require.NoError(t, err)
-
-	foundNode := engine.foundNodeWithoutInput()
-	assert.NotNil(t, foundNode)
-	assert.Contains(t, []string{"node1", "node3"}, foundNode.GetID())
-
-	// After marking node1 as executed
-	delete(engine.nodeEdgeInput, node1)
-	foundNode = engine.foundNodeWithoutInput()
-	assert.NotNil(t, foundNode)
-
-	// After all nodes are processed
-	delete(engine.nodeEdgeInput, node2)
-	delete(engine.nodeEdgeInput, node3)
-	foundNode = engine.foundNodeWithoutInput()
-	assert.Nil(t, foundNode)
 }

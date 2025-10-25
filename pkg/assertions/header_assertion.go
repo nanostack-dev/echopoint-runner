@@ -6,7 +6,7 @@ type HeaderAssertion struct {
 	Path     string
 }
 
-func (a HeaderAssertion) Validate(response interface{}) bool {
+func (a HeaderAssertion) Validate(_ interface{}) bool {
 	return true
 }
 

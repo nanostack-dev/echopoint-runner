@@ -1,6 +1,6 @@
 package operators
 
-// Operator defines the interface for all validation operators
+// Operator defines the interface for all validation operators.
 type Operator interface {
 	// Validate checks if the actual value passes the operator's validation logic
 	Validate(actual interface{}) (bool, error)
@@ -28,7 +28,7 @@ const (
 	OperatorTypeBetween            OperatorType = "between"
 )
 
-// ValueType represents the type of value an operator can work with
+// ValueType represents the type of value an operator can work with.
 type ValueType string
 
 const (

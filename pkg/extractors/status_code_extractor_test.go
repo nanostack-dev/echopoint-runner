@@ -1,20 +1,22 @@
-package extractors
+package extractors_test
 
 import (
 	"testing"
+
+	"github.com/nanostack-dev/echopoint-flow-engine/pkg/extractors"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestStatusCodeExtractor_GetType(t *testing.T) {
-	extractor := StatusCodeExtractor{}
-	assert.Equal(t, ExtractorTypeStatusCode, extractor.GetType())
+	extractor := extractors.StatusCodeExtractor{}
+	assert.Equal(t, extractors.ExtractorTypeStatusCode, extractor.GetType())
 }
 
 func TestStatusCodeExtractor_Extract_Success(t *testing.T) {
-	extractor := StatusCodeExtractor{}
-	response := &HTTPResponse{
+	extractor := extractors.StatusCodeExtractor{}
+	response := &extractors.HTTPResponse{
 		StatusCode: 200,
 		Headers:    map[string]string{"Content-Type": "application/json"},
 	}
@@ -43,22 +45,24 @@ func TestStatusCodeExtractor_Extract_DifferentStatusCodes(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			extractor := StatusCodeExtractor{}
-			response := &HTTPResponse{
-				StatusCode: tc.statusCode,
-			}
+		t.Run(
+			tc.name, func(t *testing.T) {
+				extractor := extractors.StatusCodeExtractor{}
+				response := &extractors.HTTPResponse{
+					StatusCode: tc.statusCode,
+				}
 
-			result, err := extractor.Extract(response)
+				result, err := extractor.Extract(response)
 
-			require.NoError(t, err)
-			assert.Equal(t, tc.expectedResult, result)
-		})
+				require.NoError(t, err)
+				assert.Equal(t, tc.expectedResult, result)
+			},
+		)
 	}
 }
 
 func TestStatusCodeExtractor_Extract_InvalidResponseType(t *testing.T) {
-	extractor := StatusCodeExtractor{}
+	extractor := extractors.StatusCodeExtractor{}
 	response := "not an HTTP response"
 
 	result, err := extractor.Extract(response)
@@ -69,7 +73,7 @@ func TestStatusCodeExtractor_Extract_InvalidResponseType(t *testing.T) {
 }
 
 func TestStatusCodeExtractor_Extract_NilResponse(t *testing.T) {
-	extractor := StatusCodeExtractor{}
+	extractor := extractors.StatusCodeExtractor{}
 
 	result, err := extractor.Extract(nil)
 
@@ -78,7 +82,7 @@ func TestStatusCodeExtractor_Extract_NilResponse(t *testing.T) {
 }
 
 func TestStatusCodeExtractor_Extract_MapResponse(t *testing.T) {
-	extractor := StatusCodeExtractor{}
+	extractor := extractors.StatusCodeExtractor{}
 	response := map[string]interface{}{
 		"statusCode": 200,
 	}

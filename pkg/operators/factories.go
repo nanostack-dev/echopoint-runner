@@ -1,6 +1,6 @@
 package operators
 
-// StringOperators provides factory methods for creating string-specific operators
+// StringOperators provides factory methods for creating string-specific operators.
 type StringOperators struct{}
 
 func (s StringOperators) Equals(expected string) Operator {
@@ -39,7 +39,7 @@ func (s StringOperators) NotEmpty() Operator {
 	return NotEmptyOperator{}
 }
 
-// NumberOperators provides factory methods for creating number-specific operators
+// NumberOperators provides factory methods for creating number-specific operators.
 type NumberOperators struct{}
 
 func (n NumberOperators) Equals(expected float64) Operator {
@@ -66,11 +66,11 @@ func (n NumberOperators) LessThanOrEqual(expected float64) Operator {
 	return LessThanOrEqualOperator{Expected: expected}
 }
 
-func (n NumberOperators) Between(min, max float64) Operator {
-	return BetweenOperator{Min: min, Max: max}
+func (n NumberOperators) Between(minVal, maxVal float64) Operator {
+	return BetweenOperator{Min: minVal, Max: maxVal}
 }
 
-// BooleanOperators provides factory methods for creating boolean-specific operators
+// BooleanOperators provides factory methods for creating boolean-specific operators.
 type BooleanOperators struct{}
 
 func (b BooleanOperators) Equals(expected bool) Operator {

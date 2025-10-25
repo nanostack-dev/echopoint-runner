@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-// ContainsOperator checks if the actual value contains the expected substring
+// ContainsOperator checks if the actual value contains the expected substring.
 type ContainsOperator struct {
 	Substring string `json:"substring"`
 }

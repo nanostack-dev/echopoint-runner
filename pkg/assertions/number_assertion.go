@@ -19,7 +19,7 @@ type NumberAssertion struct {
 	Max      float64        `json:"max,omitempty"`
 }
 
-func (a NumberAssertion) Validate(value interface{}) bool {
+func (a NumberAssertion) Validate(_ interface{}) bool {
 	// TODO: Implement number validation logic
 	// Convert value to float64 and compare based on operator
 	return true

@@ -1,20 +1,22 @@
-package extractors
+package extractors_test
 
 import (
 	"testing"
 
+	"github.com/nanostack-dev/echopoint-flow-engine/pkg/extractors"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestXMLPathExtractor_GetType(t *testing.T) {
-	extractor := XMLPathExtractor{Path: "/response/status"}
-	assert.Equal(t, ExtractorTypeXMLPath, extractor.GetType())
+	extractor := extractors.XMLPathExtractor{Path: "/response/status"}
+	assert.Equal(t, extractors.ExtractorTypeXMLPath, extractor.GetType())
 }
 
 func TestXMLPathExtractor_Extract_SimpleElement(t *testing.T) {
 	t.Skip("TODO: Implement XPath extraction logic")
 
-	extractor := XMLPathExtractor{Path: "/response/status"}
+	extractor := extractors.XMLPathExtractor{Path: "/response/status"}
 	xmlResponse := `
 		<response>
 			<status>success</status>
@@ -24,14 +26,14 @@ func TestXMLPathExtractor_Extract_SimpleElement(t *testing.T) {
 
 	result, err := extractor.Extract(xmlResponse)
 
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, "success", result)
 }
 
 func TestXMLPathExtractor_Extract_NestedElement(t *testing.T) {
 	t.Skip("TODO: Implement XPath extraction logic")
 
-	extractor := XMLPathExtractor{Path: "/response/user/name"}
+	extractor := extractors.XMLPathExtractor{Path: "/response/user/name"}
 	xmlResponse := `
 		<response>
 			<user>
@@ -43,14 +45,14 @@ func TestXMLPathExtractor_Extract_NestedElement(t *testing.T) {
 
 	result, err := extractor.Extract(xmlResponse)
 
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, "John Doe", result)
 }
 
 func TestXMLPathExtractor_Extract_Attribute(t *testing.T) {
 	t.Skip("TODO: Implement XPath extraction logic")
 
-	extractor := XMLPathExtractor{Path: "/response/user/@id"}
+	extractor := extractors.XMLPathExtractor{Path: "/response/user/@id"}
 	xmlResponse := `
 		<response>
 			<user id="user-123">
@@ -61,14 +63,14 @@ func TestXMLPathExtractor_Extract_Attribute(t *testing.T) {
 
 	result, err := extractor.Extract(xmlResponse)
 
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, "user-123", result)
 }
 
 func TestXMLPathExtractor_Extract_ArrayElement(t *testing.T) {
 	t.Skip("TODO: Implement XPath extraction logic")
 
-	extractor := XMLPathExtractor{Path: "/response/orders/order[1]/id"}
+	extractor := extractors.XMLPathExtractor{Path: "/response/orders/order[1]/id"}
 	xmlResponse := `
 		<response>
 			<orders>
@@ -86,14 +88,14 @@ func TestXMLPathExtractor_Extract_ArrayElement(t *testing.T) {
 
 	result, err := extractor.Extract(xmlResponse)
 
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, "order-123", result)
 }
 
 func TestXMLPathExtractor_Extract_NonexistentPath(t *testing.T) {
 	t.Skip("TODO: Implement XPath extraction logic")
 
-	extractor := XMLPathExtractor{Path: "/response/nonexistent"}
+	extractor := extractors.XMLPathExtractor{Path: "/response/nonexistent"}
 	xmlResponse := `
 		<response>
 			<status>success</status>
@@ -102,26 +104,26 @@ func TestXMLPathExtractor_Extract_NonexistentPath(t *testing.T) {
 
 	result, err := extractor.Extract(xmlResponse)
 
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Nil(t, result)
 }
 
 func TestXMLPathExtractor_Extract_InvalidXML(t *testing.T) {
 	t.Skip("TODO: Implement XPath extraction logic")
 
-	extractor := XMLPathExtractor{Path: "/response/status"}
+	extractor := extractors.XMLPathExtractor{Path: "/response/status"}
 	xmlResponse := "<invalid xml"
 
 	result, err := extractor.Extract(xmlResponse)
 
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Nil(t, result)
 }
 
 func TestXMLPathExtractor_Extract_WithNamespace(t *testing.T) {
 	t.Skip("TODO: Implement XPath extraction logic")
 
-	extractor := XMLPathExtractor{Path: "/soap:Envelope/soap:Body/response/status"}
+	extractor := extractors.XMLPathExtractor{Path: "/soap:Envelope/soap:Body/response/status"}
 	xmlResponse := `
 		<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
 			<soap:Body>
@@ -134,6 +136,6 @@ func TestXMLPathExtractor_Extract_WithNamespace(t *testing.T) {
 
 	result, err := extractor.Extract(xmlResponse)
 
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, "success", result)
 }

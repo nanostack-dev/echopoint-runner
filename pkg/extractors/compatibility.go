@@ -2,14 +2,14 @@ package extractors
 
 import "github.com/nanostack-dev/echopoint-flow-engine/pkg/operators"
 
-// ExtractorOperatorCompatibility defines which operators are compatible with each extractor
+// ExtractorOperatorCompatibility defines which operators are compatible with each extractor.
 type ExtractorOperatorCompatibility struct {
 	ExtractorType       ExtractorType
 	CompatibleOperators []operators.OperatorType
 	OutputType          string // "string", "number", "boolean", "any"
 }
 
-// GetCompatibleOperators returns the list of operators compatible with an extractor
+// GetCompatibleOperators returns the list of operators compatible with an extractor.
 func GetCompatibleOperators(extractorType ExtractorType) []operators.OperatorType {
 	compatibility := GetExtractorCompatibilityMap()
 	if compat, ok := compatibility[extractorType]; ok {
@@ -18,7 +18,7 @@ func GetCompatibleOperators(extractorType ExtractorType) []operators.OperatorTyp
 	return []operators.OperatorType{}
 }
 
-// GetExtractorOutputType returns the output type of an extractor
+// GetExtractorOutputType returns the output type of an extractor.
 func GetExtractorOutputType(extractorType ExtractorType) string {
 	compatibility := GetExtractorCompatibilityMap()
 	if compat, ok := compatibility[extractorType]; ok {
@@ -27,7 +27,7 @@ func GetExtractorOutputType(extractorType ExtractorType) string {
 	return "any"
 }
 
-// IsOperatorCompatible checks if an operator is compatible with an extractor
+// IsOperatorCompatible checks if an operator is compatible with an extractor.
 func IsOperatorCompatible(extractorType ExtractorType, operatorType operators.OperatorType) bool {
 	compatibleOps := GetCompatibleOperators(extractorType)
 	for _, op := range compatibleOps {
@@ -38,7 +38,7 @@ func IsOperatorCompatible(extractorType ExtractorType, operatorType operators.Op
 	return false
 }
 
-// GetExtractorCompatibilityMap returns the complete compatibility mapping
+// GetExtractorCompatibilityMap returns the complete compatibility mapping.
 func GetExtractorCompatibilityMap() map[ExtractorType]ExtractorOperatorCompatibility {
 	return map[ExtractorType]ExtractorOperatorCompatibility{
 		ExtractorTypeJSONPath: {
@@ -118,7 +118,7 @@ func GetExtractorCompatibilityMap() map[ExtractorType]ExtractorOperatorCompatibi
 	}
 }
 
-// GetAllExtractorCompatibilities returns all extractor compatibilities for documentation
+// GetAllExtractorCompatibilities returns all extractor compatibilities for documentation.
 func GetAllExtractorCompatibilities() []ExtractorOperatorCompatibility {
 	compatMap := GetExtractorCompatibilityMap()
 	result := make([]ExtractorOperatorCompatibility, 0, len(compatMap))

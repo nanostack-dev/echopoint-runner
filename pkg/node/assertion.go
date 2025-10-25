@@ -1,6 +1,6 @@
 package node
 
-// CompositeAssertion combines an extractor with an operator for validation
+// CompositeAssertion combines an extractor with an operator for validation.
 type CompositeAssertion struct {
 	ExtractorType string      `json:"extractorType"` // jsonPath, xmlPath, statusCode, header
 	ExtractorData interface{} `json:"extractorData"` // Configuration for the extractor

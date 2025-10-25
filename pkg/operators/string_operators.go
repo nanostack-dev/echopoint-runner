@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// StartsWithOperator checks if the actual string starts with the expected prefix
+// StartsWithOperator checks if the actual string starts with the expected prefix.
 type StartsWithOperator struct {
 	Prefix string `json:"prefix"`
 }
@@ -24,7 +24,7 @@ func (o StartsWithOperator) GetType() OperatorType {
 	return OperatorTypeStartsWith
 }
 
-// EndsWithOperator checks if the actual string ends with the expected suffix
+// EndsWithOperator checks if the actual string ends with the expected suffix.
 type EndsWithOperator struct {
 	Suffix string `json:"suffix"`
 }
@@ -42,7 +42,7 @@ func (o EndsWithOperator) GetType() OperatorType {
 	return OperatorTypeEndsWith
 }
 
-// RegexOperator checks if the actual string matches the expected regex pattern
+// RegexOperator checks if the actual string matches the expected regex pattern.
 type RegexOperator struct {
 	Pattern string `json:"pattern"`
 }
@@ -65,7 +65,7 @@ func (o RegexOperator) GetType() OperatorType {
 	return OperatorTypeRegex
 }
 
-// EmptyOperator checks if the actual string is empty
+// EmptyOperator checks if the actual string is empty.
 type EmptyOperator struct{}
 
 func (o EmptyOperator) Validate(actual interface{}) (bool, error) {
@@ -81,7 +81,7 @@ func (o EmptyOperator) GetType() OperatorType {
 	return OperatorTypeEmpty
 }
 
-// NotEmptyOperator checks if the actual string is not empty
+// NotEmptyOperator checks if the actual string is not empty.
 type NotEmptyOperator struct{}
 
 func (o NotEmptyOperator) Validate(actual interface{}) (bool, error) {
@@ -97,13 +97,13 @@ func (o NotEmptyOperator) GetType() OperatorType {
 	return OperatorTypeNotEmpty
 }
 
-// NotEqualsOperator checks if the actual value does not equal the expected value
+// NotEqualsOperator checks if the actual value does not equal the expected value.
 type NotEqualsOperator struct {
 	Expected interface{} `json:"expected"`
 }
 
 func (o NotEqualsOperator) Validate(actual interface{}) (bool, error) {
-	equals := EqualsOperator{Expected: o.Expected}
+	equals := EqualsOperator(o)
 	result, err := equals.Validate(actual)
 	if err != nil {
 		return false, err
@@ -115,13 +115,13 @@ func (o NotEqualsOperator) GetType() OperatorType {
 	return OperatorTypeNotEquals
 }
 
-// NotContainsOperator checks if the actual value does not contain the expected substring
+// NotContainsOperator checks if the actual value does not contain the expected substring.
 type NotContainsOperator struct {
 	Substring string `json:"substring"`
 }
 
 func (o NotContainsOperator) Validate(actual interface{}) (bool, error) {
-	contains := ContainsOperator{Substring: o.Substring}
+	contains := ContainsOperator(o)
 	result, err := contains.Validate(actual)
 	if err != nil {
 		return false, err

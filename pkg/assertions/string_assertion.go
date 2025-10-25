@@ -19,7 +19,7 @@ type StringAssertion struct {
 	Expected string         `json:"expected,omitempty"`
 }
 
-func (a StringAssertion) Validate(response interface{}) bool {
+func (a StringAssertion) Validate(_ interface{}) bool {
 	// TODO: Implement string validation logic
 	return true
 }

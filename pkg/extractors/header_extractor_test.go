@@ -1,20 +1,21 @@
-package extractors
+package extractors_test
 
 import (
 	"testing"
 
+	"github.com/nanostack-dev/echopoint-flow-engine/pkg/extractors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestHeaderExtractor_GetType(t *testing.T) {
-	extractor := HeaderExtractor{HeaderName: "Content-Type"}
-	assert.Equal(t, ExtractorTypeHeader, extractor.GetType())
+	extractor := extractors.HeaderExtractor{HeaderName: "Content-Type"}
+	assert.Equal(t, extractors.ExtractorTypeHeader, extractor.GetType())
 }
 
 func TestHeaderExtractor_Extract_Success(t *testing.T) {
-	extractor := HeaderExtractor{HeaderName: "Content-Type"}
-	response := &HTTPResponse{
+	extractor := extractors.HeaderExtractor{HeaderName: "Content-Type"}
+	response := &extractors.HTTPResponse{
 		StatusCode: 200,
 		Headers: map[string]string{
 			"Content-Type":   "application/json",
@@ -62,24 +63,26 @@ func TestHeaderExtractor_Extract_DifferentHeaders(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			extractor := HeaderExtractor{HeaderName: tc.headerName}
-			response := &HTTPResponse{
-				StatusCode: 200,
-				Headers:    tc.headers,
-			}
+		t.Run(
+			tc.name, func(t *testing.T) {
+				extractor := extractors.HeaderExtractor{HeaderName: tc.headerName}
+				response := &extractors.HTTPResponse{
+					StatusCode: 200,
+					Headers:    tc.headers,
+				}
 
-			result, err := extractor.Extract(response)
+				result, err := extractor.Extract(response)
 
-			require.NoError(t, err)
-			assert.Equal(t, tc.expectedResult, result)
-		})
+				require.NoError(t, err)
+				assert.Equal(t, tc.expectedResult, result)
+			},
+		)
 	}
 }
 
 func TestHeaderExtractor_Extract_HeaderNotFound(t *testing.T) {
-	extractor := HeaderExtractor{HeaderName: "X-Missing-Header"}
-	response := &HTTPResponse{
+	extractor := extractors.HeaderExtractor{HeaderName: "X-Missing-Header"}
+	response := &extractors.HTTPResponse{
 		StatusCode: 200,
 		Headers: map[string]string{
 			"Content-Type": "application/json",
@@ -94,8 +97,8 @@ func TestHeaderExtractor_Extract_HeaderNotFound(t *testing.T) {
 }
 
 func TestHeaderExtractor_Extract_EmptyHeaders(t *testing.T) {
-	extractor := HeaderExtractor{HeaderName: "Content-Type"}
-	response := &HTTPResponse{
+	extractor := extractors.HeaderExtractor{HeaderName: "Content-Type"}
+	response := &extractors.HTTPResponse{
 		StatusCode: 200,
 		Headers:    map[string]string{},
 	}
@@ -108,7 +111,7 @@ func TestHeaderExtractor_Extract_EmptyHeaders(t *testing.T) {
 }
 
 func TestHeaderExtractor_Extract_InvalidResponseType(t *testing.T) {
-	extractor := HeaderExtractor{HeaderName: "Content-Type"}
+	extractor := extractors.HeaderExtractor{HeaderName: "Content-Type"}
 	response := "not an HTTP response"
 
 	result, err := extractor.Extract(response)
@@ -119,7 +122,7 @@ func TestHeaderExtractor_Extract_InvalidResponseType(t *testing.T) {
 }
 
 func TestHeaderExtractor_Extract_NilResponse(t *testing.T) {
-	extractor := HeaderExtractor{HeaderName: "Content-Type"}
+	extractor := extractors.HeaderExtractor{HeaderName: "Content-Type"}
 
 	result, err := extractor.Extract(nil)
 
@@ -128,8 +131,8 @@ func TestHeaderExtractor_Extract_NilResponse(t *testing.T) {
 }
 
 func TestHeaderExtractor_Extract_CaseSensitivity(t *testing.T) {
-	extractor := HeaderExtractor{HeaderName: "content-type"}
-	response := &HTTPResponse{
+	extractor := extractors.HeaderExtractor{HeaderName: "content-type"}
+	response := &extractors.HTTPResponse{
 		StatusCode: 200,
 		Headers: map[string]string{
 			"Content-Type": "application/json", // Different case

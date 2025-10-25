@@ -7,7 +7,7 @@ import (
 	"github.com/theory/jsonpath"
 )
 
-// JSONPathExtractor extracts values from JSON using JSONPath expressions (RFC 9535)
+// JSONPathExtractor extracts values from JSON using JSONPath expressions (RFC 9535).
 type JSONPathExtractor struct {
 	Path string `json:"path"`
 }
@@ -24,13 +24,13 @@ func (e JSONPathExtractor) Extract(response interface{}) (interface{}, error) {
 	switch v := response.(type) {
 	case string:
 		// If response is a JSON string, unmarshal it
-		if err := json.Unmarshal([]byte(v), &jsonData); err != nil {
-			return nil, fmt.Errorf("failed to parse JSON string: %w", err)
+		if unmarshalErr := json.Unmarshal([]byte(v), &jsonData); unmarshalErr != nil {
+			return nil, fmt.Errorf("failed to parse JSON string: %w", unmarshalErr)
 		}
 	case []byte:
 		// If response is JSON bytes, unmarshal it
-		if err := json.Unmarshal(v, &jsonData); err != nil {
-			return nil, fmt.Errorf("failed to parse JSON bytes: %w", err)
+		if unmarshalErr := json.Unmarshal(v, &jsonData); unmarshalErr != nil {
+			return nil, fmt.Errorf("failed to parse JSON bytes: %w", unmarshalErr)
 		}
 	default:
 		// Response is already a Go data structure
@@ -52,9 +52,7 @@ func (e JSONPathExtractor) Extract(response interface{}) (interface{}, error) {
 
 	// If multiple results, return as slice
 	results := make([]interface{}, len(nodes))
-	for i, node := range nodes {
-		results[i] = node
-	}
+	copy(results, nodes)
 	return results, nil
 }
 

@@ -1,9 +1,11 @@
-package assertions
+package assertions_test
 
 import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
+	"github.com/nanostack-dev/echopoint-flow-engine/pkg/assertions"
 )
 
 func TestBooleanAssertion_Validate_True(t *testing.T) {
@@ -20,13 +22,15 @@ func TestBooleanAssertion_Validate_True(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			assertion := BooleanAssertion{
-				Expected: tc.expected,
-			}
-			result := assertion.Validate(tc.actual)
-			assert.Equal(t, tc.want, result)
-		})
+		t.Run(
+			tc.name, func(t *testing.T) {
+				assertion := assertions.BooleanAssertion{
+					Expected: tc.expected,
+				}
+				result := assertion.Validate(tc.actual)
+				assert.Equal(t, tc.want, result)
+			},
+		)
 	}
 }
 
@@ -44,13 +48,15 @@ func TestBooleanAssertion_Validate_False(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			assertion := BooleanAssertion{
-				Expected: tc.expected,
-			}
-			result := assertion.Validate(tc.actual)
-			assert.Equal(t, tc.want, result)
-		})
+		t.Run(
+			tc.name, func(t *testing.T) {
+				assertion := assertions.BooleanAssertion{
+					Expected: tc.expected,
+				}
+				result := assertion.Validate(tc.actual)
+				assert.Equal(t, tc.want, result)
+			},
+		)
 	}
 }
 
@@ -73,20 +79,22 @@ func TestBooleanAssertion_Validate_ConvertTypes(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			assertion := BooleanAssertion{
-				Expected: tc.expected,
-			}
-			result := assertion.Validate(tc.actual)
-			assert.Equal(t, tc.want, result)
-		})
+		t.Run(
+			tc.name, func(t *testing.T) {
+				assertion := assertions.BooleanAssertion{
+					Expected: tc.expected,
+				}
+				result := assertion.Validate(tc.actual)
+				assert.Equal(t, tc.want, result)
+			},
+		)
 	}
 }
 
 func TestBooleanAssertion_Validate_InvalidType(t *testing.T) {
 	t.Skip("TODO: Implement boolean validation logic")
 
-	assertion := BooleanAssertion{
+	assertion := assertions.BooleanAssertion{
 		Expected: true,
 	}
 
@@ -100,17 +108,19 @@ func TestBooleanAssertion_Validate_InvalidType(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			result := assertion.Validate(tc.actual)
-			assert.False(t, result, "invalid type should return false")
-		})
+		t.Run(
+			tc.name, func(t *testing.T) {
+				result := assertion.Validate(tc.actual)
+				assert.False(t, result, "invalid type should return false")
+			},
+		)
 	}
 }
 
 func TestBooleanAssertion_Validate_NilValue(t *testing.T) {
 	t.Skip("TODO: Implement boolean validation logic")
 
-	assertion := BooleanAssertion{
+	assertion := assertions.BooleanAssertion{
 		Expected: false,
 	}
 	result := assertion.Validate(nil)

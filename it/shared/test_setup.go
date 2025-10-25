@@ -2,7 +2,7 @@ package shared
 
 import (
 	"context"
-	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"testing"
@@ -43,22 +43,30 @@ func setup() {
 	stubsPath := filepath.Join(wd, "wiremock", "stubs")
 
 	// Start WireMock container with stubs
+	const (
+		startupTimeout = 30 * time.Second
+		fileMode       = 0644
+	)
 	req := testcontainers.ContainerRequest{
 		Image:        "wiremock/wiremock:3.3.1",
 		ExposedPorts: []string{"8080/tcp"},
 		WaitingFor: wait.ForHTTP("/__admin/health").
 			WithPort("8080").
-			WithStartupTimeout(30 * time.Second),
+			WithStartupTimeout(startupTimeout),
 		Cmd: []string{
 			"--global-response-templating",
 			"--verbose",
 		},
-		Mounts: testcontainers.ContainerMounts{
-			testcontainers.BindMount(stubsPath, "/home/wiremock/mappings"),
+		Files: []testcontainers.ContainerFile{
+			{
+				HostFilePath:      stubsPath,
+				ContainerFilePath: "/home/wiremock/mappings",
+				FileMode:          fileMode,
+			},
 		},
 	}
 
-	wiremockContainer, containerErr := testcontainers.GenericContainer(
+	container, containerErr := testcontainers.GenericContainer(
 		ctx, testcontainers.GenericContainerRequest{
 			ContainerRequest: req,
 			Started:          true,
@@ -68,6 +76,7 @@ func setup() {
 		log.Error().Err(containerErr).Msg("Failed to start wiremock container")
 		os.Exit(1)
 	}
+	wiremockContainer = container
 
 	wiremockHost, hostErr := wiremockContainer.Host(ctx)
 	if hostErr != nil {
@@ -81,10 +90,11 @@ func setup() {
 		return // exit after defer
 	}
 
-	wiremockURL := fmt.Sprintf("http://%s:%s", wiremockHost, wiremockPort.Port())
+	wiremockURL := "http://" + net.JoinHostPort(wiremockHost, wiremockPort.Port())
 	log.Info().Str("url", wiremockURL).Msg("WireMock started")
-	//Wait to ensure WireMock is fully ready
-	time.Sleep(2 * time.Second)
+	// Wait to ensure WireMock is fully ready
+	const setupDelay = 2 * time.Second
+	time.Sleep(setupDelay)
 
 	flowEngineContext = &TestContext{
 		WireMockURL: wiremockURL,

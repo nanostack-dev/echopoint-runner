@@ -1,18 +1,20 @@
-package extractors
+package extractors_test
 
 import (
 	"testing"
 
+	"github.com/nanostack-dev/echopoint-flow-engine/pkg/extractors"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestJSONPathExtractor_GetType(t *testing.T) {
-	extractor := JSONPathExtractor{Path: "$.user.name"}
-	assert.Equal(t, ExtractorTypeJSONPath, extractor.GetType())
+	extractor := extractors.JSONPathExtractor{Path: "$.user.name"}
+	assert.Equal(t, extractors.ExtractorTypeJSONPath, extractor.GetType())
 }
 
 func TestJSONPathExtractor_Extract_SimpleField(t *testing.T) {
-	extractor := JSONPathExtractor{Path: "$.user.name"}
+	extractor := extractors.JSONPathExtractor{Path: "$.user.name"}
 	response := map[string]interface{}{
 		"user": map[string]interface{}{
 			"name": "John Doe",
@@ -22,12 +24,12 @@ func TestJSONPathExtractor_Extract_SimpleField(t *testing.T) {
 
 	result, err := extractor.Extract(response)
 
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, "John Doe", result)
 }
 
 func TestJSONPathExtractor_Extract_NestedField(t *testing.T) {
-	extractor := JSONPathExtractor{Path: "$.user.address.city"}
+	extractor := extractors.JSONPathExtractor{Path: "$.user.address.city"}
 	response := map[string]interface{}{
 		"user": map[string]interface{}{
 			"name": "John Doe",
@@ -40,12 +42,12 @@ func TestJSONPathExtractor_Extract_NestedField(t *testing.T) {
 
 	result, err := extractor.Extract(response)
 
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, "New York", result)
 }
 
 func TestJSONPathExtractor_Extract_ArrayElement(t *testing.T) {
-	extractor := JSONPathExtractor{Path: "$.orders[0].id"}
+	extractor := extractors.JSONPathExtractor{Path: "$.orders[0].id"}
 	response := map[string]interface{}{
 		"orders": []interface{}{
 			map[string]interface{}{"id": "order-123", "total": 100},
@@ -55,12 +57,12 @@ func TestJSONPathExtractor_Extract_ArrayElement(t *testing.T) {
 
 	result, err := extractor.Extract(response)
 
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, "order-123", result)
 }
 
 func TestJSONPathExtractor_Extract_NonexistentPath(t *testing.T) {
-	extractor := JSONPathExtractor{Path: "$.nonexistent.field"}
+	extractor := extractors.JSONPathExtractor{Path: "$.nonexistent.field"}
 	response := map[string]interface{}{
 		"user": map[string]interface{}{
 			"name": "John Doe",
@@ -69,24 +71,24 @@ func TestJSONPathExtractor_Extract_NonexistentPath(t *testing.T) {
 
 	result, err := extractor.Extract(response)
 
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Nil(t, result)
 	assert.Contains(t, err.Error(), "did not match any nodes")
 }
 
 func TestJSONPathExtractor_Extract_InvalidJSON(t *testing.T) {
-	extractor := JSONPathExtractor{Path: "$.user.name"}
+	extractor := extractors.JSONPathExtractor{Path: "$.user.name"}
 	response := "invalid json"
 
 	result, err := extractor.Extract(response)
 
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Nil(t, result)
 	assert.Contains(t, err.Error(), "failed to parse JSON")
 }
 
 func TestJSONPathExtractor_Extract_ArrayFilter(t *testing.T) {
-	extractor := JSONPathExtractor{Path: "$.orders[?@.status=='active'].id"}
+	extractor := extractors.JSONPathExtractor{Path: "$.orders[?@.status=='active'].id"}
 	response := map[string]interface{}{
 		"orders": []interface{}{
 			map[string]interface{}{"id": "order-123", "status": "active"},
@@ -97,7 +99,7 @@ func TestJSONPathExtractor_Extract_ArrayFilter(t *testing.T) {
 
 	result, err := extractor.Extract(response)
 
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	// Should return array of matching ids
 	resultSlice, ok := result.([]interface{})
 	assert.True(t, ok, "result should be a slice")
@@ -107,33 +109,33 @@ func TestJSONPathExtractor_Extract_ArrayFilter(t *testing.T) {
 }
 
 func TestJSONPathExtractor_Extract_JSONString(t *testing.T) {
-	extractor := JSONPathExtractor{Path: "$.user.name"}
+	extractor := extractors.JSONPathExtractor{Path: "$.user.name"}
 	jsonString := `{"user": {"name": "Jane Doe", "age": 25}}`
 
 	result, err := extractor.Extract(jsonString)
 
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, "Jane Doe", result)
 }
 
 func TestJSONPathExtractor_Extract_JSONBytes(t *testing.T) {
-	extractor := JSONPathExtractor{Path: "$.user.age"}
+	extractor := extractors.JSONPathExtractor{Path: "$.user.age"}
 	jsonBytes := []byte(`{"user": {"name": "Bob", "age": 35}}`)
 
 	result, err := extractor.Extract(jsonBytes)
 
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	// JSON numbers are unmarshaled as float64
-	assert.Equal(t, float64(35), result)
+	assert.InDelta(t, float64(35), result, 0.0001)
 }
 
 func TestJSONPathExtractor_Extract_InvalidPath(t *testing.T) {
-	extractor := JSONPathExtractor{Path: "$[invalid"}
+	extractor := extractors.JSONPathExtractor{Path: "$[invalid"}
 	response := map[string]interface{}{"key": "value"}
 
 	result, err := extractor.Extract(response)
 
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Nil(t, result)
 	assert.Contains(t, err.Error(), "invalid JSONPath expression")
 }

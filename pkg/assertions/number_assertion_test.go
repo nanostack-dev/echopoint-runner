@@ -1,9 +1,11 @@
-package assertions
+package assertions_test
 
 import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
+	"github.com/nanostack-dev/echopoint-flow-engine/pkg/assertions"
 )
 
 func TestNumberAssertion_Validate_Equals(t *testing.T) {
@@ -24,8 +26,8 @@ func TestNumberAssertion_Validate_Equals(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			assertion := NumberAssertion{
-				Operator: NumberOperatorEquals,
+			assertion := assertions.NumberAssertion{
+				Operator: assertions.NumberOperatorEquals,
 				Expected: tc.expected,
 			}
 			result := assertion.Validate(tc.actual)
@@ -50,8 +52,8 @@ func TestNumberAssertion_Validate_NotEquals(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			assertion := NumberAssertion{
-				Operator: NumberOperatorNotEquals,
+			assertion := assertions.NumberAssertion{
+				Operator: assertions.NumberOperatorNotEquals,
 				Expected: tc.expected,
 			}
 			result := assertion.Validate(tc.actual)
@@ -78,8 +80,8 @@ func TestNumberAssertion_Validate_GreaterThan(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			assertion := NumberAssertion{
-				Operator: NumberOperatorGreaterThan,
+			assertion := assertions.NumberAssertion{
+				Operator: assertions.NumberOperatorGreaterThan,
 				Expected: tc.expected,
 			}
 			result := assertion.Validate(tc.actual)
@@ -104,8 +106,8 @@ func TestNumberAssertion_Validate_GreaterThanOrEqual(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			assertion := NumberAssertion{
-				Operator: NumberOperatorGreaterThanOrEqual,
+			assertion := assertions.NumberAssertion{
+				Operator: assertions.NumberOperatorGreaterThanOrEqual,
 				Expected: tc.expected,
 			}
 			result := assertion.Validate(tc.actual)
@@ -131,8 +133,8 @@ func TestNumberAssertion_Validate_LessThan(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			assertion := NumberAssertion{
-				Operator: NumberOperatorLessThan,
+			assertion := assertions.NumberAssertion{
+				Operator: assertions.NumberOperatorLessThan,
 				Expected: tc.expected,
 			}
 			result := assertion.Validate(tc.actual)
@@ -157,8 +159,8 @@ func TestNumberAssertion_Validate_LessThanOrEqual(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			assertion := NumberAssertion{
-				Operator: NumberOperatorLessThanOrEqual,
+			assertion := assertions.NumberAssertion{
+				Operator: assertions.NumberOperatorLessThanOrEqual,
 				Expected: tc.expected,
 			}
 			result := assertion.Validate(tc.actual)
@@ -188,8 +190,8 @@ func TestNumberAssertion_Validate_Between(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			assertion := NumberAssertion{
-				Operator: NumberOperatorBetween,
+			assertion := assertions.NumberAssertion{
+				Operator: assertions.NumberOperatorBetween,
 				Min:      tc.min,
 				Max:      tc.max,
 			}
@@ -217,8 +219,8 @@ func TestNumberAssertion_Validate_ConvertTypes(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			assertion := NumberAssertion{
-				Operator: NumberOperatorEquals,
+			assertion := assertions.NumberAssertion{
+				Operator: assertions.NumberOperatorEquals,
 				Expected: tc.expected,
 			}
 			result := assertion.Validate(tc.actual)
@@ -230,8 +232,8 @@ func TestNumberAssertion_Validate_ConvertTypes(t *testing.T) {
 func TestNumberAssertion_Validate_InvalidType(t *testing.T) {
 	t.Skip("TODO: Implement number validation logic")
 
-	assertion := NumberAssertion{
-		Operator: NumberOperatorEquals,
+	assertion := assertions.NumberAssertion{
+		Operator: assertions.NumberOperatorEquals,
 		Expected: 200,
 	}
 	result := assertion.Validate("not a number")
@@ -241,8 +243,8 @@ func TestNumberAssertion_Validate_InvalidType(t *testing.T) {
 func TestNumberAssertion_Validate_InvalidOperator(t *testing.T) {
 	t.Skip("TODO: Implement number validation logic")
 
-	assertion := NumberAssertion{
-		Operator: NumberOperator("invalid"),
+	assertion := assertions.NumberAssertion{
+		Operator: assertions.NumberOperator("invalid"),
 		Expected: 200,
 	}
 	result := assertion.Validate(200)

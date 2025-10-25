@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/nanostack-dev/echopoint-flow-engine/pkg/flow"
@@ -66,7 +67,7 @@ func NewFlowEngine(flowInstance flow.Flow, options *Options) (*FlowEngine, error
 func (engine *FlowEngine) Execute() error {
 	var nodeToExecute node.AnyNode
 	if len(engine.nodeEdgeInput) == 0 {
-		return fmt.Errorf("no nodes to execute")
+		return errors.New("no nodes to execute")
 	}
 	for {
 		nodeToExecute = engine.foundNodeWithoutInput()
@@ -87,7 +88,7 @@ func (engine *FlowEngine) Execute() error {
 			engine.afterExecution(nodeToExecute)
 		}
 		if err != nil {
-			return fmt.Errorf("nodeToExecute failed with %s", err)
+			return fmt.Errorf("nodeToExecute failed with %w", err)
 		}
 		if !pass {
 			return nil
