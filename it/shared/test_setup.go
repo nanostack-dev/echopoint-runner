@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/docker/docker/api/types/container"
 	"github.com/rs/zerolog/log"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
@@ -57,12 +58,8 @@ func setup() {
 			"--global-response-templating",
 			"--verbose",
 		},
-		Files: []testcontainers.ContainerFile{
-			{
-				HostFilePath:      stubsPath,
-				ContainerFilePath: "/home/wiremock/mappings",
-				FileMode:          fileMode,
-			},
+		HostConfigModifier: func(hostConfig *container.HostConfig) {
+			hostConfig.Binds = []string{stubsPath + ":/home/wiremock/mappings:ro"}
 		},
 	}
 
