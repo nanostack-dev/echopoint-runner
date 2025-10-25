@@ -1,0 +1,355 @@
+package engine
+
+import (
+	"fmt"
+	"testing"
+
+	"github.com/nanostack-dev/echopoint-flow-engine/pkg/edge"
+	"github.com/nanostack-dev/echopoint-flow-engine/pkg/flow"
+	"github.com/nanostack-dev/echopoint-flow-engine/pkg/node"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+// MockNode is a test node that tracks execution
+type MockNode struct {
+	id          string
+	nodeType    node.Type
+	executed    bool
+	shouldPass  bool
+	shouldError bool
+}
+
+func (n *MockNode) GetID() string {
+	return n.id
+}
+
+func (n *MockNode) GetType() node.Type {
+	return n.nodeType
+}
+
+func (n *MockNode) Execute() (bool, error) {
+	n.executed = true
+	if n.shouldError {
+		return false, fmt.Errorf("mock error")
+	}
+	return n.shouldPass, nil
+}
+
+func TestNewFlowEngine_Success(t *testing.T) {
+	node1 := &MockNode{id: "node1", nodeType: node.TypeRequest, shouldPass: true}
+	node2 := &MockNode{id: "node2", nodeType: node.TypeRequest, shouldPass: true}
+
+	flowInstance := flow.Flow{
+		Name:        "Test Flow",
+		Description: "Test flow description",
+		Nodes:       []node.AnyNode{node1, node2},
+		Edges: []edge.Edge{
+			{ID: "e1", Source: "node1", Target: "node2", Type: "success"},
+		},
+		Version: "1.0",
+	}
+
+	engine, err := NewFlowEngine(flowInstance, &Options{})
+
+	require.NoError(t, err)
+	assert.NotNil(t, engine)
+	assert.Equal(t, 2, len(engine.nodeMap))
+	assert.Equal(t, node1, engine.nodeMap["node1"])
+	assert.Equal(t, node2, engine.nodeMap["node2"])
+	assert.Equal(t, 0, engine.nodeEdgeInput[node1])
+	assert.Equal(t, 1, engine.nodeEdgeInput[node2])
+	assert.Equal(t, 1, len(engine.nodeEdgeOutput[node1]))
+	assert.Equal(t, node2, engine.nodeEdgeOutput[node1][0])
+}
+
+func TestNewFlowEngine_SourceNodeNotFound(t *testing.T) {
+	node1 := &MockNode{id: "node1", nodeType: node.TypeRequest, shouldPass: true}
+
+	flowInstance := flow.Flow{
+		Name:  "Test Flow",
+		Nodes: []node.AnyNode{node1},
+		Edges: []edge.Edge{
+			{ID: "e1", Source: "nonexistent", Target: "node1", Type: "success"},
+		},
+		Version: "1.0",
+	}
+
+	engine, err := NewFlowEngine(flowInstance, &Options{})
+
+	require.Error(t, err)
+	assert.Nil(t, engine)
+	assert.Contains(t, err.Error(), "source node nonexistent not found")
+}
+
+func TestNewFlowEngine_TargetNodeNotFound(t *testing.T) {
+	node1 := &MockNode{id: "node1", nodeType: node.TypeRequest, shouldPass: true}
+
+	flowInstance := flow.Flow{
+		Name:  "Test Flow",
+		Nodes: []node.AnyNode{node1},
+		Edges: []edge.Edge{
+			{ID: "e1", Source: "node1", Target: "nonexistent", Type: "success"},
+		},
+		Version: "1.0",
+	}
+
+	engine, err := NewFlowEngine(flowInstance, &Options{})
+
+	require.Error(t, err)
+	assert.Nil(t, engine)
+	assert.Contains(t, err.Error(), "target node nonexistent not found")
+}
+
+func TestFlowEngine_Execute_LinearFlow(t *testing.T) {
+	node1 := &MockNode{id: "node1", nodeType: node.TypeRequest, shouldPass: true}
+	node2 := &MockNode{id: "node2", nodeType: node.TypeRequest, shouldPass: true}
+	node3 := &MockNode{id: "node3", nodeType: node.TypeRequest, shouldPass: true}
+
+	flowInstance := flow.Flow{
+		Name:  "Linear Flow",
+		Nodes: []node.AnyNode{node1, node2, node3},
+		Edges: []edge.Edge{
+			{ID: "e1", Source: "node1", Target: "node2", Type: "success"},
+			{ID: "e2", Source: "node2", Target: "node3", Type: "success"},
+		},
+		Version: "1.0",
+	}
+
+	engine, err := NewFlowEngine(flowInstance, &Options{})
+	require.NoError(t, err)
+
+	err = engine.Execute()
+
+	require.NoError(t, err)
+	assert.True(t, node1.executed, "node1 should be executed")
+	assert.True(t, node2.executed, "node2 should be executed")
+	assert.True(t, node3.executed, "node3 should be executed")
+}
+
+func TestFlowEngine_Execute_ParallelFlow(t *testing.T) {
+	node1 := &MockNode{id: "node1", nodeType: node.TypeRequest, shouldPass: true}
+	node2 := &MockNode{id: "node2", nodeType: node.TypeRequest, shouldPass: true}
+	node3 := &MockNode{id: "node3", nodeType: node.TypeRequest, shouldPass: true}
+
+	flowInstance := flow.Flow{
+		Name:  "Parallel Flow",
+		Nodes: []node.AnyNode{node1, node2, node3},
+		Edges: []edge.Edge{
+			{ID: "e1", Source: "node1", Target: "node3", Type: "success"},
+			{ID: "e2", Source: "node2", Target: "node3", Type: "success"},
+		},
+		Version: "1.0",
+	}
+
+	var executionOrder []string
+	engine, err := NewFlowEngine(
+		flowInstance, &Options{
+			BeforeExecution: func(n node.AnyNode) {
+				executionOrder = append(executionOrder, n.GetID())
+			},
+		},
+	)
+	require.NoError(t, err)
+	err = engine.Execute()
+
+	require.NoError(t, err)
+	assert.True(t, node1.executed, "node1 should be executed")
+	assert.True(t, node2.executed, "node2 should be executed")
+	assert.True(t, node3.executed, "node3 should be executed after both node1 and node2")
+	assert.ElementsMatch(
+		t, []string{"node1", "node2"}, executionOrder[:2], "execution order should be node1, node2",
+	)
+}
+
+func TestFlowEngine_Execute_BranchingFlow(t *testing.T) {
+	node1 := &MockNode{id: "node1", nodeType: node.TypeRequest, shouldPass: true}
+	node2 := &MockNode{id: "node2", nodeType: node.TypeRequest, shouldPass: true}
+	node3 := &MockNode{id: "node3", nodeType: node.TypeRequest, shouldPass: true}
+
+	flowInstance := flow.Flow{
+		Name:  "Branching Flow",
+		Nodes: []node.AnyNode{node1, node2, node3},
+		Edges: []edge.Edge{
+			{ID: "e1", Source: "node1", Target: "node2", Type: "success"},
+			{ID: "e2", Source: "node1", Target: "node3", Type: "failure"},
+		},
+		Version: "1.0",
+	}
+
+	engine, err := NewFlowEngine(flowInstance, &Options{})
+	require.NoError(t, err)
+
+	err = engine.Execute()
+
+	require.NoError(t, err)
+	assert.True(t, node1.executed, "node1 should be executed")
+	assert.True(t, node2.executed, "node2 should be executed")
+	assert.True(t, node3.executed, "node3 should be executed")
+}
+
+func TestFlowEngine_Execute_NodeFailsWithError(t *testing.T) {
+	node1 := &MockNode{id: "node1", nodeType: node.TypeRequest, shouldPass: true}
+	node2 := &MockNode{id: "node2", nodeType: node.TypeRequest, shouldError: true}
+	node3 := &MockNode{id: "node3", nodeType: node.TypeRequest, shouldPass: true}
+
+	flowInstance := flow.Flow{
+		Name:  "Error Flow",
+		Nodes: []node.AnyNode{node1, node2, node3},
+		Edges: []edge.Edge{
+			{ID: "e1", Source: "node1", Target: "node2", Type: "success"},
+			{ID: "e2", Source: "node2", Target: "node3", Type: "success"},
+		},
+		Version: "1.0",
+	}
+
+	engine, err := NewFlowEngine(flowInstance, &Options{})
+	require.NoError(t, err)
+
+	err = engine.Execute()
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "nodeToExecute failed")
+	assert.True(t, node1.executed, "node1 should be executed")
+	assert.True(t, node2.executed, "node2 should be executed")
+	assert.False(t, node3.executed, "node3 should not be executed due to error")
+}
+
+func TestFlowEngine_Execute_NodeDoesNotPass(t *testing.T) {
+	node1 := &MockNode{id: "node1", nodeType: node.TypeRequest, shouldPass: true}
+	node2 := &MockNode{id: "node2", nodeType: node.TypeRequest, shouldPass: false}
+	node3 := &MockNode{id: "node3", nodeType: node.TypeRequest, shouldPass: true}
+
+	flowInstance := flow.Flow{
+		Name:  "Non-passing Flow",
+		Nodes: []node.AnyNode{node1, node2, node3},
+		Edges: []edge.Edge{
+			{ID: "e1", Source: "node1", Target: "node2", Type: "success"},
+			{ID: "e2", Source: "node2", Target: "node3", Type: "success"},
+		},
+		Version: "1.0",
+	}
+
+	engine, err := NewFlowEngine(flowInstance, &Options{})
+	require.NoError(t, err)
+
+	err = engine.Execute()
+
+	require.NoError(t, err)
+	assert.True(t, node1.executed, "node1 should be executed")
+	assert.True(t, node2.executed, "node2 should be executed")
+	assert.False(t, node3.executed, "node3 should not be executed when node2 doesn't pass")
+}
+
+func TestFlowEngine_Execute_NoNodes(t *testing.T) {
+	flowInstance := flow.Flow{
+		Name:    "Empty Flow",
+		Nodes:   []node.AnyNode{},
+		Edges:   []edge.Edge{},
+		Version: "1.0",
+	}
+
+	engine, err := NewFlowEngine(flowInstance, &Options{})
+	require.NoError(t, err)
+
+	err = engine.Execute()
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no nodes to execute")
+}
+
+func TestFlowEngine_Execute_CycleDetection(t *testing.T) {
+	node1 := &MockNode{id: "node1", nodeType: node.TypeRequest, shouldPass: true}
+	node2 := &MockNode{id: "node2", nodeType: node.TypeRequest, shouldPass: true}
+
+	flowInstance := flow.Flow{
+		Name:  "Cyclic Flow",
+		Nodes: []node.AnyNode{node1, node2},
+		Edges: []edge.Edge{
+			{ID: "e1", Source: "node1", Target: "node2", Type: "success"},
+			{ID: "e2", Source: "node2", Target: "node1", Type: "success"},
+		},
+		Version: "1.0",
+	}
+
+	engine, err := NewFlowEngine(flowInstance, &Options{})
+	require.NoError(t, err)
+
+	err = engine.Execute()
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cycle detected or unreachable nodes")
+}
+
+func TestFlowEngine_Execute_WithBeforeAndAfterCallbacks(t *testing.T) {
+	node1 := &MockNode{id: "node1", nodeType: node.TypeRequest, shouldPass: true}
+	node2 := &MockNode{id: "node2", nodeType: node.TypeRequest, shouldPass: true}
+
+	var beforeCalls []string
+	var afterCalls []string
+
+	flowInstance := flow.Flow{
+		Name:  "Callback Flow",
+		Nodes: []node.AnyNode{node1, node2},
+		Edges: []edge.Edge{
+			{ID: "e1", Source: "node1", Target: "node2", Type: "success"},
+		},
+		Version: "1.0",
+	}
+
+	engine, err := NewFlowEngine(
+		flowInstance, &Options{
+			BeforeExecution: func(n node.AnyNode) {
+				beforeCalls = append(beforeCalls, n.GetID())
+			},
+			AfterExecution: func(n node.AnyNode) {
+				afterCalls = append(afterCalls, n.GetID())
+			},
+		},
+	)
+	require.NoError(t, err)
+
+	err = engine.Execute()
+
+	require.NoError(t, err)
+	assert.Equal(
+		t, []string{"node1", "node2"}, beforeCalls,
+		"beforeExecution should be called for each node",
+	)
+	assert.Equal(
+		t, []string{"node1", "node2"}, afterCalls, "afterExecution should be called for each node",
+	)
+}
+
+func TestFlowEngine_FoundNodeWithoutInput(t *testing.T) {
+	node1 := &MockNode{id: "node1", nodeType: node.TypeRequest, shouldPass: true}
+	node2 := &MockNode{id: "node2", nodeType: node.TypeRequest, shouldPass: true}
+	node3 := &MockNode{id: "node3", nodeType: node.TypeRequest, shouldPass: true}
+
+	flowInstance := flow.Flow{
+		Name:  "Test Flow",
+		Nodes: []node.AnyNode{node1, node2, node3},
+		Edges: []edge.Edge{
+			{ID: "e1", Source: "node1", Target: "node2", Type: "success"},
+		},
+		Version: "1.0",
+	}
+
+	engine, err := NewFlowEngine(flowInstance, &Options{})
+	require.NoError(t, err)
+
+	foundNode := engine.foundNodeWithoutInput()
+	assert.NotNil(t, foundNode)
+	assert.Contains(t, []string{"node1", "node3"}, foundNode.GetID())
+
+	// After marking node1 as executed
+	delete(engine.nodeEdgeInput, node1)
+	foundNode = engine.foundNodeWithoutInput()
+	assert.NotNil(t, foundNode)
+
+	// After all nodes are processed
+	delete(engine.nodeEdgeInput, node2)
+	delete(engine.nodeEdgeInput, node3)
+	foundNode = engine.foundNodeWithoutInput()
+	assert.Nil(t, foundNode)
+}
