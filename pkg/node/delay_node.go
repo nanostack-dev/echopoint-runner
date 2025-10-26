@@ -1,14 +1,21 @@
 package node
 
+import (
+	"fmt"
+	"time"
+)
+
 type DelayData struct {
 	Duration int `json:"duration"` // Duration in milliseconds
 }
 
 // DelayNode is a typed node for delays.
 type DelayNode struct {
-	ID   string    `json:"id"`
-	Type Type      `json:"type"`
-	Data DelayData `json:"data"`
+	ID         string    `json:"id"`
+	Type       Type      `json:"type"`
+	Data       DelayData `json:"data"`
+	InputDeps  []string  `json:"inputSchema"`
+	OutputKeys []string  `json:"outputSchema"`
 }
 
 // AsDelayNode safely casts an AnyNode to a DelayNode
@@ -36,9 +43,38 @@ func (n *DelayNode) GetType() Type {
 	return n.Type
 }
 
-func (n *DelayNode) Execute() (bool, error) {
-	// TODO: Implement
-	return true, nil
+func (n *DelayNode) InputSchema() []string {
+	return n.InputDeps
+}
+
+func (n *DelayNode) OutputSchema() []string {
+	return n.OutputKeys
+}
+
+// Execute sleeps for the specified duration and optionally passes through input values
+func (n *DelayNode) Execute(ctx ExecutionContext) (map[string]interface{}, error) {
+	// Validate that we have all required inputs
+	for _, dep := range n.InputSchema() {
+		if _, exists := ctx.Inputs[dep]; !exists {
+			return nil, fmt.Errorf("missing required input: %s", dep)
+		}
+	}
+
+	// Sleep for the specified duration
+	time.Sleep(time.Duration(n.Data.Duration) * time.Millisecond)
+
+	// DelayNode typically passes through inputs as outputs (or returns empty if no outputs declared)
+	output := make(map[string]interface{})
+
+	// If no specific outputs are declared, return empty map
+	// If outputs are declared, copy matching inputs to outputs
+	for _, outputKey := range n.OutputSchema() {
+		if val, exists := ctx.Inputs[outputKey]; exists {
+			output[outputKey] = val
+		}
+	}
+
+	return output, nil
 }
 
 func (n *DelayNode) GetData() DelayData {

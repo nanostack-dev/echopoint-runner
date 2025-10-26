@@ -8,11 +8,12 @@ import (
 )
 
 type Flow struct {
-	Name        string         `json:"name"`
-	Description string         `json:"description"`
-	Nodes       []node.AnyNode `json:"-"`
-	Edges       []edge.Edge    `json:"edges"`
-	Version     string         `json:"version"`
+	Name          string                 `json:"name"`
+	Description   string                 `json:"description"`
+	Version       string                 `json:"version"`
+	Nodes         []node.AnyNode         `json:"-"`
+	Edges         []edge.Edge            `json:"edges"`
+	InitialInputs map[string]interface{} `json:"initialInputs"`
 }
 
 func ParseFromMap(data map[string]interface{}) (*Flow, error) {
@@ -24,11 +25,12 @@ func ParseFromMap(data map[string]interface{}) (*Flow, error) {
 }
 func ParseFromJSON(data []byte) (*Flow, error) {
 	var raw struct {
-		Name        string            `json:"name"`
-		Description string            `json:"description"`
-		Nodes       []json.RawMessage `json:"nodes"`
-		Edges       []edge.Edge       `json:"edges"`
-		Version     string            `json:"version"`
+		Name          string                 `json:"name"`
+		Description   string                 `json:"description"`
+		Version       string                 `json:"version"`
+		Nodes         []json.RawMessage      `json:"nodes"`
+		Edges         []edge.Edge            `json:"edges"`
+		InitialInputs map[string]interface{} `json:"initialInputs"`
 	}
 
 	if err := json.Unmarshal(data, &raw); err != nil {
@@ -45,11 +47,17 @@ func ParseFromJSON(data []byte) (*Flow, error) {
 		nodes[i] = typedNode
 	}
 
+	// Ensure InitialInputs is initialized
+	if raw.InitialInputs == nil {
+		raw.InitialInputs = make(map[string]interface{})
+	}
+
 	return &Flow{
-		Name:        raw.Name,
-		Description: raw.Description,
-		Nodes:       nodes,
-		Edges:       raw.Edges,
-		Version:     raw.Version,
+		Name:          raw.Name,
+		Description:   raw.Description,
+		Version:       raw.Version,
+		Nodes:         nodes,
+		Edges:         raw.Edges,
+		InitialInputs: raw.InitialInputs,
 	}, nil
 }

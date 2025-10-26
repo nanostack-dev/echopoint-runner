@@ -1,4 +1,4 @@
-package extractors_test
+package compatibility_test
 
 import (
 	"testing"

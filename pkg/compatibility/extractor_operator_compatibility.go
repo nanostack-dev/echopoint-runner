@@ -1,16 +1,19 @@
-package extractors
+package compatibility
 
-import "github.com/nanostack-dev/echopoint-flow-engine/pkg/operators"
+import (
+	"github.com/nanostack-dev/echopoint-flow-engine/pkg/extractors"
+	"github.com/nanostack-dev/echopoint-flow-engine/pkg/operators"
+)
 
 // ExtractorOperatorCompatibility defines which operators are compatible with each extractor.
 type ExtractorOperatorCompatibility struct {
-	ExtractorType       ExtractorType
+	ExtractorType       extractors.ExtractorType
 	CompatibleOperators []operators.OperatorType
-	OutputType          string // "string", "number", "boolean", "any"
+	OutputType          string
 }
 
 // GetCompatibleOperators returns the list of operators compatible with an extractor.
-func GetCompatibleOperators(extractorType ExtractorType) []operators.OperatorType {
+func GetCompatibleOperators(extractorType extractors.ExtractorType) []operators.OperatorType {
 	compatibility := GetExtractorCompatibilityMap()
 	if compat, ok := compatibility[extractorType]; ok {
 		return compat.CompatibleOperators
@@ -19,7 +22,7 @@ func GetCompatibleOperators(extractorType ExtractorType) []operators.OperatorTyp
 }
 
 // GetExtractorOutputType returns the output type of an extractor.
-func GetExtractorOutputType(extractorType ExtractorType) string {
+func GetExtractorOutputType(extractorType extractors.ExtractorType) string {
 	compatibility := GetExtractorCompatibilityMap()
 	if compat, ok := compatibility[extractorType]; ok {
 		return compat.OutputType
@@ -28,7 +31,9 @@ func GetExtractorOutputType(extractorType ExtractorType) string {
 }
 
 // IsOperatorCompatible checks if an operator is compatible with an extractor.
-func IsOperatorCompatible(extractorType ExtractorType, operatorType operators.OperatorType) bool {
+func IsOperatorCompatible(
+	extractorType extractors.ExtractorType, operatorType operators.OperatorType,
+) bool {
 	compatibleOps := GetCompatibleOperators(extractorType)
 	for _, op := range compatibleOps {
 		if op == operatorType {
@@ -39,10 +44,10 @@ func IsOperatorCompatible(extractorType ExtractorType, operatorType operators.Op
 }
 
 // GetExtractorCompatibilityMap returns the complete compatibility mapping.
-func GetExtractorCompatibilityMap() map[ExtractorType]ExtractorOperatorCompatibility {
-	return map[ExtractorType]ExtractorOperatorCompatibility{
-		ExtractorTypeJSONPath: {
-			ExtractorType: ExtractorTypeJSONPath,
+func GetExtractorCompatibilityMap() map[extractors.ExtractorType]ExtractorOperatorCompatibility {
+	return map[extractors.ExtractorType]ExtractorOperatorCompatibility{
+		extractors.ExtractorTypeJSONPath: {
+			ExtractorType: extractors.ExtractorTypeJSONPath,
 			OutputType:    "any", // Can extract any type from JSON
 			CompatibleOperators: []operators.OperatorType{
 				// String operators
@@ -63,8 +68,8 @@ func GetExtractorCompatibilityMap() map[ExtractorType]ExtractorOperatorCompatibi
 				operators.OperatorTypeBetween,
 			},
 		},
-		ExtractorTypeXMLPath: {
-			ExtractorType: ExtractorTypeXMLPath,
+		extractors.ExtractorTypeXMLPath: {
+			ExtractorType: extractors.ExtractorTypeXMLPath,
 			OutputType:    "any", // Can extract any type from XML
 			CompatibleOperators: []operators.OperatorType{
 				// String operators
@@ -85,8 +90,8 @@ func GetExtractorCompatibilityMap() map[ExtractorType]ExtractorOperatorCompatibi
 				operators.OperatorTypeBetween,
 			},
 		},
-		ExtractorTypeStatusCode: {
-			ExtractorType: ExtractorTypeStatusCode,
+		extractors.ExtractorTypeStatusCode: {
+			ExtractorType: extractors.ExtractorTypeStatusCode,
 			OutputType:    "number",
 			CompatibleOperators: []operators.OperatorType{
 				// Number operators only
@@ -99,8 +104,8 @@ func GetExtractorCompatibilityMap() map[ExtractorType]ExtractorOperatorCompatibi
 				operators.OperatorTypeBetween,
 			},
 		},
-		ExtractorTypeHeader: {
-			ExtractorType: ExtractorTypeHeader,
+		extractors.ExtractorTypeHeader: {
+			ExtractorType: extractors.ExtractorTypeHeader,
 			OutputType:    "string",
 			CompatibleOperators: []operators.OperatorType{
 				// String operators only

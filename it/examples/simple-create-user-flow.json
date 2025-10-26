@@ -1,0 +1,42 @@
+{
+  "name": "Simple Create User",
+  "description": "Simple flow that creates a user with initial inputs",
+  "version": "1.0",
+  "initialInputs": {
+    "apiUrl": "http://localhost:8080",
+    "userName": "Bob Johnson",
+    "userEmail": "bob@example.com"
+  },
+  "nodes": [
+    {
+      "id": "create-user",
+      "type": "request",
+      "inputSchema": ["apiUrl", "userName", "userEmail"],
+      "outputSchema": ["statusCode", "userId"],
+      "data": {
+        "method": "POST",
+        "url": "{{apiUrl}}/users",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "name": "{{userName}}",
+          "email": "{{userEmail}}"
+        },
+        "timeout": 5000,
+        "extractions": [
+          {
+            "name": "statusCode",
+            "type": "statusCode"
+          },
+          {
+            "name": "userId",
+            "type": "jsonPath",
+            "path": "$.user.id"
+          }
+        ]
+      }
+    }
+  ],
+  "edges": []
+}
