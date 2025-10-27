@@ -5,7 +5,7 @@ type XMLPathExtractor struct {
 	Path string `json:"path"`
 }
 
-func (e XMLPathExtractor) Extract(_ interface{}) (interface{}, error) {
+func (e XMLPathExtractor) Extract(_ ResponseContext) (interface{}, error) {
 	// TODO: Implement XPath extraction
 	// Use a library like github.com/antchfx/xmlquery or similar
 	return nil, ErrNotImplemented

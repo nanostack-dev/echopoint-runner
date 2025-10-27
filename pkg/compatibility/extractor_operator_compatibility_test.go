@@ -3,13 +3,14 @@ package compatibility_test
 import (
 	"testing"
 
+	"github.com/nanostack-dev/echopoint-flow-engine/pkg/compatibility"
 	"github.com/nanostack-dev/echopoint-flow-engine/pkg/extractors"
 	"github.com/nanostack-dev/echopoint-flow-engine/pkg/operators"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestGetCompatibleOperators_StatusCode(t *testing.T) {
-	ops := extractors.GetCompatibleOperators(extractors.ExtractorTypeStatusCode)
+	ops := compatibility.GetCompatibleOperators(extractors.ExtractorTypeStatusCode)
 
 	// Should have number operators
 	assert.Contains(t, ops, operators.OperatorTypeEquals)
@@ -23,7 +24,7 @@ func TestGetCompatibleOperators_StatusCode(t *testing.T) {
 }
 
 func TestGetCompatibleOperators_Header(t *testing.T) {
-	ops := extractors.GetCompatibleOperators(extractors.ExtractorTypeHeader)
+	ops := compatibility.GetCompatibleOperators(extractors.ExtractorTypeHeader)
 
 	// Should have string operators
 	assert.Contains(t, ops, operators.OperatorTypeEquals)
@@ -37,7 +38,7 @@ func TestGetCompatibleOperators_Header(t *testing.T) {
 }
 
 func TestGetCompatibleOperators_JSONPath(t *testing.T) {
-	ops := extractors.GetCompatibleOperators(extractors.ExtractorTypeJSONPath)
+	ops := compatibility.GetCompatibleOperators(extractors.ExtractorTypeJSONPath)
 
 	// Should have both string and number operators (can extract any type)
 	assert.Contains(t, ops, operators.OperatorTypeEquals)
@@ -47,7 +48,7 @@ func TestGetCompatibleOperators_JSONPath(t *testing.T) {
 }
 
 func TestGetCompatibleOperators_XMLPath(t *testing.T) {
-	ops := extractors.GetCompatibleOperators(extractors.ExtractorTypeXMLPath)
+	ops := compatibility.GetCompatibleOperators(extractors.ExtractorTypeXMLPath)
 
 	// Should have both string and number operators (can extract any type)
 	assert.Contains(t, ops, operators.OperatorTypeEquals)
@@ -70,7 +71,7 @@ func TestGetExtractorOutputType(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(
 			string(tc.extractor), func(t *testing.T) {
-				outputType := extractors.GetExtractorOutputType(tc.extractor)
+				outputType := compatibility.GetExtractorOutputType(tc.extractor)
 				assert.Equal(t, tc.expectedType, outputType)
 			},
 		)
@@ -137,7 +138,7 @@ func TestIsOperatorCompatible(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(
 			tc.name, func(t *testing.T) {
-				result := extractors.IsOperatorCompatible(tc.extractor, tc.operator)
+				result := compatibility.IsOperatorCompatible(tc.extractor, tc.operator)
 				assert.Equal(t, tc.shouldMatch, result)
 			},
 		)
@@ -145,7 +146,7 @@ func TestIsOperatorCompatible(t *testing.T) {
 }
 
 func TestGetAllExtractorCompatibilities(t *testing.T) {
-	all := extractors.GetAllExtractorCompatibilities()
+	all := compatibility.GetAllExtractorCompatibilities()
 
 	assert.Len(t, all, 4, "Should have 4 extractor types")
 
@@ -164,7 +165,7 @@ func TestGetAllExtractorCompatibilities(t *testing.T) {
 }
 
 func TestGetExtractorCompatibilityMap(t *testing.T) {
-	compatMap := extractors.GetExtractorCompatibilityMap()
+	compatMap := compatibility.GetExtractorCompatibilityMap()
 
 	assert.Len(t, compatMap, 4, "Should have 4 extractors")
 

@@ -11,8 +11,28 @@
     {
       "id": "create-user",
       "type": "request",
-      "inputSchema": ["apiUrl", "userName", "userEmail"],
-      "outputSchema": ["statusCode", "userId", "createdUser"],
+      "assertions": [],
+      "outputs": [
+        {
+          "name": "statusCode",
+          "extractor": {
+            "type": "statusCode"
+          }
+        },
+        {
+          "name": "userId",
+          "extractor": {
+            "type": "jsonPath",
+            "path": "$.user.id"
+          }
+        },
+        {
+          "name": "createdUser",
+          "extractor": {
+            "type": "body"
+          }
+        }
+      ],
       "data": {
         "method": "POST",
         "url": "{{apiUrl}}/users",
@@ -23,43 +43,31 @@
           "name": "{{userName}}",
           "email": "{{userEmail}}"
         },
-        "timeout": 5000,
-        "extractions": [
-          {
-            "name": "statusCode",
-            "type": "statusCode"
-          },
-          {
-            "name": "userId",
-            "type": "jsonPath",
-            "path": "$.user.id"
-          },
-          {
-            "name": "createdUser",
-            "type": "body"
-          }
-        ]
+        "timeout": 5000
       }
     },
     {
       "id": "verify-user",
       "type": "request",
-      "inputSchema": ["apiUrl", "userId"],
-      "outputSchema": ["verifyStatus", "verifiedUser"],
-      "data": {
-        "method": "GET",
-        "url": "{{apiUrl}}/users/{{userId}}",
-        "timeout": 5000,
-        "extractions": [
-          {
-            "name": "verifyStatus",
+      "assertions": [],
+      "outputs": [
+        {
+          "name": "verifyStatus",
+          "extractor": {
             "type": "statusCode"
-          },
-          {
-            "name": "verifiedUser",
+          }
+        },
+        {
+          "name": "verifiedUser",
+          "extractor": {
             "type": "body"
           }
-        ]
+        }
+      ],
+      "data": {
+        "method": "GET",
+        "url": "{{apiUrl}}/users/{{create-user.userId}}",
+        "timeout": 5000
       }
     }
   ],

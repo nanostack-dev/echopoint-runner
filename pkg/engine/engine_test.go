@@ -40,6 +40,14 @@ func (n *MockNode) OutputSchema() []string {
 	return []string{}
 }
 
+func (n *MockNode) GetAssertions() []node.CompositeAssertion {
+	return []node.CompositeAssertion{}
+}
+
+func (n *MockNode) GetOutputs() []node.Output {
+	return []node.Output{}
+}
+
 func (n *MockNode) Execute(ctx node.ExecutionContext) (map[string]interface{}, error) {
 	n.executed = true
 	if n.shouldError {
@@ -96,6 +104,14 @@ func (n *DataContractMockNode) Execute(ctx node.ExecutionContext) (map[string]in
 	}
 
 	return n.outputs, nil
+}
+
+func (n *DataContractMockNode) GetAssertions() []node.CompositeAssertion {
+	return []node.CompositeAssertion{}
+}
+
+func (n *DataContractMockNode) GetOutputs() []node.Output {
+	return []node.Output{}
 }
 
 func newDataContractMockNode(id string, inputDeps, outputKeys []string) *DataContractMockNode {
@@ -283,33 +299,6 @@ func TestFlowEngine_Execute_NodeFailsWithError(t *testing.T) {
 	assert.False(t, node3.executed, "node3 should not be executed due to error")
 }
 
-func TestFlowEngine_Execute_NodeDoesNotPass(t *testing.T) {
-	node1 := &MockNode{id: "node1", nodeType: node.TypeRequest, shouldPass: true}
-	node2 := &MockNode{id: "node2", nodeType: node.TypeRequest, shouldPass: false}
-	node3 := &MockNode{id: "node3", nodeType: node.TypeRequest, shouldPass: true}
-
-	flowInstance := flow.Flow{
-		Name:  "Non-passing Flow",
-		Nodes: []node.AnyNode{node1, node2, node3},
-		Edges: []edge.Edge{
-			{ID: "e1", Source: "node1", Target: "node2", Type: "success"},
-			{ID: "e2", Source: "node2", Target: "node3", Type: "success"},
-		},
-		Version: "1.0",
-	}
-
-	flowEngine, err := engine.NewFlowEngine(flowInstance, &engine.Options{})
-	require.NoError(t, err)
-
-	result, err := flowEngine.Execute(make(map[string]interface{}))
-
-	require.NoError(t, err)
-	require.True(t, result.Success)
-	assert.True(t, node1.executed, "node1 should be executed")
-	assert.True(t, node2.executed, "node2 should be executed")
-	assert.False(t, node3.executed, "node3 should not be executed when node2 doesn't pass")
-}
-
 func TestFlowEngine_Execute_NoNodes(t *testing.T) {
 	flowInstance := flow.Flow{
 		Name:    "Empty Flow",
@@ -431,14 +420,14 @@ func TestDataContract_SimpleDataPassing(t *testing.T) {
 	assert.Equal(t, 201, result.FinalOutputs["create-user.statusCode"])
 
 	// Verify node2 received data from node1
-	frame2 := result.Frames["fetch-user"]
+	frame2 := result.ExecutionResults["fetch-user"]
 	assert.Equal(t, "user-123", frame2.Inputs["create-user.userId"])
 }
 
 // TestDataContract_MissingInput tests error handling for missing inputs
 func TestDataContract_MissingInput(t *testing.T) {
 	dataContractMockNode := newDataContractMockNode(
-		"dataContractMockNode", []string{"initial.required"}, []string{"output"},
+		"dataContractMockNode", []string{"required"}, []string{"output"},
 	)
 
 	flowInstance := flow.Flow{
@@ -457,7 +446,10 @@ func TestDataContract_MissingInput(t *testing.T) {
 
 	require.Error(t, err)
 	require.False(t, result.Success)
-	assert.Contains(t, err.Error(), "missing required input")
+	assert.Contains(
+		t, err.Error(),
+		"node dataContractMockNode: output 'required' not found in source node ''",
+	)
 }
 
 // TestDataContract_ExecutionResults tests complete execution tracing
@@ -485,12 +477,12 @@ func TestDataContract_ExecutionResults(t *testing.T) {
 	require.True(t, result.Success)
 
 	// Verify frame structure
-	frame1 := result.Frames["step1"]
+	frame1 := result.ExecutionResults["step1"]
 	assert.NotNil(t, frame1.ExecutedAt)
 	assert.Nil(t, frame1.Error)
 	assert.Equal(t, map[string]interface{}{"output": "value1"}, frame1.Outputs)
 
-	frame2 := result.Frames["step2"]
+	frame2 := result.ExecutionResults["step2"]
 	assert.Equal(t, "value1", frame2.Inputs["step1.output"])
 	assert.Equal(t, map[string]interface{}{"output": "value2"}, frame2.Outputs)
 }

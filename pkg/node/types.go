@@ -11,6 +11,14 @@ type AnyNode interface {
 	// Examples: []string{"statusCode", "userId", "responseBody"}
 	OutputSchema() []string
 
+	// GetAssertions returns the list of assertions to validate during execution
+	// Assertions should be evaluated before extractions
+	GetAssertions() []CompositeAssertion
+
+	// GetOutputs returns the list of extractions to perform on the response/data
+	// Outputs should be evaluated after assertions pass
+	GetOutputs() []Output
+
 	// Execute performs the node's action with provided inputs
 	// Returns a map of output data keyed by names in OutputSchema()
 	// Error indicates execution failure
@@ -51,9 +59,9 @@ type ExecutionResult struct {
 
 // FlowExecutionResult contains the complete trace of a flow execution
 type FlowExecutionResult struct {
-	Frames       map[string]ExecutionResult // Execution frame keyed by node ID
-	FinalOutputs map[string]interface{}     // All outputs flattened for convenience (format: "nodeId.outputKey": value)
-	Success      bool
-	Error        error
-	DurationMS   int64
+	ExecutionResults map[string]ExecutionResult // Execution frame keyed by node ID
+	FinalOutputs     map[string]interface{}     // All outputs flattened for convenience (format: "nodeId.outputKey": value)
+	Success          bool
+	Error            error
+	DurationMS       int64
 }

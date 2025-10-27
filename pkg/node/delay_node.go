@@ -11,11 +11,8 @@ type DelayData struct {
 
 // DelayNode is a typed node for delays.
 type DelayNode struct {
-	ID         string    `json:"id"`
-	Type       Type      `json:"type"`
-	Data       DelayData `json:"data"`
-	InputDeps  []string  `json:"inputSchema"`
-	OutputKeys []string  `json:"outputSchema"`
+	BaseNode
+	Data DelayData `json:"data"`
 }
 
 // AsDelayNode safely casts an AnyNode to a DelayNode
@@ -35,20 +32,14 @@ func MustAsDelayNode(node AnyNode) *DelayNode {
 	return delayNode
 }
 
-func (n *DelayNode) GetID() string {
-	return n.ID
-}
-
-func (n *DelayNode) GetType() Type {
-	return n.Type
-}
-
+// InputSchema returns empty as DelayNode doesn't need inputs
 func (n *DelayNode) InputSchema() []string {
-	return n.InputDeps
+	return []string{}
 }
 
+// OutputSchema returns empty as DelayNode doesn't produce outputs
 func (n *DelayNode) OutputSchema() []string {
-	return n.OutputKeys
+	return []string{}
 }
 
 // Execute sleeps for the specified duration and optionally passes through input values

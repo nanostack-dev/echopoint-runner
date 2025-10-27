@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/nanostack-dev/echopoint-flow-engine/pkg/extractors"
 )
 
 type RequestData struct {
@@ -16,22 +18,12 @@ type RequestData struct {
 	QueryParams map[string]interface{} `json:"queryParams"`
 	Body        interface{}            `json:"body"`
 	Timeout     int                    `json:"timeout"`
-	Assertions  []CompositeAssertion   `json:"assertions"`
-	Extractions []Extraction
-}
-type Extraction struct {
-	Name string `json:"name"`
-	Type string `json:"type"`
-	Path string `json:"path,omitempty"`
 }
 
 // RequestNode is a typed node for HTTP requests.
 type RequestNode struct {
-	ID         string      `json:"id"`
-	Type       Type        `json:"type"`
-	Data       RequestData `json:"data"`
-	InputDeps  []string    `json:"inputSchema"`
-	OutputKeys []string    `json:"outputSchema"`
+	BaseNode
+	Data RequestData `json:"data"`
 }
 
 // AsRequestNode safely casts an AnyNode to a RequestNode
@@ -51,24 +43,20 @@ func MustAsRequestNode(node AnyNode) *RequestNode {
 	return reqNode
 }
 
-func (n *RequestNode) GetID() string {
-	return n.ID
-}
-
-func (n *RequestNode) GetType() Type {
-	return n.Type
-}
-
 func (n *RequestNode) GetData() RequestData {
 	return n.Data
 }
 
+// InputSchema infers inputs from template variables in URL, Headers, QueryParams, and Body
 func (n *RequestNode) InputSchema() []string {
-	return n.InputDeps
+	si := &SchemaInference{}
+	return si.InferRequestNodeInputSchema(n.Data)
 }
 
+// OutputSchema infers outputs from the Outputs list
 func (n *RequestNode) OutputSchema() []string {
-	return n.OutputKeys
+	si := &SchemaInference{}
+	return si.InferRequestNodeOutputSchema(n.GetOutputs())
 }
 
 func (n *RequestNode) Execute(ctx ExecutionContext) (map[string]interface{}, error) {
@@ -106,20 +94,24 @@ func (n *RequestNode) Execute(ctx ExecutionContext) (map[string]interface{}, err
 		parsedBody = string(respBody)
 	}
 
+	// Create a ResponseContext that implements all capability interfaces
+	respCtx := extractors.NewResponseContext(resp, respBody, parsedBody)
+
 	// Run assertions (these validate but don't produce output)
-	for _, assertion := range n.Data.Assertions {
-		if !n.validate(assertion, parsedBody, resp) {
+	for _, assertion := range n.GetAssertions() {
+		if !n.validate(assertion, respCtx) {
 			return nil, fmt.Errorf("assertion failed: %v", assertion)
 		}
 	}
 
 	// Extract data as declared in outputSchema
-	for _, extraction := range n.Data.Extractions {
-		value, err := n.extract(extraction, parsedBody, resp)
+	// Each extractor declares what capabilities it needs via interface type assertions
+	for _, outputItem := range n.GetOutputs() {
+		value, err := outputItem.Extractor.Extract(respCtx)
 		if err != nil {
 			return nil, err
 		}
-		output[extraction.Name] = value
+		output[outputItem.Name] = value
 	}
 
 	// Validate output matches OutputSchema()
@@ -145,31 +137,13 @@ func (n *RequestNode) resolveTemplates(
 	return resolved
 }
 
-func (n *RequestNode) extract(
-	extraction Extraction, body interface{}, resp *http.Response,
-) (interface{}, error) {
-	switch extraction.Type {
-	case "statusCode":
-		return resp.StatusCode, nil
-	case "header":
-		return resp.Header.Get(extraction.Path), nil
-	case "body":
-		return body, nil
-	case "jsonPath":
-		// TODO: Implement JSONPath extraction using jsonpath library
-		// For now, return the entire body
-		return body, nil
-	default:
-		return nil, fmt.Errorf("unknown extraction type: %s", extraction.Type)
-	}
-}
-
 func (n *RequestNode) validate(
-	assertion CompositeAssertion, body interface{}, resp *http.Response,
+	assertion CompositeAssertion, ctx extractors.ResponseContext,
 ) bool {
 	// TODO: Implement validation using extractor and operator factories
 	// This requires creating factory functions for extractors and operators
 	// For now, return true to allow basic flow execution
+	// The context now provides access to status, headers, body, parsed body via interfaces
 	return true
 }
 

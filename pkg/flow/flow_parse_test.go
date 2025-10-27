@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	"github.com/nanostack-dev/echopoint-flow-engine/pkg/edge"
+	"github.com/nanostack-dev/echopoint-flow-engine/pkg/extractors"
+	httpextractors "github.com/nanostack-dev/echopoint-flow-engine/pkg/extractors/http"
 	"github.com/nanostack-dev/echopoint-flow-engine/pkg/flow"
 	"github.com/nanostack-dev/echopoint-flow-engine/pkg/node"
 	"github.com/stretchr/testify/assert"
@@ -55,7 +57,34 @@ func TestSimpleParseFromJson(t *testing.T) {
 
 			assert.Equal(t, 30000, data.Timeout, "timeout should be 30000")
 
-			require.Len(t, data.Assertions, 2, "should have 2 assertions")
+			// Validate assertions - they should have extractors now
+			assertions := reqNode.GetAssertions()
+			require.Len(t, assertions, 2, "should have 2 assertions")
+
+			// First assertion should have StatusCode extractor
+			firstAssertion := assertions[0]
+			require.NotNil(t, firstAssertion.Extractor, "first assertion should have extractor")
+			_, isStatusCode := firstAssertion.Extractor.(httpextractors.StatusCodeExtractor)
+			assert.True(t, isStatusCode, "first assertion extractor should be StatusCodeExtractor")
+
+			// Second assertion should have JSONPath extractor
+			secondAssertion := assertions[1]
+			require.NotNil(t, secondAssertion.Extractor, "second assertion should have extractor")
+			jsonExt, ok := secondAssertion.Extractor.(extractors.JSONPathExtractor)
+			assert.True(t, ok, "second assertion extractor should be JSONPathExtractor")
+			assert.Equal(t, "$.user.id", jsonExt.Path, "JSONPath should match")
+
+			// Validate outputs with extractors
+			outputs := reqNode.GetOutputs()
+			require.Len(t, outputs, 2, "should have 2 outputs")
+
+			// First output: userId with JSONPath extractor
+			assert.Equal(t, "userId", outputs[0].Name, "first output name should be userId")
+			require.NotNil(t, outputs[0].Extractor, "first output should have extractor")
+
+			// Second output: statusCode with StatusCode extractor
+			assert.Equal(t, "statusCode", outputs[1].Name, "second output name should be statusCode")
+			require.NotNil(t, outputs[1].Extractor, "second output should have extractor")
 		},
 	)
 
@@ -73,7 +102,21 @@ func TestSimpleParseFromJson(t *testing.T) {
 			assert.Equal(t, "GET", data.Method, "method should be GET")
 			assert.Equal(t, "https://api.example.com/users", data.URL, "url should match")
 
-			require.Len(t, data.Assertions, 1, "should have 1 assertion")
+			// Validate assertions
+			assertions := reqNode.GetAssertions()
+			require.Len(t, assertions, 1, "should have 1 assertion")
+
+			// The assertion should have a StatusCode extractor
+			assertion := assertions[0]
+			require.NotNil(t, assertion.Extractor, "assertion should have extractor")
+			_, isStatusCode := assertion.Extractor.(httpextractors.StatusCodeExtractor)
+			assert.True(t, isStatusCode, "assertion extractor should be StatusCodeExtractor")
+
+			// Validate outputs
+			outputs := reqNode.GetOutputs()
+			require.Len(t, outputs, 1, "should have 1 output")
+			assert.Equal(t, "responseStatus", outputs[0].Name, "output name should be responseStatus")
+			require.NotNil(t, outputs[0].Extractor, "output should have extractor")
 		},
 	)
 
@@ -95,7 +138,12 @@ func TestSimpleParseFromJson(t *testing.T) {
 			require.True(t, ok, "body should be a map")
 			assert.Equal(t, "User creation failed", body["error"], "error message should match")
 
-			assert.Empty(t, data.Assertions, "should have 0 assertions")
+			// Validate assertions
+			assert.Empty(t, reqNode.GetAssertions(), "should have 0 assertions")
+
+			// Validate outputs
+			outputs := reqNode.GetOutputs()
+			assert.Empty(t, outputs, "should have 0 outputs")
 		},
 	)
 
@@ -136,3 +184,107 @@ func TestParseFromJSON_EmptyNodes(t *testing.T) {
 	assert.Empty(t, flowResult.Nodes, "should have 0 nodes")
 	assert.Empty(t, flowResult.Edges, "should have 0 edges")
 }
+
+func TestParseFromJSON_ExtractorTypes(t *testing.T) {
+	// Test that extractors are properly unmarshaled with correct types
+	file, err := os.ReadFile("test.json")
+	require.NoError(t, err, "should read test.json file")
+	flowResult, err := flow.ParseFromJSON(file)
+	require.NoError(t, err, "should parse from json")
+
+	t.Run("JSONPathExtractor", func(t *testing.T) {
+		reqNode, ok := node.AsRequestNode(flowResult.Nodes[0])
+		require.True(t, ok, "first node should be a RequestNode")
+
+		outputs := reqNode.GetOutputs()
+		require.Len(t, outputs, 2, "should have 2 outputs")
+
+		// First output should be JSONPath extractor
+		firstOutput := outputs[0]
+		assert.Equal(t, "userId", firstOutput.Name, "first output should be userId")
+		require.NotNil(t, firstOutput.Extractor, "first output should have extractor")
+
+		// Verify it's a JSONPath extractor by checking type
+		jsonPathExt, ok := firstOutput.Extractor.(extractors.JSONPathExtractor)
+		require.True(t, ok, "first extractor should be JSONPathExtractor, got type %T", firstOutput.Extractor)
+		assert.Equal(t, "$.user.id", jsonPathExt.Path, "JSONPath should match")
+	})
+
+	t.Run("StatusCodeExtractor", func(t *testing.T) {
+		reqNode, ok := node.AsRequestNode(flowResult.Nodes[0])
+		require.True(t, ok, "first node should be a RequestNode")
+
+		outputs := reqNode.GetOutputs()
+		require.Len(t, outputs, 2, "should have 2 outputs")
+
+		// Second output should be StatusCode extractor
+		secondOutput := outputs[1]
+		assert.Equal(t, "statusCode", secondOutput.Name, "second output should be statusCode")
+		require.NotNil(t, secondOutput.Extractor, "second output should have extractor")
+
+		// Verify it's a StatusCode extractor by checking type
+		_, ok = secondOutput.Extractor.(httpextractors.StatusCodeExtractor)
+		require.True(t, ok, "second extractor should be StatusCodeExtractor, got type %T", secondOutput.Extractor)
+	})
+
+	t.Run("OutputNames", func(t *testing.T) {
+		req1, ok := node.AsRequestNode(flowResult.Nodes[0])
+		require.True(t, ok)
+		outputs1 := req1.GetOutputs()
+		assert.Equal(t, "userId", outputs1[0].Name)
+		assert.Equal(t, "statusCode", outputs1[1].Name)
+
+		req2, ok := node.AsRequestNode(flowResult.Nodes[1])
+		require.True(t, ok)
+		outputs2 := req2.GetOutputs()
+		assert.Equal(t, "responseStatus", outputs2[0].Name)
+
+		req3, ok := node.AsRequestNode(flowResult.Nodes[2])
+		require.True(t, ok)
+		outputs3 := req3.GetOutputs()
+		assert.Len(t, outputs3, 0, "req-error should have no outputs")
+	})
+}
+
+func TestParseFromJSON_ExtractorFactory(t *testing.T) {
+	// Test the extractor factory directly
+	t.Run("StatusCodeExtractor", func(t *testing.T) {
+		data := []byte(`{"type": "statusCode"}`)
+		ext, err := extractors.UnmarshalExtractor(data)
+		require.NoError(t, err, "should unmarshal StatusCode extractor")
+		require.NotNil(t, ext, "extractor should not be nil")
+		_, ok := ext.(httpextractors.StatusCodeExtractor)
+		assert.True(t, ok, "should be StatusCodeExtractor, got %T", ext)
+	})
+
+	t.Run("JSONPathExtractor", func(t *testing.T) {
+		data := []byte(`{"type": "jsonPath", "path": "$.user.id"}`)
+		ext, err := extractors.UnmarshalExtractor(data)
+		require.NoError(t, err, "should unmarshal JSONPath extractor")
+		require.NotNil(t, ext, "extractor should not be nil")
+		jsonPathExt, ok := ext.(extractors.JSONPathExtractor)
+		assert.True(t, ok, "should be JSONPathExtractor, got %T", ext)
+		assert.Equal(t, "$.user.id", jsonPathExt.Path, "path should match")
+	})
+
+	t.Run("HeaderExtractor", func(t *testing.T) {
+		data := []byte(`{"type": "header", "headerName": "Content-Type"}`)
+		ext, err := extractors.UnmarshalExtractor(data)
+		require.NoError(t, err, "should unmarshal Header extractor")
+		require.NotNil(t, ext, "extractor should not be nil")
+		headerExt, ok := ext.(httpextractors.HeaderExtractor)
+		assert.True(t, ok, "should be HeaderExtractor, got %T", ext)
+		assert.Equal(t, "Content-Type", headerExt.HeaderName, "header name should match")
+	})
+
+	t.Run("UnknownExtractor", func(t *testing.T) {
+		data := []byte(`{"type": "unknown"}`)
+		ext, err := extractors.UnmarshalExtractor(data)
+		assert.Error(t, err, "should return error for unknown extractor type")
+		assert.Nil(t, ext, "extractor should be nil")
+		assert.Contains(t, err.Error(), "unknown extractor type")
+	})
+}
+
+// Import statement for httpextractors (add to imports if not present)
+// This is handled by the test code above

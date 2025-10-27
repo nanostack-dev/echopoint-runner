@@ -6,46 +6,61 @@
     {
       "id": "req-1",
       "type": "request",
+      "assertions": [
+        {
+          "extractor": {"type": "statusCode"},
+          "operator": {"type": "equals", "value": 201}
+        },
+        {
+          "extractor": {"type": "jsonPath", "path": "$.user.id"},
+          "operator": {"type": "notEmpty"}
+        }
+      ],
+      "outputs": [
+        {
+          "name": "userId",
+          "extractor": {"type": "jsonPath", "path": "$.user.id"}
+        },
+        {
+          "name": "statusCode",
+          "extractor": {"type": "statusCode"}
+        }
+      ],
       "data": {
         "method": "POST",
         "url": "https://api.example.com/users",
         "headers": {"Content-Type": "application/json"},
         "queryParams": {},
         "body": {"name": "John Doe", "email": "john@example.com"},
-        "timeout": 30000,
-        "assertions": [
-          {
-            "type": "status",
-            "operator": "equals",
-            "expected": 201
-          },
-          {
-            "type": "jsonPath",
-            "path": "$.user.id",
-            "operator": "exists"
-          }
-        ]
+        "timeout": 30000
       }
     },
     {
       "id": "req-success",
       "type": "request",
+      "assertions": [
+        {"extractor": {"type": "statusCode"}, "operator": {"type": "equals", "value": 200}}
+      ],
+      "outputs": [
+        {
+          "name": "responseStatus",
+          "extractor": {"type": "statusCode"}
+        }
+      ],
       "data": {
         "method": "GET",
-        "url": "https://api.example.com/users",
-        "assertions": [
-          {"type": "status", "operator": "equals", "expected": 200}
-        ]
+        "url": "https://api.example.com/users"
       }
     },
     {
       "id": "req-error",
       "type": "request",
+      "assertions": [],
+      "outputs": [],
       "data": {
         "method": "POST",
         "url": "https://api.example.com/error-log",
-        "body": {"error": "User creation failed"},
-        "assertions": []
+        "body": {"error": "User creation failed"}
       }
     }
   ],

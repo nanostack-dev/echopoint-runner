@@ -77,9 +77,9 @@ func (engine *FlowEngine) Execute(initialInputs map[string]interface{}) (
 ) {
 	startTime := time.Now()
 	result := &node.FlowExecutionResult{
-		Frames:       make(map[string]node.ExecutionResult),
-		FinalOutputs: make(map[string]interface{}),
-		Success:      false,
+		ExecutionResults: make(map[string]node.ExecutionResult),
+		FinalOutputs:     make(map[string]interface{}),
+		Success:          false,
 	}
 
 	if len(engine.nodeEdgeInput) == 0 {
@@ -138,18 +138,18 @@ func (engine *FlowEngine) Execute(initialInputs map[string]interface{}) (
 
 		outputData, err := nodeToExecute.Execute(executionCtx)
 
-		// Record the execution frame
-		frame := node.ExecutionResult{
+		// Record the execution executionFrame
+		executionFrame := node.ExecutionResult{
 			NodeID:     nodeToExecute.GetID(),
 			Inputs:     inputs,
 			Outputs:    outputData,
 			Error:      err,
 			ExecutedAt: time.Now(),
 		}
-		result.Frames[nodeToExecute.GetID()] = frame
+		result.ExecutionResults[nodeToExecute.GetID()] = executionFrame
 
 		if engine.afterExecution != nil {
-			engine.afterExecution(nodeToExecute, frame)
+			engine.afterExecution(nodeToExecute, executionFrame)
 		}
 
 		// Handle execution failure

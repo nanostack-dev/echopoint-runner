@@ -1,0 +1,19 @@
+{
+  "request": {
+    "method": "GET",
+    "urlPathPattern": "/users/.*"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "jsonBody": {
+      "user": {
+        "id": "123",
+        "name": "Alice Smith",
+        "email": "alice@example.com"
+      }
+    }
+  }
+}

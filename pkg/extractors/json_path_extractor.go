@@ -12,29 +12,29 @@ type JSONPathExtractor struct {
 	Path string `json:"path"`
 }
 
-func (e JSONPathExtractor) Extract(response interface{}) (interface{}, error) {
+func (e JSONPathExtractor) Extract(ctx ResponseContext) (interface{}, error) {
 	// Parse the JSONPath expression
 	path, err := jsonpath.Parse(e.Path)
 	if err != nil {
 		return nil, fmt.Errorf("invalid JSONPath expression '%s': %w", e.Path, err)
 	}
 
-	// Convert response to JSON-compatible format if needed
+	// Get parsed body from context using ParsedBodyReader interface
 	var jsonData interface{}
-	switch v := response.(type) {
-	case string:
-		// If response is a JSON string, unmarshal it
-		if unmarshalErr := json.Unmarshal([]byte(v), &jsonData); unmarshalErr != nil {
-			return nil, fmt.Errorf("failed to parse JSON string: %w", unmarshalErr)
+
+	// Try to get parsed body first
+	if pbr, ok := ctx.(ParsedBodyReader); ok {
+		jsonData = pbr.GetParsedBody()
+	} else {
+		// Fallback: try to get raw body and parse it
+		if rbr, ok := ctx.(ParsedBodyReader); ok {
+			rawBody := rbr.GetRawBody()
+			if unmarshalErr := json.Unmarshal(rawBody, &jsonData); unmarshalErr != nil {
+				return nil, fmt.Errorf("failed to parse JSON from body: %w", unmarshalErr)
+			}
+		} else {
+			return nil, fmt.Errorf("context does not support ParsedBodyReader interface")
 		}
-	case []byte:
-		// If response is JSON bytes, unmarshal it
-		if unmarshalErr := json.Unmarshal(v, &jsonData); unmarshalErr != nil {
-			return nil, fmt.Errorf("failed to parse JSON bytes: %w", unmarshalErr)
-		}
-	default:
-		// Response is already a Go data structure
-		jsonData = response
 	}
 
 	// Execute the JSONPath query
