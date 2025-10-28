@@ -242,7 +242,7 @@ func TestParseFromJSON_ExtractorTypes(t *testing.T) {
 		req3, ok := node.AsRequestNode(flowResult.Nodes[2])
 		require.True(t, ok)
 		outputs3 := req3.GetOutputs()
-		assert.Len(t, outputs3, 0, "req-error should have no outputs")
+		assert.Empty(t, outputs3, "req-error should have no outputs")
 	})
 }
 
@@ -280,7 +280,7 @@ func TestParseFromJSON_ExtractorFactory(t *testing.T) {
 	t.Run("UnknownExtractor", func(t *testing.T) {
 		data := []byte(`{"type": "unknown"}`)
 		ext, err := extractors.UnmarshalExtractor(data)
-		assert.Error(t, err, "should return error for unknown extractor type")
+		require.Error(t, err, "should return error for unknown extractor type")
 		assert.Nil(t, ext, "extractor should be nil")
 		assert.Contains(t, err.Error(), "unknown extractor type")
 	})

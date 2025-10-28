@@ -27,21 +27,21 @@ var ErrNotImplemented = errors.New("extractor not implemented")
 // Concrete implementations can opt-in to specific capability interfaces.
 type ResponseContext interface {
 	// All extractors can query what capabilities are available
-	HasCapability(cap string) bool
+	HasCapability(capability string) bool
 }
 
-// StatusReader provides access to HTTP status code
+// StatusReader provides access to HTTP status code.
 type StatusReader interface {
 	GetStatus() int
 }
 
-// HeaderAccessor provides access to HTTP headers
+// HeaderAccessor provides access to HTTP headers.
 type HeaderAccessor interface {
 	GetHeader(key string) string
 	Headers() http.Header
 }
 
-// BodyReader provides access to the response body as a stream
+// BodyReader provides access to the response body as a stream.
 type BodyReader interface {
 	GetBody() io.Reader
 }
@@ -52,7 +52,7 @@ type ParsedBodyReader interface {
 	GetRawBody() []byte
 }
 
-// TimingInfo provides access to response timing information
+// TimingInfo provides access to response timing information.
 type TimingInfo interface {
 	GetDuration() interface{} // Can be used for future timing metrics
 }

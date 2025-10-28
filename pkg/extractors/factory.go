@@ -3,18 +3,23 @@ package extractors
 import (
 	"encoding/json"
 	"fmt"
+	"sync"
 )
 
-// extractorRegistry holds factory functions for different extractor types
-// This allows other packages to register their extractors without circular imports
-var extractorRegistry = make(map[ExtractorType]func([]byte) (AnyExtractor, error))
+//nolint:gochecknoglobals
+var (
+	extractorRegistry = make(map[ExtractorType]func([]byte) (AnyExtractor, error))
+	registryMutex     sync.RWMutex
+)
 
-// RegisterExtractor registers a factory function for an extractor type
+// RegisterExtractor registers a factory function for an extractor type.
 func RegisterExtractor(extType ExtractorType, factory func([]byte) (AnyExtractor, error)) {
+	registryMutex.Lock()
+	defer registryMutex.Unlock()
 	extractorRegistry[extType] = factory
 }
 
-// UnmarshalExtractor creates an appropriate Extractor from raw JSON
+// UnmarshalExtractor creates an appropriate Extractor from raw JSON.
 func UnmarshalExtractor(data []byte) (AnyExtractor, error) {
 	var peek struct {
 		Type ExtractorType `json:"type"`
@@ -46,11 +51,17 @@ func UnmarshalExtractor(data []byte) (AnyExtractor, error) {
 		}
 		return extractor, nil
 
-	default:
-		// Check if extractor is registered (e.g., from http package)
-		if factory, ok := extractorRegistry[peek.Type]; ok {
+	case ExtractorTypeStatusCode, ExtractorTypeHeader:
+		// These are registered in the http package init()
+		registryMutex.RLock()
+		factory, ok := extractorRegistry[peek.Type]
+		registryMutex.RUnlock()
+		if ok {
 			return factory(data)
 		}
+		return nil, fmt.Errorf("extractor type %s not registered", peek.Type)
+
+	default:
 		return nil, fmt.Errorf("unknown extractor type: %s", peek.Type)
 	}
 }

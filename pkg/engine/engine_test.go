@@ -48,7 +48,7 @@ func (n *MockNode) GetOutputs() []node.Output {
 	return []node.Output{}
 }
 
-func (n *MockNode) Execute(ctx node.ExecutionContext) (map[string]interface{}, error) {
+func (n *MockNode) Execute(_ node.ExecutionContext) (map[string]interface{}, error) {
 	n.executed = true
 	if n.shouldError {
 		return nil, errors.New("mock error")
@@ -362,7 +362,7 @@ func TestFlowEngine_Execute_WithBeforeAndAfterCallbacks(t *testing.T) {
 			BeforeExecution: func(n node.AnyNode) {
 				beforeCalls = append(beforeCalls, n.GetID())
 			},
-			AfterExecution: func(n node.AnyNode, frame node.ExecutionResult) {
+			AfterExecution: func(n node.AnyNode, _ node.ExecutionResult) {
 				afterCalls = append(afterCalls, n.GetID())
 			},
 		},
@@ -384,7 +384,7 @@ func TestFlowEngine_Execute_WithBeforeAndAfterCallbacks(t *testing.T) {
 
 // ========== DATA CONTRACT TESTS ==========
 
-// TestDataContract_SimpleDataPassing tests basic multi-node data passing
+// TestDataContract_SimpleDataPassing tests basic multi-node data passing.
 func TestDataContract_SimpleDataPassing(t *testing.T) {
 	node1 := newDataContractMockNode("create-user", []string{}, []string{"userId", "statusCode"})
 	node1.outputs = map[string]interface{}{
@@ -424,7 +424,7 @@ func TestDataContract_SimpleDataPassing(t *testing.T) {
 	assert.Equal(t, "user-123", frame2.Inputs["create-user.userId"])
 }
 
-// TestDataContract_MissingInput tests error handling for missing inputs
+// TestDataContract_MissingInput tests error handling for missing inputs.
 func TestDataContract_MissingInput(t *testing.T) {
 	dataContractMockNode := newDataContractMockNode(
 		"dataContractMockNode", []string{"required"}, []string{"output"},
@@ -452,7 +452,7 @@ func TestDataContract_MissingInput(t *testing.T) {
 	)
 }
 
-// TestDataContract_ExecutionResults tests complete execution tracing
+// TestDataContract_ExecutionResults tests complete execution tracing.
 func TestDataContract_ExecutionResults(t *testing.T) {
 	node1 := newDataContractMockNode("step1", []string{}, []string{"output"})
 	node1.outputs = map[string]interface{}{"output": "value1"}
@@ -479,7 +479,7 @@ func TestDataContract_ExecutionResults(t *testing.T) {
 	// Verify frame structure
 	frame1 := result.ExecutionResults["step1"]
 	assert.NotNil(t, frame1.ExecutedAt)
-	assert.Nil(t, frame1.Error)
+	require.NoError(t, frame1.Error)
 	assert.Equal(t, map[string]interface{}{"output": "value1"}, frame1.Outputs)
 
 	frame2 := result.ExecutionResults["step2"]

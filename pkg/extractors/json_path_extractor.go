@@ -2,6 +2,7 @@ package extractors
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/theory/jsonpath"
@@ -22,18 +23,18 @@ func (e JSONPathExtractor) Extract(ctx ResponseContext) (interface{}, error) {
 	// Get parsed body from context using ParsedBodyReader interface
 	var jsonData interface{}
 
-	// Try to get parsed body first
-	if pbr, ok := ctx.(ParsedBodyReader); ok {
-		jsonData = pbr.GetParsedBody()
-	} else {
-		// Fallback: try to get raw body and parse it
-		if rbr, ok := ctx.(ParsedBodyReader); ok {
-			rawBody := rbr.GetRawBody()
-			if unmarshalErr := json.Unmarshal(rawBody, &jsonData); unmarshalErr != nil {
-				return nil, fmt.Errorf("failed to parse JSON from body: %w", unmarshalErr)
-			}
-		} else {
-			return nil, fmt.Errorf("context does not support ParsedBodyReader interface")
+	// Try to get parsed body from context
+	pbr, ok := ctx.(ParsedBodyReader)
+	if !ok {
+		return nil, errors.New("context does not support ParsedBodyReader interface")
+	}
+
+	jsonData = pbr.GetParsedBody()
+	if jsonData == nil {
+		// Fallback: try to parse raw body manually
+		rawBody := pbr.GetRawBody()
+		if unmarshalErr := json.Unmarshal(rawBody, &jsonData); unmarshalErr != nil {
+			return nil, fmt.Errorf("failed to parse JSON from body: %w", unmarshalErr)
 		}
 	}
 

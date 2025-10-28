@@ -120,6 +120,15 @@ func GetExtractorCompatibilityMap() map[extractors.ExtractorType]ExtractorOperat
 				operators.OperatorTypeNotEmpty,
 			},
 		},
+		extractors.ExtractorTypeBody: {
+			ExtractorType: extractors.ExtractorTypeBody,
+			OutputType:    "any", // Can be any type (parsed JSON, XML, string, etc.)
+			CompatibleOperators: []operators.OperatorType{
+				// Any/body operators - body is captured as-is
+				operators.OperatorTypeNotEmpty,
+				operators.OperatorTypeEmpty,
+			},
+		},
 	}
 }
 

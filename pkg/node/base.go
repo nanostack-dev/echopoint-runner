@@ -2,7 +2,7 @@ package node
 
 import "github.com/nanostack-dev/echopoint-flow-engine/pkg/extractors"
 
-// Output represents a named output with an associated extractor
+// Output represents a named output with an associated extractor.
 type Output struct {
 	Name      string                  `json:"name"`
 	Extractor extractors.AnyExtractor `json:"extractor"`
@@ -17,7 +17,7 @@ type BaseNode struct {
 	Outputs    []Output             `json:"outputs"`
 }
 
-// GetID returns the unique identifier for this node
+// GetID returns the unique identifier for this node.
 func (bn *BaseNode) GetID() string {
 	return bn.ID
 }
@@ -29,7 +29,7 @@ func (bn *BaseNode) GetType() Type {
 
 // InputSchema returns the list of required inputs for this node
 // This method must be overridden by concrete node types to provide computed schemas
-// Format: "nodeId.outputKey" (e.g., "create-user.userId") or plain variable name
+// Format: "nodeId.outputKey" (e.g., "create-user.userId") or plain variable name.
 func (bn *BaseNode) InputSchema() []string {
 	// Default implementation - should be overridden by concrete types
 	return []string{}
@@ -37,20 +37,20 @@ func (bn *BaseNode) InputSchema() []string {
 
 // OutputSchema returns the list of outputs this node produces
 // This method must be overridden by concrete node types to provide computed schemas
-// Examples: []string{"statusCode", "userId", "responseBody"}
+// Examples: []string{"statusCode", "userId", "responseBody"}.
 func (bn *BaseNode) OutputSchema() []string {
 	// Default implementation - should be overridden by concrete types
 	return []string{}
 }
 
 // GetAssertions returns the list of assertions to validate during execution
-// Assertions should be evaluated before extractions
+// Assertions should be evaluated before extractions.
 func (bn *BaseNode) GetAssertions() []CompositeAssertion {
 	return bn.Assertions
 }
 
 // GetOutputs returns the list of extractions to perform on the response/data
-// Outputs should be evaluated after assertions pass
+// Outputs should be evaluated after assertions pass.
 func (bn *BaseNode) GetOutputs() []Output {
 	return bn.Outputs
 }

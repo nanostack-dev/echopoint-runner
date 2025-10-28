@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// loadFlowFromJSON loads a flow definition from a JSON file
+// loadFlowFromJSON loads a flow definition from a JSON file.
 func loadFlowFromJSON(t *testing.T, filename string) *flow.Flow {
 	// Construct path to examples directory
 	examplesDir := filepath.Join(".", "examples")
@@ -34,7 +34,7 @@ func loadFlowFromJSON(t *testing.T, filename string) *flow.Flow {
 // 1. Create a user via POST request (uses initial variables)
 // 2. Extract user ID from response
 // 3. Fetch the created user (uses extracted user ID from step 1)
-// 4. Verify the data matches what was sent
+// 4. Verify the data matches what was sent.
 func Test_CreateUserFlow(t *testing.T) {
 	ctx := shared.GetFlowEngineContext()
 	require.NotNil(t, ctx, "test context should be initialized")
@@ -55,7 +55,7 @@ func Test_CreateUserFlow(t *testing.T) {
 	// Verify execution succeeded
 	require.NoError(t, err, "flow execution should not error")
 	require.True(t, result.Success, "flow should execute successfully")
-	require.Greater(t, result.DurationMS, int64(0), "flow should track duration")
+	require.Positive(t, result.DurationMS, "flow should track duration")
 
 	// === VERIFY STEP 1: Create User ===
 	createUserFrame := result.ExecutionResults["create-user"]

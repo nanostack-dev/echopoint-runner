@@ -19,7 +19,7 @@ func TestStatusCodeExtractor_GetType(t *testing.T) {
 func TestStatusCodeExtractor_Extract_Success(t *testing.T) {
 	extractor := httpextractors.StatusCodeExtractor{}
 	response := &http.Response{
-		StatusCode: 200,
+		StatusCode: http.StatusOK,
 		Header: http.Header{
 			"Content-Type": {"application/json"},
 		},

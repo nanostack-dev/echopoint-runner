@@ -6,12 +6,12 @@ import (
 	"regexp"
 )
 
-// TemplateResolver handles resolution of {{variableName}} templates in strings and objects
+// TemplateResolver handles resolution of {{variableName}} templates in strings and objects.
 type TemplateResolver struct {
 	variables map[string]interface{}
 }
 
-// NewTemplateResolver creates a new template resolver with the given variables
+// NewTemplateResolver creates a new template resolver with the given variables.
 func NewTemplateResolver(variables map[string]interface{}) *TemplateResolver {
 	return &TemplateResolver{
 		variables: variables,
@@ -19,11 +19,11 @@ func NewTemplateResolver(variables map[string]interface{}) *TemplateResolver {
 }
 
 // Resolve recursively resolves all {{variableName}} templates in the given value
-// Supports strings, maps, slices, and nested structures
+// Supports strings, maps, slices, and nested structures.
 func (tr *TemplateResolver) Resolve(value interface{}) (interface{}, error) {
 	switch v := value.(type) {
 	case string:
-		return tr.resolveString(v)
+		return tr.resolveString(v), nil
 	case map[string]interface{}:
 		return tr.resolveMap(v)
 	case []interface{}:
@@ -40,8 +40,8 @@ func (tr *TemplateResolver) Resolve(value interface{}) (interface{}, error) {
 	}
 }
 
-// resolveString replaces all {{variableName}} patterns with their values
-func (tr *TemplateResolver) resolveString(s string) (string, error) {
+// resolveString replaces all {{variableName}} patterns with their values.
+func (tr *TemplateResolver) resolveString(s string) string {
 	// Pattern: {{variableName}}
 	pattern := regexp.MustCompile(`\{\{([^}]+)\}\}`)
 
@@ -56,10 +56,10 @@ func (tr *TemplateResolver) resolveString(s string) (string, error) {
 		},
 	)
 
-	return result, nil
+	return result
 }
 
-// resolveMap recursively resolves templates in all map values
+// resolveMap recursively resolves templates in all map values.
 func (tr *TemplateResolver) resolveMap(m map[string]interface{}) (map[string]interface{}, error) {
 	resolved := make(map[string]interface{})
 
@@ -74,7 +74,7 @@ func (tr *TemplateResolver) resolveMap(m map[string]interface{}) (map[string]int
 	return resolved, nil
 }
 
-// resolveSlice recursively resolves templates in all slice elements
+// resolveSlice recursively resolves templates in all slice elements.
 func (tr *TemplateResolver) resolveSlice(s []interface{}) ([]interface{}, error) {
 	resolved := make([]interface{}, len(s))
 
@@ -89,33 +89,24 @@ func (tr *TemplateResolver) resolveSlice(s []interface{}) ([]interface{}, error)
 	return resolved, nil
 }
 
-// ResolveTemplatesInRequest is a convenience function for RequestNode to resolve templates
+// ResolveTemplatesInRequest is a convenience function for RequestNode to resolve templates.
 func ResolveTemplatesInRequest(
 	url string, headers map[string]string, body interface{}, inputs map[string]interface{},
-) (
-	resolvedURL string, resolvedHeaders map[string]string, resolvedBody interface{}, err error,
-) {
-
+) (string, map[string]string, interface{}, error) {
 	resolver := NewTemplateResolver(inputs)
 
 	// Resolve URL
-	resolvedURL, err = resolver.resolveString(url)
-	if err != nil {
-		return "", nil, nil, fmt.Errorf("error resolving URL: %w", err)
-	}
+	resolvedURL := resolver.resolveString(url)
 
 	// Resolve headers
-	resolvedHeaders = make(map[string]string)
+	resolvedHeaders := make(map[string]string)
 	for key, headerVal := range headers {
-		resolved, err := resolver.resolveString(headerVal)
-		if err != nil {
-			return "", nil, nil, fmt.Errorf("error resolving header '%s': %w", key, err)
-		}
+		resolved := resolver.resolveString(headerVal)
 		resolvedHeaders[key] = resolved
 	}
 
 	// Resolve body
-	resolvedBody, err = resolver.Resolve(body)
+	resolvedBody, err := resolver.Resolve(body)
 	if err != nil {
 		return "", nil, nil, fmt.Errorf("error resolving body: %w", err)
 	}

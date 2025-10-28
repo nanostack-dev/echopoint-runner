@@ -37,7 +37,7 @@ const (
 	TypeDelay   Type = "delay"
 )
 
-// ExecutionContext provides inputs and context for a node's execution
+// ExecutionContext provides inputs and context for a node's execution.
 type ExecutionContext struct {
 	// Inputs contains all the data this node declared it needs in InputSchema()
 	// Keys are in format "nodeId.outputKey" (e.g., "create-user.userId")
@@ -48,7 +48,7 @@ type ExecutionContext struct {
 	AllOutputs map[string]map[string]interface{}
 }
 
-// ExecutionResult stores per-node execution results and metadata
+// ExecutionResult stores per-node execution results and metadata.
 type ExecutionResult struct {
 	NodeID     string
 	Inputs     map[string]interface{}
@@ -57,7 +57,7 @@ type ExecutionResult struct {
 	ExecutedAt time.Time
 }
 
-// FlowExecutionResult contains the complete trace of a flow execution
+// FlowExecutionResult contains the complete trace of a flow execution.
 type FlowExecutionResult struct {
 	ExecutionResults map[string]ExecutionResult // Execution frame keyed by node ID
 	FinalOutputs     map[string]interface{}     // All outputs flattened for convenience (format: "nodeId.outputKey": value)

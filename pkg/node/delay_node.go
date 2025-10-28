@@ -12,6 +12,7 @@ type DelayData struct {
 // DelayNode is a typed node for delays.
 type DelayNode struct {
 	BaseNode
+
 	Data DelayData `json:"data"`
 }
 
@@ -32,17 +33,17 @@ func MustAsDelayNode(node AnyNode) *DelayNode {
 	return delayNode
 }
 
-// InputSchema returns empty as DelayNode doesn't need inputs
+// InputSchema returns empty as DelayNode doesn't need inputs.
 func (n *DelayNode) InputSchema() []string {
 	return []string{}
 }
 
-// OutputSchema returns empty as DelayNode doesn't produce outputs
+// OutputSchema returns empty as DelayNode doesn't produce outputs.
 func (n *DelayNode) OutputSchema() []string {
 	return []string{}
 }
 
-// Execute sleeps for the specified duration and optionally passes through input values
+// Execute sleeps for the specified duration and optionally passes through input values.
 func (n *DelayNode) Execute(ctx ExecutionContext) (map[string]interface{}, error) {
 	// Validate that we have all required inputs
 	for _, dep := range n.InputSchema() {

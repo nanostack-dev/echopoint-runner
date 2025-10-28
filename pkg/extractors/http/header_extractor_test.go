@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Helper to create a ResponseContext from an http.Response
+// Helper to create a ResponseContext from an http.Response.
 func createTestContext(resp *http.Response) extractors.ResponseContext {
 	return extractors.NewResponseContext(resp, nil, nil)
 }
@@ -23,7 +23,7 @@ func TestHeaderExtractor_GetType(t *testing.T) {
 func TestHeaderExtractor_Extract_Success(t *testing.T) {
 	extractor := httpextractors.HeaderExtractor{HeaderName: "Content-Type"}
 	response := &http.Response{
-		StatusCode: 200,
+		StatusCode: http.StatusOK,
 		Header: http.Header{
 			"Content-Type":   {"application/json"},
 			"Content-Length": {"1234"},
@@ -74,7 +74,7 @@ func TestHeaderExtractor_Extract_DifferentHeaders(t *testing.T) {
 			tc.name, func(t *testing.T) {
 				extractor := httpextractors.HeaderExtractor{HeaderName: tc.headerName}
 				response := &http.Response{
-					StatusCode: 200,
+					StatusCode: http.StatusOK,
 					Header: http.Header{
 						tc.headerName: {tc.headerValue},
 					},
@@ -92,7 +92,7 @@ func TestHeaderExtractor_Extract_DifferentHeaders(t *testing.T) {
 func TestHeaderExtractor_Extract_HeaderNotFound(t *testing.T) {
 	extractor := httpextractors.HeaderExtractor{HeaderName: "X-Missing-Header"}
 	response := &http.Response{
-		StatusCode: 200,
+		StatusCode: http.StatusOK,
 		Header: http.Header{
 			"Content-Type": {"application/json"},
 		},
@@ -108,7 +108,7 @@ func TestHeaderExtractor_Extract_HeaderNotFound(t *testing.T) {
 func TestHeaderExtractor_Extract_EmptyHeaders(t *testing.T) {
 	extractor := httpextractors.HeaderExtractor{HeaderName: "Content-Type"}
 	response := &http.Response{
-		StatusCode: 200,
+		StatusCode: http.StatusOK,
 		Header:     http.Header{},
 	}
 
@@ -131,7 +131,7 @@ func TestHeaderExtractor_Extract_NilContext(t *testing.T) {
 func TestHeaderExtractor_Extract_CaseInsensitivity(t *testing.T) {
 	extractor := httpextractors.HeaderExtractor{HeaderName: "content-type"}
 	response := &http.Response{
-		StatusCode: 200,
+		StatusCode: http.StatusOK,
 		Header: http.Header{
 			"Content-Type": {"application/json"}, // Different case
 		},

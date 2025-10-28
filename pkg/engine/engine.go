@@ -71,7 +71,7 @@ func NewFlowEngine(flowInstance flow.Flow, options *Options) (*FlowEngine, error
 	}, nil
 }
 
-// Execute executes the flow with the provided initial inputs and returns complete execution results
+// Execute executes the flow with the provided initial inputs and returns complete execution results.
 func (engine *FlowEngine) Execute(initialInputs map[string]interface{}) (
 	*node.FlowExecutionResult, error,
 ) {
@@ -177,7 +177,7 @@ func (engine *FlowEngine) Execute(initialInputs map[string]interface{}) (
 	}
 }
 
-// validateInputs checks that all required inputs for a node are available in allOutputs
+// validateInputs checks that all required inputs for a node are available in allOutputs.
 func (engine *FlowEngine) validateInputs(
 	nodeToExecute node.AnyNode, allOutputs map[string]map[string]interface{},
 ) error {
@@ -208,7 +208,7 @@ func (engine *FlowEngine) validateInputs(
 	return nil
 }
 
-// assembleInputs gathers inputs for a node from previous outputs
+// assembleInputs gathers inputs for a node from previous outputs.
 func (engine *FlowEngine) assembleInputs(
 	nodeToExecute node.AnyNode, allOutputs map[string]map[string]interface{},
 ) map[string]interface{} {
@@ -227,10 +227,14 @@ func (engine *FlowEngine) assembleInputs(
 
 // parseDataRef parses input references in two formats:
 // 1. "nodeId.outputKey" - refers to output from a specific node
-// 2. "variableName" - refers to initial input variable (sourceNodeID will be empty string "")
-func parseDataRef(ref string) (sourceNodeID, outputKey string, err error) {
-	parts := strings.SplitN(ref, ".", 2)
-	if len(parts) == 2 {
+// 2. "variableName" - refers to initial input variable (sourceNodeID will be empty string "").
+func parseDataRef(ref string) (string, string, error) {
+	const (
+		refSeparator = "."
+		partCount    = 2
+	)
+	parts := strings.SplitN(ref, refSeparator, partCount)
+	if len(parts) == partCount {
 		// Format: "nodeId.outputKey"
 		return parts[0], parts[1], nil
 	}
@@ -243,7 +247,7 @@ func parseDataRef(ref string) (sourceNodeID, outputKey string, err error) {
 	)
 }
 
-// findNodeWithoutInput finds a node that has no remaining input dependencies
+// findNodeWithoutInput finds a node that has no remaining input dependencies.
 func (engine *FlowEngine) findNodeWithoutInput(remainingInputs map[node.AnyNode]int) node.AnyNode {
 	for nodeKey, inputCount := range remainingInputs {
 		if inputCount == 0 {
@@ -253,7 +257,7 @@ func (engine *FlowEngine) findNodeWithoutInput(remainingInputs map[node.AnyNode]
 	return nil
 }
 
-// DEPRECATED: Use Execute(initialInputs) instead
+// ExecuteLegacy is deprecated. Use Execute(initialInputs) instead.
 func (engine *FlowEngine) ExecuteLegacy() error {
 	var nodeToExecute node.AnyNode
 	if len(engine.nodeEdgeInput) == 0 {

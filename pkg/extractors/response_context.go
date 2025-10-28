@@ -5,7 +5,7 @@ import (
 	"net/http"
 )
 
-// concreteResponseContext implements all ResponseContext interfaces
+// concreteResponseContext implements all ResponseContext interfaces.
 type concreteResponseContext struct {
 	resp        *http.Response
 	rawBody     []byte
@@ -14,7 +14,7 @@ type concreteResponseContext struct {
 	contentType string
 }
 
-// NewResponseContext creates a new ResponseContext from an HTTP response
+// NewResponseContext creates a new ResponseContext from an HTTP response.
 func NewResponseContext(
 	resp *http.Response, rawBody []byte, parsedBody interface{},
 ) ResponseContext {
@@ -31,8 +31,8 @@ func NewResponseContext(
 // ResponseContext Interface Implementation
 // ============================================================================
 
-func (rc *concreteResponseContext) HasCapability(cap string) bool {
-	switch cap {
+func (rc *concreteResponseContext) HasCapability(capability string) bool {
+	switch capability {
 	case "status":
 		return rc.resp != nil
 	case "headers":

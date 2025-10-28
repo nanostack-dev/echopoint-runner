@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/nanostack-dev/echopoint-flow-engine/pkg/extractors"
-	_ "github.com/nanostack-dev/echopoint-flow-engine/pkg/extractors/http"
+	_ "github.com/nanostack-dev/echopoint-flow-engine/pkg/extractors/http" // Register HTTP extractors in init()
 )
 
 // CompositeAssertion combines an extractor with an operator for validation.
@@ -18,13 +18,14 @@ type CompositeAssertion struct {
 	OperatorData  interface{}             `json:"operatorData"`  // Configuration for the operator
 }
 
-// UnmarshalJSON implements custom unmarshaling for CompositeAssertion
+// UnmarshalJSON implements custom unmarshaling for CompositeAssertion.
 func (ca *CompositeAssertion) UnmarshalJSON(data []byte) error {
 	type Alias CompositeAssertion
 	aux := &struct {
+		*Alias
+
 		Extractor json.RawMessage `json:"extractor"`
 		Operator  json.RawMessage `json:"operator"`
-		*Alias
 	}{
 		Alias: (*Alias)(ca),
 	}

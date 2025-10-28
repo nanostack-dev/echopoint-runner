@@ -1,4 +1,4 @@
-package http
+package http_test
 
 import (
 	"encoding/json"
@@ -8,12 +8,87 @@ import (
 	"testing"
 
 	"github.com/nanostack-dev/echopoint-flow-engine/pkg/extractors"
+	httpextractors "github.com/nanostack-dev/echopoint-flow-engine/pkg/extractors/http"
 )
 
-// TestNewInterfaceDesignPattern demonstrates the new interface-based extractor pattern
+// testStatusCodeExtractor tests the StatusCodeExtractor.
+func testStatusCodeExtractor(t *testing.T, ctx extractors.ResponseContext) {
+	extractor := &httpextractors.StatusCodeExtractor{}
+	result, statusErr := extractor.Extract(ctx)
+	if statusErr != nil {
+		t.Fatalf("Extraction failed: %v", statusErr)
+	}
+
+	statusCode, ok := result.(int)
+	if !ok || statusCode != http.StatusCreated {
+		t.Errorf("Expected status %d, got %v", http.StatusCreated, result)
+	}
+}
+
+// testHeaderExtractor tests the HeaderExtractor.
+func testHeaderExtractor(t *testing.T, ctx extractors.ResponseContext) {
+	extractor := &httpextractors.HeaderExtractor{HeaderName: "X-Custom-Header"}
+	result, headerErr := extractor.Extract(ctx)
+	if headerErr != nil {
+		t.Fatalf("Extraction failed: %v", headerErr)
+	}
+
+	value, ok := result.(string)
+	if !ok || value != "test-value" {
+		t.Errorf("Expected 'test-value', got %v", result)
+	}
+}
+
+// testCapabilityChecking tests that context reports capabilities correctly.
+func testCapabilityChecking(t *testing.T, ctx extractors.ResponseContext) {
+	if !ctx.HasCapability("status") {
+		t.Error("Context should have 'status' capability")
+	}
+	if !ctx.HasCapability("headers") {
+		t.Error("Context should have 'headers' capability")
+	}
+	if !ctx.HasCapability("parsed_body") {
+		t.Error("Context should have 'parsed_body' capability")
+	}
+	if ctx.HasCapability("timing") {
+		t.Error("Context should not have 'timing' capability yet")
+	}
+}
+
+// testInterfaceImplementation tests that context implements all expected interfaces.
+func testInterfaceImplementation(t *testing.T, ctx extractors.ResponseContext) {
+	// StatusReader interface
+	sr, ok := ctx.(extractors.StatusReader)
+	if !ok {
+		t.Fatal("Context should implement StatusReader")
+	}
+	if sr.GetStatus() != http.StatusCreated {
+		t.Errorf("Expected status %d", http.StatusCreated)
+	}
+
+	// HeaderAccessor interface
+	ha, ok := ctx.(extractors.HeaderAccessor)
+	if !ok {
+		t.Fatal("Context should implement HeaderAccessor")
+	}
+	if ha.GetHeader("X-Custom-Header") != "test-value" {
+		t.Error("Header value mismatch")
+	}
+
+	// ParsedBodyReader interface
+	pbr, ok := ctx.(extractors.ParsedBodyReader)
+	if !ok {
+		t.Fatal("Context should implement ParsedBodyReader")
+	}
+	if pbr.GetParsedBody() == nil {
+		t.Error("Parsed body should not be nil")
+	}
+}
+
+// TestNewInterfaceDesignPattern demonstrates the new interface-based extractor pattern.
 func TestNewInterfaceDesignPattern(t *testing.T) {
 	// Create a test HTTP server that returns JSON
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("X-Custom-Header", "test-value")
 		w.WriteHeader(http.StatusCreated)
@@ -41,8 +116,8 @@ func TestNewInterfaceDesignPattern(t *testing.T) {
 
 	// Parse response
 	var parsedBody interface{}
-	if err := json.Unmarshal(respBody, &parsedBody); err != nil {
-		t.Fatalf("Failed to parse JSON: %v", err)
+	if parseErr := json.Unmarshal(respBody, &parsedBody); parseErr != nil {
+		t.Fatalf("Failed to parse JSON: %v", parseErr)
 	}
 
 	// Create ResponseContext - this is the KEY improvement
@@ -50,81 +125,26 @@ func TestNewInterfaceDesignPattern(t *testing.T) {
 	ctx := extractors.NewResponseContext(resp, respBody, parsedBody)
 
 	t.Run("StatusCodeExtractor declares it needs StatusReader interface", func(t *testing.T) {
-		extractor := &StatusCodeExtractor{}
-		result, err := extractor.Extract(ctx)
-		if err != nil {
-			t.Fatalf("Extraction failed: %v", err)
-		}
-
-		statusCode, ok := result.(int)
-		if !ok || statusCode != http.StatusCreated {
-			t.Errorf("Expected status %d, got %v", http.StatusCreated, result)
-		}
+		testStatusCodeExtractor(t, ctx)
 	})
 
 	t.Run("HeaderExtractor declares it needs HeaderAccessor interface", func(t *testing.T) {
-		extractor := &HeaderExtractor{HeaderName: "X-Custom-Header"}
-		result, err := extractor.Extract(ctx)
-		if err != nil {
-			t.Fatalf("Extraction failed: %v", err)
-		}
-
-		value, ok := result.(string)
-		if !ok || value != "test-value" {
-			t.Errorf("Expected 'test-value', got %v", result)
-		}
+		testHeaderExtractor(t, ctx)
 	})
 
 	t.Run("Context provides capability checking", func(t *testing.T) {
-		// The context can report what capabilities it provides
-		if !ctx.HasCapability("status") {
-			t.Error("Context should have 'status' capability")
-		}
-		if !ctx.HasCapability("headers") {
-			t.Error("Context should have 'headers' capability")
-		}
-		if !ctx.HasCapability("parsed_body") {
-			t.Error("Context should have 'parsed_body' capability")
-		}
-		if ctx.HasCapability("timing") {
-			t.Error("Context should not have 'timing' capability yet")
-		}
+		testCapabilityChecking(t, ctx)
 	})
 
 	t.Run("Type assertions enforce explicit dependencies", func(t *testing.T) {
-		// StatusReader interface
-		sr, ok := ctx.(extractors.StatusReader)
-		if !ok {
-			t.Fatal("Context should implement StatusReader")
-		}
-		if sr.GetStatus() != http.StatusCreated {
-			t.Errorf("Expected status %d", http.StatusCreated)
-		}
-
-		// HeaderAccessor interface
-		ha, ok := ctx.(extractors.HeaderAccessor)
-		if !ok {
-			t.Fatal("Context should implement HeaderAccessor")
-		}
-		if ha.GetHeader("X-Custom-Header") != "test-value" {
-			t.Error("Header value mismatch")
-		}
-
-		// ParsedBodyReader interface
-		pbr, ok := ctx.(extractors.ParsedBodyReader)
-		if !ok {
-			t.Fatal("Context should implement ParsedBodyReader")
-		}
-		if pbr.GetParsedBody() == nil {
-			t.Error("Parsed body should not be nil")
-		}
+		testInterfaceImplementation(t, ctx)
 	})
 }
 
-// BenchmarkNewDesign shows the performance characteristics of the new pattern
+// BenchmarkNewDesign shows the performance characteristics of the new pattern.
 func BenchmarkNewDesign(b *testing.B) {
 	// Setup
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("X-Custom-Header", "benchmark-value")
 		w.WriteHeader(http.StatusOK)
@@ -134,32 +154,38 @@ func BenchmarkNewDesign(b *testing.B) {
 	}))
 	defer server.Close()
 
-	resp, _ := http.Get(server.URL)
+	resp, err := http.Get(server.URL)
+	if err != nil {
+		b.Fatalf("Failed to make request: %v", err)
+	}
 	defer resp.Body.Close()
 
-	respBody, _ := io.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		b.Fatalf("Failed to read response: %v", err)
+	}
 	var parsedBody interface{}
 	json.Unmarshal(respBody, &parsedBody)
 
 	ctx := extractors.NewResponseContext(resp, respBody, parsedBody)
 
-	statusExtractor := &StatusCodeExtractor{}
-	headerExtractor := &HeaderExtractor{HeaderName: "X-Custom-Header"}
+	statusExtractor := &httpextractors.StatusCodeExtractor{}
+	headerExtractor := &httpextractors.HeaderExtractor{HeaderName: "X-Custom-Header"}
 
 	b.Run("StatusCodeExtractor-ExecutionTime", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
+		for range b.N {
 			statusExtractor.Extract(ctx)
 		}
 	})
 
 	b.Run("HeaderExtractor-ExecutionTime", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
+		for range b.N {
 			headerExtractor.Extract(ctx)
 		}
 	})
 
 	b.Run("InterfaceTypeAssertion", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
+		for range b.N {
 			_, _ = ctx.(extractors.StatusReader)
 			_, _ = ctx.(extractors.HeaderAccessor)
 		}

@@ -5,10 +5,10 @@ import (
 	"strings"
 )
 
-// SchemaInference provides utilities to infer input and output schemas from node configurations
+// SchemaInference provides utilities to infer input and output schemas from node configurations.
 type SchemaInference struct{}
 
-// ExtractTemplateVariables extracts all {{variable}} references from a string or nested structure
+// ExtractTemplateVariables extracts all {{variable}} references from a string or nested structure.
 func (si *SchemaInference) ExtractTemplateVariables(data interface{}) []string {
 	vars := make(map[string]bool)
 	si.extractVariablesRecursive(data, vars)
@@ -21,7 +21,7 @@ func (si *SchemaInference) ExtractTemplateVariables(data interface{}) []string {
 	return result
 }
 
-// extractVariablesRecursive recursively extracts variables from nested structures
+// extractVariablesRecursive recursively extracts variables from nested structures.
 func (si *SchemaInference) extractVariablesRecursive(data interface{}, vars map[string]bool) {
 	switch v := data.(type) {
 	case string:
@@ -37,7 +37,7 @@ func (si *SchemaInference) extractVariablesRecursive(data interface{}, vars map[
 	}
 }
 
-// extractVariablesFromString finds all {{variable}} patterns in a string
+// extractVariablesFromString finds all {{variable}} patterns in a string.
 func (si *SchemaInference) extractVariablesFromString(s string, vars map[string]bool) {
 	// Match {{variable}} patterns
 	re := regexp.MustCompile(`\{\{([^}]+)\}\}`)
@@ -50,7 +50,7 @@ func (si *SchemaInference) extractVariablesFromString(s string, vars map[string]
 	}
 }
 
-// InferRequestNodeInputSchema infers input schema from RequestNode data
+// InferRequestNodeInputSchema infers input schema from RequestNode data.
 func (si *SchemaInference) InferRequestNodeInputSchema(data RequestData) []string {
 	vars := make(map[string]bool)
 
@@ -74,7 +74,7 @@ func (si *SchemaInference) InferRequestNodeInputSchema(data RequestData) []strin
 	return result
 }
 
-// InferRequestNodeOutputSchema infers output schema from Outputs
+// InferRequestNodeOutputSchema infers output schema from Outputs.
 func (si *SchemaInference) InferRequestNodeOutputSchema(outputs []Output) []string {
 	result := make([]string, 0, len(outputs))
 	for _, output := range outputs {
@@ -83,14 +83,14 @@ func (si *SchemaInference) InferRequestNodeOutputSchema(outputs []Output) []stri
 	return result
 }
 
-// InferDelayNodeInputSchema infers input schema from DelayNode (typically empty or passthrough)
-func (si *SchemaInference) InferDelayNodeInputSchema(data DelayData) []string {
+// InferDelayNodeInputSchema infers input schema from DelayNode (typically empty or passthrough).
+func (si *SchemaInference) InferDelayNodeInputSchema(_ DelayData) []string {
 	// DelayNode doesn't need inputs
 	return []string{}
 }
 
-// InferDelayNodeOutputSchema infers output schema from DelayNode (typically empty)
-func (si *SchemaInference) InferDelayNodeOutputSchema(data DelayData) []string {
+// InferDelayNodeOutputSchema infers output schema from DelayNode (typically empty).
+func (si *SchemaInference) InferDelayNodeOutputSchema(_ DelayData) []string {
 	// DelayNode typically doesn't produce outputs
 	return []string{}
 }

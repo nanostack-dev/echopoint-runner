@@ -148,7 +148,7 @@ func TestIsOperatorCompatible(t *testing.T) {
 func TestGetAllExtractorCompatibilities(t *testing.T) {
 	all := compatibility.GetAllExtractorCompatibilities()
 
-	assert.Len(t, all, 4, "Should have 4 extractor types")
+	assert.Len(t, all, 5, "Should have 5 extractor types")
 
 	// Verify each extractor has compatibility info
 	extractorTypes := make(map[extractors.ExtractorType]bool)
@@ -162,12 +162,13 @@ func TestGetAllExtractorCompatibilities(t *testing.T) {
 	assert.True(t, extractorTypes[extractors.ExtractorTypeXMLPath])
 	assert.True(t, extractorTypes[extractors.ExtractorTypeStatusCode])
 	assert.True(t, extractorTypes[extractors.ExtractorTypeHeader])
+	assert.True(t, extractorTypes[extractors.ExtractorTypeBody])
 }
 
 func TestGetExtractorCompatibilityMap(t *testing.T) {
 	compatMap := compatibility.GetExtractorCompatibilityMap()
 
-	assert.Len(t, compatMap, 4, "Should have 4 extractors")
+	assert.Len(t, compatMap, 5, "Should have 5 extractors")
 
 	// Verify structure
 	for extractorType, compat := range compatMap {

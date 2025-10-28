@@ -1,6 +1,7 @@
 package node
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -23,6 +24,7 @@ type RequestData struct {
 // RequestNode is a typed node for HTTP requests.
 type RequestNode struct {
 	BaseNode
+
 	Data RequestData `json:"data"`
 }
 
@@ -47,13 +49,13 @@ func (n *RequestNode) GetData() RequestData {
 	return n.Data
 }
 
-// InputSchema infers inputs from template variables in URL, Headers, QueryParams, and Body
+// InputSchema infers inputs from template variables in URL, Headers, QueryParams, and Body.
 func (n *RequestNode) InputSchema() []string {
 	si := &SchemaInference{}
 	return si.InferRequestNodeInputSchema(n.Data)
 }
 
-// OutputSchema infers outputs from the Outputs list
+// OutputSchema infers outputs from the Outputs list.
 func (n *RequestNode) OutputSchema() []string {
 	si := &SchemaInference{}
 	return si.InferRequestNodeOutputSchema(n.GetOutputs())
@@ -69,7 +71,10 @@ func (n *RequestNode) Execute(ctx ExecutionContext) (map[string]interface{}, err
 
 	output := make(map[string]interface{})
 
-	url := n.resolveTemplates(n.Data.URL, ctx.Inputs).(string)
+	url, err := n.resolveTemplatesWithError(n.Data.URL, ctx.Inputs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve URL templates: %w", err)
+	}
 	body := n.resolveTemplates(n.Data.Body, ctx.Inputs)
 
 	// Make the HTTP request
@@ -89,7 +94,10 @@ func (n *RequestNode) Execute(ctx ExecutionContext) (map[string]interface{}, err
 	var parsedBody interface{}
 	contentType := resp.Header.Get("Content-Type")
 	if strings.Contains(contentType, "application/json") {
-		json.Unmarshal(respBody, &parsedBody)
+		if unmarshalErr := json.Unmarshal(respBody, &parsedBody); unmarshalErr != nil {
+			// If JSON parsing fails, treat body as string
+			parsedBody = string(respBody)
+		}
 	} else {
 		parsedBody = string(respBody)
 	}
@@ -107,9 +115,9 @@ func (n *RequestNode) Execute(ctx ExecutionContext) (map[string]interface{}, err
 	// Extract data as declared in outputSchema
 	// Each extractor declares what capabilities it needs via interface type assertions
 	for _, outputItem := range n.GetOutputs() {
-		value, err := outputItem.Extractor.Extract(respCtx)
-		if err != nil {
-			return nil, err
+		value, extractErr := outputItem.Extractor.Extract(respCtx)
+		if extractErr != nil {
+			return nil, extractErr
 		}
 		output[outputItem.Name] = value
 	}
@@ -137,8 +145,24 @@ func (n *RequestNode) resolveTemplates(
 	return resolved
 }
 
+// resolveTemplatesWithError is like resolveTemplates but returns errors.
+func (n *RequestNode) resolveTemplatesWithError(
+	value interface{}, inputs map[string]interface{},
+) (string, error) {
+	resolver := NewTemplateResolver(inputs)
+	resolved, err := resolver.Resolve(value)
+	if err != nil {
+		return "", err
+	}
+	result, ok := resolved.(string)
+	if !ok {
+		return "", fmt.Errorf("expected string, got %T", resolved)
+	}
+	return result, nil
+}
+
 func (n *RequestNode) validate(
-	assertion CompositeAssertion, ctx extractors.ResponseContext,
+	_ CompositeAssertion, _ extractors.ResponseContext,
 ) bool {
 	// TODO: Implement validation using extractor and operator factories
 	// This requires creating factory functions for extractors and operators
@@ -150,7 +174,10 @@ func (n *RequestNode) validate(
 func (n *RequestNode) makeRequest(
 	url, method string, headers map[string]string, body interface{}, timeout int,
 ) (*http.Response, error) {
-	req, err := http.NewRequest(method, url, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Millisecond)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, method, url, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -169,8 +196,7 @@ func (n *RequestNode) makeRequest(
 	if timeout > 0 {
 		client := &http.Client{Timeout: time.Duration(timeout) * time.Second}
 		return client.Do(req)
-	} else {
-		client := &http.Client{}
-		return client.Do(req)
 	}
+	client := &http.Client{}
+	return client.Do(req)
 }

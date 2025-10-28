@@ -5,16 +5,17 @@ import (
 	"fmt"
 
 	"github.com/nanostack-dev/echopoint-flow-engine/pkg/extractors"
-	_ "github.com/nanostack-dev/echopoint-flow-engine/pkg/extractors/http"
+	_ "github.com/nanostack-dev/echopoint-flow-engine/pkg/extractors/http" // Register HTTP extractors in init()
 )
 
 // UnmarshalJSON implements custom unmarshaling for Output
-// This allows us to properly unmarshal the Extractor field from JSON
+// This allows us to properly unmarshal the Extractor field from JSON.
 func (o *Output) UnmarshalJSON(data []byte) error {
 	type Alias Output
 	aux := &struct {
-		Extractor json.RawMessage `json:"extractor"`
 		*Alias
+
+		Extractor json.RawMessage `json:"extractor"`
 	}{
 		Alias: (*Alias)(o),
 	}
