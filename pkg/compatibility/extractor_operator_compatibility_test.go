@@ -3,11 +3,17 @@ package compatibility_test
 import (
 	"testing"
 
+	"github.com/nanostack-dev/echopoint-flow-engine/internal/logger"
 	"github.com/nanostack-dev/echopoint-flow-engine/pkg/compatibility"
 	"github.com/nanostack-dev/echopoint-flow-engine/pkg/extractors"
 	"github.com/nanostack-dev/echopoint-flow-engine/pkg/operators"
 	"github.com/stretchr/testify/assert"
 )
+
+func init() {
+	// Enable debug logging with human-readable format for tests
+	logger.SetDebugLogging()
+}
 
 func TestGetCompatibleOperators_StatusCode(t *testing.T) {
 	ops := compatibility.GetCompatibleOperators(extractors.ExtractorTypeStatusCode)

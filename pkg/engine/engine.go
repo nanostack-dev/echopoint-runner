@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rs/zerolog/log"
+
 	"github.com/nanostack-dev/echopoint-flow-engine/pkg/flow"
 	"github.com/nanostack-dev/echopoint-flow-engine/pkg/node"
 )
@@ -28,29 +30,67 @@ func NewFlowEngine(flowInstance flow.Flow, options *Options) (*FlowEngine, error
 	nodeMap := make(map[string]node.AnyNode, len(flowInstance.Nodes))
 	nodeEdgeOutput := make(map[node.AnyNode][]node.AnyNode)
 	nodeEdgeInput := make(map[node.AnyNode]int)
+
+	log.Debug().
+		Str("flowName", flowInstance.Name).
+		Str("flowVersion", flowInstance.Version).
+		Int("nodeCount", len(flowInstance.Nodes)).
+		Int("edgeCount", len(flowInstance.Edges)).
+		Msg("Initializing flow engine")
+
 	for _, nodeInstance := range flowInstance.Nodes {
 		nodeMap[nodeInstance.GetID()] = nodeInstance
 		nodeEdgeInput[nodeInstance] = 0
 		nodeEdgeOutput[nodeInstance] = nil
+		log.Debug().
+			Str("flowName", flowInstance.Name).
+			Str("nodeID", nodeInstance.GetID()).
+			Str("nodeType", string(nodeInstance.GetType())).
+			Msg("Registered node")
 	}
+
 	for _, edge := range flowInstance.Edges {
 		sourceNode := nodeMap[edge.Source]
 		targetNode := nodeMap[edge.Target]
 		if sourceNode == nil {
-			return nil, fmt.Errorf(
+			err := fmt.Errorf(
 				"source node %s not found in edge to node %s", edge.Source,
 				edge.Target,
 			)
+			log.Error().
+				Str("flowName", flowInstance.Name).
+				Str("edgeID", edge.ID).
+				Str("sourceNodeID", edge.Source).
+				Str("targetNodeID", edge.Target).
+				Err(err).
+				Msg("Failed to initialize flow engine: source node not found")
+			return nil, err
 		}
 		if targetNode == nil {
-			return nil, fmt.Errorf(
+			err := fmt.Errorf(
 				"target node %s not found in edge to node %s", edge.Target,
 				edge.Source,
 			)
+			log.Error().
+				Str("flowName", flowInstance.Name).
+				Str("edgeID", edge.ID).
+				Str("sourceNodeID", edge.Source).
+				Str("targetNodeID", edge.Target).
+				Err(err).
+				Msg("Failed to initialize flow engine: target node not found")
+			return nil, err
 		}
 		nodeEdgeOutput[sourceNode] = append(nodeEdgeOutput[sourceNode], targetNode)
 		nodeEdgeInput[targetNode]++
+		log.Debug().
+			Str("flowName", flowInstance.Name).
+			Str("edgeID", edge.ID).
+			Str("sourceNodeID", edge.Source).
+			Str("targetNodeID", edge.Target).
+			Str("edgeType", string(edge.Type)).
+			Msg("Registered edge")
 	}
+
 	var beforeExecution func(n node.AnyNode)
 	var afterExecution func(n node.AnyNode, frame node.ExecutionResult)
 	if options != nil {
@@ -61,6 +101,14 @@ func NewFlowEngine(flowInstance flow.Flow, options *Options) (*FlowEngine, error
 			afterExecution = options.AfterExecution
 		}
 	}
+
+	log.Info().
+		Str("flowName", flowInstance.Name).
+		Str("flowVersion", flowInstance.Version).
+		Int("nodeCount", len(flowInstance.Nodes)).
+		Int("edgeCount", len(flowInstance.Edges)).
+		Msg("Flow engine initialized successfully")
+
 	return &FlowEngine{
 		flowInstance,
 		nodeEdgeOutput,
@@ -71,11 +119,18 @@ func NewFlowEngine(flowInstance flow.Flow, options *Options) (*FlowEngine, error
 	}, nil
 }
 
-// Execute executes the flow with the provided initial inputs and returns complete execution results.
 func (engine *FlowEngine) Execute(initialInputs map[string]interface{}) (
 	*node.FlowExecutionResult, error,
 ) {
 	startTime := time.Now()
+
+	log.Info().
+		Str("flowName", engine.flow.Name).
+		Str("flowVersion", engine.flow.Version).
+		Int("totalNodes", len(engine.flow.Nodes)).
+		Int("totalEdges", len(engine.flow.Edges)).
+		Msg("Starting flow execution")
+
 	result := &node.FlowExecutionResult{
 		ExecutionResults: make(map[string]node.ExecutionResult),
 		FinalOutputs:     make(map[string]interface{}),
@@ -85,96 +140,19 @@ func (engine *FlowEngine) Execute(initialInputs map[string]interface{}) (
 	if len(engine.nodeEdgeInput) == 0 {
 		result.Error = errors.New("no nodes to execute")
 		result.DurationMS = time.Since(startTime).Milliseconds()
+		log.Error().
+			Str("flowName", engine.flow.Name).
+			Err(result.Error).
+			Int64("durationMS", result.DurationMS).
+			Msg("Flow execution failed: no nodes to execute")
 		return result, result.Error
 	}
 
-	// Initialize AllOutputs with initial inputs directly as a flat map
-	// Initial inputs don't have a node ID prefix
-	allOutputs := make(map[string]map[string]interface{})
-	allOutputs[""] = initialInputs
-
-	// Create a copy of nodeEdgeInput for tracking execution order
-	remainingInputs := make(map[node.AnyNode]int)
-	for k, v := range engine.nodeEdgeInput {
-		remainingInputs[k] = v
+	if err := engine.executeNodes(initialInputs, result, startTime); err != nil {
+		return result, err
 	}
 
-	for {
-		nodeToExecute := engine.findNodeWithoutInput(remainingInputs)
-		if nodeToExecute == nil {
-			if len(remainingInputs) > 0 {
-				result.Error = fmt.Errorf(
-					"cycle detected or unreachable nodes: %d nodes not executed",
-					len(remainingInputs),
-				)
-				result.DurationMS = time.Since(startTime).Milliseconds()
-				return result, result.Error
-			}
-			// All nodes executed successfully
-			result.Success = true
-			result.DurationMS = time.Since(startTime).Milliseconds()
-			return result, nil
-		}
-
-		// Validate that all required inputs are available
-		if err := engine.validateInputs(nodeToExecute, allOutputs); err != nil {
-			result.Error = err
-			result.DurationMS = time.Since(startTime).Milliseconds()
-			return result, err
-		}
-
-		// Assemble inputs for this node from previous outputs
-		inputs := engine.assembleInputs(nodeToExecute, allOutputs)
-
-		// Execute the node
-		if engine.beforeExecution != nil {
-			engine.beforeExecution(nodeToExecute)
-		}
-
-		executionCtx := node.ExecutionContext{
-			Inputs:     inputs,
-			AllOutputs: allOutputs,
-		}
-
-		outputData, err := nodeToExecute.Execute(executionCtx)
-
-		// Record the execution executionFrame
-		executionFrame := node.ExecutionResult{
-			NodeID:     nodeToExecute.GetID(),
-			Inputs:     inputs,
-			Outputs:    outputData,
-			Error:      err,
-			ExecutedAt: time.Now(),
-		}
-		result.ExecutionResults[nodeToExecute.GetID()] = executionFrame
-
-		if engine.afterExecution != nil {
-			engine.afterExecution(nodeToExecute, executionFrame)
-		}
-
-		// Handle execution failure
-		if err != nil {
-			result.Error = err
-			result.DurationMS = time.Since(startTime).Milliseconds()
-			return result, err
-		}
-
-		// Store outputs for next nodes
-		allOutputs[nodeToExecute.GetID()] = outputData
-
-		// Merge into final outputs (format: "nodeId.outputKey": value)
-		for key, value := range outputData {
-			flatKey := fmt.Sprintf("%s.%s", nodeToExecute.GetID(), key)
-			result.FinalOutputs[flatKey] = value
-		}
-
-		// Reduce in-degrees for successor nodes
-		nodeOutput := engine.nodeEdgeOutput[nodeToExecute]
-		for _, nodeToReduce := range nodeOutput {
-			remainingInputs[nodeToReduce]--
-		}
-		delete(remainingInputs, nodeToExecute)
-	}
+	return result, nil
 }
 
 // validateInputs checks that all required inputs for a node are available in allOutputs.
@@ -184,6 +162,12 @@ func (engine *FlowEngine) validateInputs(
 	for _, inputKey := range nodeToExecute.InputSchema() {
 		sourceNodeID, outputKey, err := parseDataRef(inputKey)
 		if err != nil {
+			log.Error().
+				Str("flowName", engine.flow.Name).
+				Str("nodeID", nodeToExecute.GetID()).
+				Str("inputKey", inputKey).
+				Err(err).
+				Msg("Invalid input reference")
 			return fmt.Errorf(
 				"node %s: invalid input reference '%s': %w", nodeToExecute.GetID(), inputKey, err,
 			)
@@ -191,6 +175,12 @@ func (engine *FlowEngine) validateInputs(
 
 		sourceOutputs, exists := allOutputs[sourceNodeID]
 		if !exists {
+			log.Warn().
+				Str("flowName", engine.flow.Name).
+				Str("nodeID", nodeToExecute.GetID()).
+				Str("sourceNodeID", sourceNodeID).
+				Str("inputKey", inputKey).
+				Msg("Source node not executed yet")
 			return fmt.Errorf(
 				"node %s: source node '%s' not executed yet (required for input '%s')",
 				nodeToExecute.GetID(), sourceNodeID, inputKey,
@@ -199,6 +189,12 @@ func (engine *FlowEngine) validateInputs(
 
 		_, exists = sourceOutputs[outputKey]
 		if !exists {
+			log.Warn().
+				Str("flowName", engine.flow.Name).
+				Str("nodeID", nodeToExecute.GetID()).
+				Str("sourceNodeID", sourceNodeID).
+				Str("outputKey", outputKey).
+				Msg("Output not found in source node")
 			return fmt.Errorf(
 				"node %s: output '%s' not found in source node '%s'",
 				nodeToExecute.GetID(), outputKey, sourceNodeID,

@@ -6,12 +6,18 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/nanostack-dev/echopoint-flow-engine/internal/logger"
 	"github.com/nanostack-dev/echopoint-flow-engine/it/shared"
 	"github.com/nanostack-dev/echopoint-flow-engine/pkg/engine"
 	"github.com/nanostack-dev/echopoint-flow-engine/pkg/flow"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func init() {
+	// Enable debug logging with human-readable format for tests
+	logger.SetDebugLogging()
+}
 
 // loadFlowFromJSON loads a flow definition from a JSON file.
 func loadFlowFromJSON(t *testing.T, filename string) *flow.Flow {

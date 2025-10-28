@@ -4,11 +4,17 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/nanostack-dev/echopoint-flow-engine/internal/logger"
 	"github.com/nanostack-dev/echopoint-flow-engine/pkg/extractors"
 	httpextractors "github.com/nanostack-dev/echopoint-flow-engine/pkg/extractors/http"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func init() {
+	// Enable debug logging with human-readable format for tests
+	logger.SetDebugLogging()
+}
 
 func TestStatusCodeExtractor_GetType(t *testing.T) {
 	extractor := httpextractors.StatusCodeExtractor{}

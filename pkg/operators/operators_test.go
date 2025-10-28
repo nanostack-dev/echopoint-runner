@@ -3,11 +3,17 @@ package operators_test
 import (
 	"testing"
 
+	"github.com/nanostack-dev/echopoint-flow-engine/internal/logger"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/nanostack-dev/echopoint-flow-engine/pkg/operators"
 )
+
+func init() {
+	// Enable debug logging with human-readable format for tests
+	logger.SetDebugLogging()
+}
 
 // Test EqualsOperator.
 func TestEqualsOperator_String(t *testing.T) {

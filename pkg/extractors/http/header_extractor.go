@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/rs/zerolog/log"
+
 	"github.com/nanostack-dev/echopoint-flow-engine/pkg/extractors"
 )
 
@@ -13,16 +15,38 @@ type HeaderExtractor struct {
 }
 
 func (e HeaderExtractor) Extract(ctx extractors.ResponseContext) (interface{}, error) {
+	log.Debug().
+		Str("extractorType", string(extractors.ExtractorTypeHeader)).
+		Str("headerName", e.HeaderName).
+		Msg("Starting header extraction")
+
 	// Use the HeaderAccessor interface to get the header value
 	if ha, ok := ctx.(extractors.HeaderAccessor); ok {
 		value := ha.GetHeader(e.HeaderName)
 		if value != "" {
+			log.Debug().
+				Str("extractorType", string(extractors.ExtractorTypeHeader)).
+				Str("headerName", e.HeaderName).
+				Str("value", value).
+				Msg("Header extracted successfully")
 			return value, nil
 		}
-		return nil, fmt.Errorf("header %s not found", e.HeaderName)
+		err := fmt.Errorf("header %s not found", e.HeaderName)
+		log.Warn().
+			Str("extractorType", string(extractors.ExtractorTypeHeader)).
+			Str("headerName", e.HeaderName).
+			Err(err).
+			Msg("Header not found")
+		return nil, err
 	}
 
-	return nil, errors.New("context does not implement HeaderAccessor interface")
+	err := errors.New("context does not implement HeaderAccessor interface")
+	log.Error().
+		Str("extractorType", string(extractors.ExtractorTypeHeader)).
+		Str("headerName", e.HeaderName).
+		Err(err).
+		Msg("Failed to extract header")
+	return nil, err
 }
 
 func (e HeaderExtractor) GetType() extractors.ExtractorType {

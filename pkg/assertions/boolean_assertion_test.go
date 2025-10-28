@@ -3,10 +3,16 @@ package assertions_test
 import (
 	"testing"
 
+	"github.com/nanostack-dev/echopoint-flow-engine/internal/logger"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/nanostack-dev/echopoint-flow-engine/pkg/assertions"
 )
+
+func init() {
+	// Enable debug logging with human-readable format for tests
+	logger.SetDebugLogging()
+}
 
 func TestBooleanAssertion_Validate_True(t *testing.T) {
 	t.Skip("TODO: Implement boolean validation logic")

@@ -3,10 +3,16 @@ package assertions_test
 import (
 	"testing"
 
+	"github.com/nanostack-dev/echopoint-flow-engine/internal/logger"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/nanostack-dev/echopoint-flow-engine/pkg/assertions"
 )
+
+func init() {
+	// Enable debug logging with human-readable format for tests
+	logger.SetDebugLogging()
+}
 
 func TestNumberAssertion_Validate_Equals(t *testing.T) {
 	t.Skip("TODO: Implement number validation logic")
@@ -25,14 +31,16 @@ func TestNumberAssertion_Validate_Equals(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			assertion := assertions.NumberAssertion{
-				Operator: assertions.NumberOperatorEquals,
-				Expected: tc.expected,
-			}
-			result := assertion.Validate(tc.actual)
-			assert.Equal(t, tc.want, result)
-		})
+		t.Run(
+			tc.name, func(t *testing.T) {
+				assertion := assertions.NumberAssertion{
+					Operator: assertions.NumberOperatorEquals,
+					Expected: tc.expected,
+				}
+				result := assertion.Validate(tc.actual)
+				assert.Equal(t, tc.want, result)
+			},
+		)
 	}
 }
 
@@ -51,14 +59,16 @@ func TestNumberAssertion_Validate_NotEquals(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			assertion := assertions.NumberAssertion{
-				Operator: assertions.NumberOperatorNotEquals,
-				Expected: tc.expected,
-			}
-			result := assertion.Validate(tc.actual)
-			assert.Equal(t, tc.want, result)
-		})
+		t.Run(
+			tc.name, func(t *testing.T) {
+				assertion := assertions.NumberAssertion{
+					Operator: assertions.NumberOperatorNotEquals,
+					Expected: tc.expected,
+				}
+				result := assertion.Validate(tc.actual)
+				assert.Equal(t, tc.want, result)
+			},
+		)
 	}
 }
 
@@ -79,14 +89,16 @@ func TestNumberAssertion_Validate_GreaterThan(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			assertion := assertions.NumberAssertion{
-				Operator: assertions.NumberOperatorGreaterThan,
-				Expected: tc.expected,
-			}
-			result := assertion.Validate(tc.actual)
-			assert.Equal(t, tc.want, result)
-		})
+		t.Run(
+			tc.name, func(t *testing.T) {
+				assertion := assertions.NumberAssertion{
+					Operator: assertions.NumberOperatorGreaterThan,
+					Expected: tc.expected,
+				}
+				result := assertion.Validate(tc.actual)
+				assert.Equal(t, tc.want, result)
+			},
+		)
 	}
 }
 
@@ -105,14 +117,16 @@ func TestNumberAssertion_Validate_GreaterThanOrEqual(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			assertion := assertions.NumberAssertion{
-				Operator: assertions.NumberOperatorGreaterThanOrEqual,
-				Expected: tc.expected,
-			}
-			result := assertion.Validate(tc.actual)
-			assert.Equal(t, tc.want, result)
-		})
+		t.Run(
+			tc.name, func(t *testing.T) {
+				assertion := assertions.NumberAssertion{
+					Operator: assertions.NumberOperatorGreaterThanOrEqual,
+					Expected: tc.expected,
+				}
+				result := assertion.Validate(tc.actual)
+				assert.Equal(t, tc.want, result)
+			},
+		)
 	}
 }
 
@@ -132,14 +146,16 @@ func TestNumberAssertion_Validate_LessThan(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			assertion := assertions.NumberAssertion{
-				Operator: assertions.NumberOperatorLessThan,
-				Expected: tc.expected,
-			}
-			result := assertion.Validate(tc.actual)
-			assert.Equal(t, tc.want, result)
-		})
+		t.Run(
+			tc.name, func(t *testing.T) {
+				assertion := assertions.NumberAssertion{
+					Operator: assertions.NumberOperatorLessThan,
+					Expected: tc.expected,
+				}
+				result := assertion.Validate(tc.actual)
+				assert.Equal(t, tc.want, result)
+			},
+		)
 	}
 }
 
@@ -158,14 +174,16 @@ func TestNumberAssertion_Validate_LessThanOrEqual(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			assertion := assertions.NumberAssertion{
-				Operator: assertions.NumberOperatorLessThanOrEqual,
-				Expected: tc.expected,
-			}
-			result := assertion.Validate(tc.actual)
-			assert.Equal(t, tc.want, result)
-		})
+		t.Run(
+			tc.name, func(t *testing.T) {
+				assertion := assertions.NumberAssertion{
+					Operator: assertions.NumberOperatorLessThanOrEqual,
+					Expected: tc.expected,
+				}
+				result := assertion.Validate(tc.actual)
+				assert.Equal(t, tc.want, result)
+			},
+		)
 	}
 }
 
@@ -189,15 +207,17 @@ func TestNumberAssertion_Validate_Between(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			assertion := assertions.NumberAssertion{
-				Operator: assertions.NumberOperatorBetween,
-				Min:      tc.min,
-				Max:      tc.max,
-			}
-			result := assertion.Validate(tc.actual)
-			assert.Equal(t, tc.want, result)
-		})
+		t.Run(
+			tc.name, func(t *testing.T) {
+				assertion := assertions.NumberAssertion{
+					Operator: assertions.NumberOperatorBetween,
+					Min:      tc.min,
+					Max:      tc.max,
+				}
+				result := assertion.Validate(tc.actual)
+				assert.Equal(t, tc.want, result)
+			},
+		)
 	}
 }
 
@@ -218,14 +238,16 @@ func TestNumberAssertion_Validate_ConvertTypes(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			assertion := assertions.NumberAssertion{
-				Operator: assertions.NumberOperatorEquals,
-				Expected: tc.expected,
-			}
-			result := assertion.Validate(tc.actual)
-			assert.Equal(t, tc.want, result)
-		})
+		t.Run(
+			tc.name, func(t *testing.T) {
+				assertion := assertions.NumberAssertion{
+					Operator: assertions.NumberOperatorEquals,
+					Expected: tc.expected,
+				}
+				result := assertion.Validate(tc.actual)
+				assert.Equal(t, tc.want, result)
+			},
+		)
 	}
 }
 

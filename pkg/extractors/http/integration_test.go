@@ -7,9 +7,15 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/nanostack-dev/echopoint-flow-engine/internal/logger"
 	"github.com/nanostack-dev/echopoint-flow-engine/pkg/extractors"
 	httpextractors "github.com/nanostack-dev/echopoint-flow-engine/pkg/extractors/http"
 )
+
+func init() {
+	// Enable debug logging with human-readable format for tests
+	logger.SetDebugLogging()
+}
 
 // testStatusCodeExtractor tests the StatusCodeExtractor.
 func testStatusCodeExtractor(t *testing.T, ctx extractors.ResponseContext) {
@@ -88,17 +94,23 @@ func testInterfaceImplementation(t *testing.T, ctx extractors.ResponseContext) {
 // TestNewInterfaceDesignPattern demonstrates the new interface-based extractor pattern.
 func TestNewInterfaceDesignPattern(t *testing.T) {
 	// Create a test HTTP server that returns JSON
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("X-Custom-Header", "test-value")
-		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"user": map[string]interface{}{
-				"id":   123,
-				"name": "John Doe",
+	server := httptest.NewServer(
+		http.HandlerFunc(
+			func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.Header().Set("X-Custom-Header", "test-value")
+				w.WriteHeader(http.StatusCreated)
+				json.NewEncoder(w).Encode(
+					map[string]interface{}{
+						"user": map[string]interface{}{
+							"id":   123,
+							"name": "John Doe",
+						},
+					},
+				)
 			},
-		})
-	}))
+		),
+	)
 	defer server.Close()
 
 	// Make the request
@@ -124,34 +136,48 @@ func TestNewInterfaceDesignPattern(t *testing.T) {
 	// The context encapsulates all available data from the response
 	ctx := extractors.NewResponseContext(resp, respBody, parsedBody)
 
-	t.Run("StatusCodeExtractor declares it needs StatusReader interface", func(t *testing.T) {
-		testStatusCodeExtractor(t, ctx)
-	})
+	t.Run(
+		"StatusCodeExtractor declares it needs StatusReader interface", func(t *testing.T) {
+			testStatusCodeExtractor(t, ctx)
+		},
+	)
 
-	t.Run("HeaderExtractor declares it needs HeaderAccessor interface", func(t *testing.T) {
-		testHeaderExtractor(t, ctx)
-	})
+	t.Run(
+		"HeaderExtractor declares it needs HeaderAccessor interface", func(t *testing.T) {
+			testHeaderExtractor(t, ctx)
+		},
+	)
 
-	t.Run("Context provides capability checking", func(t *testing.T) {
-		testCapabilityChecking(t, ctx)
-	})
+	t.Run(
+		"Context provides capability checking", func(t *testing.T) {
+			testCapabilityChecking(t, ctx)
+		},
+	)
 
-	t.Run("Type assertions enforce explicit dependencies", func(t *testing.T) {
-		testInterfaceImplementation(t, ctx)
-	})
+	t.Run(
+		"Type assertions enforce explicit dependencies", func(t *testing.T) {
+			testInterfaceImplementation(t, ctx)
+		},
+	)
 }
 
 // BenchmarkNewDesign shows the performance characteristics of the new pattern.
 func BenchmarkNewDesign(b *testing.B) {
 	// Setup
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("X-Custom-Header", "benchmark-value")
-		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"data": "test",
-		})
-	}))
+	server := httptest.NewServer(
+		http.HandlerFunc(
+			func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.Header().Set("X-Custom-Header", "benchmark-value")
+				w.WriteHeader(http.StatusOK)
+				json.NewEncoder(w).Encode(
+					map[string]interface{}{
+						"data": "test",
+					},
+				)
+			},
+		),
+	)
 	defer server.Close()
 
 	resp, err := http.Get(server.URL)
@@ -172,22 +198,28 @@ func BenchmarkNewDesign(b *testing.B) {
 	statusExtractor := &httpextractors.StatusCodeExtractor{}
 	headerExtractor := &httpextractors.HeaderExtractor{HeaderName: "X-Custom-Header"}
 
-	b.Run("StatusCodeExtractor-ExecutionTime", func(b *testing.B) {
-		for range b.N {
-			statusExtractor.Extract(ctx)
-		}
-	})
+	b.Run(
+		"StatusCodeExtractor-ExecutionTime", func(b *testing.B) {
+			for range b.N {
+				statusExtractor.Extract(ctx)
+			}
+		},
+	)
 
-	b.Run("HeaderExtractor-ExecutionTime", func(b *testing.B) {
-		for range b.N {
-			headerExtractor.Extract(ctx)
-		}
-	})
+	b.Run(
+		"HeaderExtractor-ExecutionTime", func(b *testing.B) {
+			for range b.N {
+				headerExtractor.Extract(ctx)
+			}
+		},
+	)
 
-	b.Run("InterfaceTypeAssertion", func(b *testing.B) {
-		for range b.N {
-			_, _ = ctx.(extractors.StatusReader)
-			_, _ = ctx.(extractors.HeaderAccessor)
-		}
-	})
+	b.Run(
+		"InterfaceTypeAssertion", func(b *testing.B) {
+			for range b.N {
+				_, _ = ctx.(extractors.StatusReader)
+				_, _ = ctx.(extractors.HeaderAccessor)
+			}
+		},
+	)
 }

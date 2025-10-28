@@ -3,10 +3,16 @@ package assertions_test
 import (
 	"testing"
 
+	"github.com/nanostack-dev/echopoint-flow-engine/internal/logger"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/nanostack-dev/echopoint-flow-engine/pkg/assertions"
 )
+
+func init() {
+	// Enable debug logging with human-readable format for tests
+	logger.SetDebugLogging()
+}
 
 func TestStringAssertion_GetType(t *testing.T) {
 	assertion := assertions.StringAssertion{
@@ -32,14 +38,16 @@ func TestStringAssertion_Validate_Equals(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			assertion := assertions.StringAssertion{
-				Operator: assertions.StringOperatorEquals,
-				Expected: tc.expected,
-			}
-			result := assertion.Validate(tc.actual)
-			assert.Equal(t, tc.want, result)
-		})
+		t.Run(
+			tc.name, func(t *testing.T) {
+				assertion := assertions.StringAssertion{
+					Operator: assertions.StringOperatorEquals,
+					Expected: tc.expected,
+				}
+				result := assertion.Validate(tc.actual)
+				assert.Equal(t, tc.want, result)
+			},
+		)
 	}
 }
 
@@ -58,14 +66,16 @@ func TestStringAssertion_Validate_NotEquals(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			assertion := assertions.StringAssertion{
-				Operator: assertions.StringOperatorNotEquals,
-				Expected: tc.expected,
-			}
-			result := assertion.Validate(tc.actual)
-			assert.Equal(t, tc.want, result)
-		})
+		t.Run(
+			tc.name, func(t *testing.T) {
+				assertion := assertions.StringAssertion{
+					Operator: assertions.StringOperatorNotEquals,
+					Expected: tc.expected,
+				}
+				result := assertion.Validate(tc.actual)
+				assert.Equal(t, tc.want, result)
+			},
+		)
 	}
 }
 
@@ -86,14 +96,16 @@ func TestStringAssertion_Validate_Contains(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			assertion := assertions.StringAssertion{
-				Operator: assertions.StringOperatorContains,
-				Expected: tc.expected,
-			}
-			result := assertion.Validate(tc.actual)
-			assert.Equal(t, tc.want, result)
-		})
+		t.Run(
+			tc.name, func(t *testing.T) {
+				assertion := assertions.StringAssertion{
+					Operator: assertions.StringOperatorContains,
+					Expected: tc.expected,
+				}
+				result := assertion.Validate(tc.actual)
+				assert.Equal(t, tc.want, result)
+			},
+		)
 	}
 }
 
@@ -111,14 +123,16 @@ func TestStringAssertion_Validate_NotContains(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			assertion := assertions.StringAssertion{
-				Operator: assertions.StringOperatorNotContains,
-				Expected: tc.expected,
-			}
-			result := assertion.Validate(tc.actual)
-			assert.Equal(t, tc.want, result)
-		})
+		t.Run(
+			tc.name, func(t *testing.T) {
+				assertion := assertions.StringAssertion{
+					Operator: assertions.StringOperatorNotContains,
+					Expected: tc.expected,
+				}
+				result := assertion.Validate(tc.actual)
+				assert.Equal(t, tc.want, result)
+			},
+		)
 	}
 }
 
@@ -138,14 +152,16 @@ func TestStringAssertion_Validate_StartsWith(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			assertion := assertions.StringAssertion{
-				Operator: assertions.StringOperatorStartsWith,
-				Expected: tc.expected,
-			}
-			result := assertion.Validate(tc.actual)
-			assert.Equal(t, tc.want, result)
-		})
+		t.Run(
+			tc.name, func(t *testing.T) {
+				assertion := assertions.StringAssertion{
+					Operator: assertions.StringOperatorStartsWith,
+					Expected: tc.expected,
+				}
+				result := assertion.Validate(tc.actual)
+				assert.Equal(t, tc.want, result)
+			},
+		)
 	}
 }
 
@@ -165,14 +181,16 @@ func TestStringAssertion_Validate_EndsWith(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			assertion := assertions.StringAssertion{
-				Operator: assertions.StringOperatorEndsWith,
-				Expected: tc.expected,
-			}
-			result := assertion.Validate(tc.actual)
-			assert.Equal(t, tc.want, result)
-		})
+		t.Run(
+			tc.name, func(t *testing.T) {
+				assertion := assertions.StringAssertion{
+					Operator: assertions.StringOperatorEndsWith,
+					Expected: tc.expected,
+				}
+				result := assertion.Validate(tc.actual)
+				assert.Equal(t, tc.want, result)
+			},
+		)
 	}
 }
 
@@ -187,21 +205,29 @@ func TestStringAssertion_Validate_Regex(t *testing.T) {
 	}{
 		{"simple pattern match", "^hello", "hello world", true},
 		{"pattern not match", "^world", "hello world", false},
-		{"email pattern", `^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`, "user@example.com", true},
-		{"invalid email", `^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`, "invalid-email", false},
+		{
+			"email pattern", `^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`, "user@example.com",
+			true,
+		},
+		{
+			"invalid email", `^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`, "invalid-email",
+			false,
+		},
 		{"order ID pattern", `^[A-Z]{3}-\d{4}$`, "ABC-1234", true},
 		{"invalid order ID", `^[A-Z]{3}-\d{4}$`, "ABC-12", false},
 	}
 
 	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			assertion := assertions.StringAssertion{
-				Operator: assertions.StringOperatorRegex,
-				Expected: tc.pattern,
-			}
-			result := assertion.Validate(tc.actual)
-			assert.Equal(t, tc.want, result)
-		})
+		t.Run(
+			tc.name, func(t *testing.T) {
+				assertion := assertions.StringAssertion{
+					Operator: assertions.StringOperatorRegex,
+					Expected: tc.pattern,
+				}
+				result := assertion.Validate(tc.actual)
+				assert.Equal(t, tc.want, result)
+			},
+		)
 	}
 }
 
@@ -219,13 +245,15 @@ func TestStringAssertion_Validate_Empty(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			assertion := assertions.StringAssertion{
-				Operator: assertions.StringOperatorEmpty,
-			}
-			result := assertion.Validate(tc.actual)
-			assert.Equal(t, tc.want, result)
-		})
+		t.Run(
+			tc.name, func(t *testing.T) {
+				assertion := assertions.StringAssertion{
+					Operator: assertions.StringOperatorEmpty,
+				}
+				result := assertion.Validate(tc.actual)
+				assert.Equal(t, tc.want, result)
+			},
+		)
 	}
 }
 
@@ -243,13 +271,15 @@ func TestStringAssertion_Validate_NotEmpty(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			assertion := assertions.StringAssertion{
-				Operator: assertions.StringOperatorNotEmpty,
-			}
-			result := assertion.Validate(tc.actual)
-			assert.Equal(t, tc.want, result)
-		})
+		t.Run(
+			tc.name, func(t *testing.T) {
+				assertion := assertions.StringAssertion{
+					Operator: assertions.StringOperatorNotEmpty,
+				}
+				result := assertion.Validate(tc.actual)
+				assert.Equal(t, tc.want, result)
+			},
+		)
 	}
 }
 

@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+
+	"github.com/rs/zerolog/log"
 )
 
 // TemplateResolver handles resolution of {{variableName}} templates in strings and objects.
@@ -21,17 +23,31 @@ func NewTemplateResolver(variables map[string]interface{}) *TemplateResolver {
 // Resolve recursively resolves all {{variableName}} templates in the given value
 // Supports strings, maps, slices, and nested structures.
 func (tr *TemplateResolver) Resolve(value interface{}) (interface{}, error) {
+	log.Debug().
+		Any("value", value).
+		Msg("Resolving template")
+
 	switch v := value.(type) {
 	case string:
-		return tr.resolveString(v), nil
+		resolved := tr.resolveString(v)
+		log.Debug().
+			Str("original", v).
+			Str("resolved", resolved).
+			Msg("String template resolved")
+		return resolved, nil
 	case map[string]interface{}:
 		return tr.resolveMap(v)
 	case []interface{}:
 		return tr.resolveSlice(v)
 	case json.RawMessage:
 		// Handle JSON raw messages
+		log.Debug().
+			Msg("Resolving JSON raw message")
 		var unmarshalled interface{}
 		if err := json.Unmarshal(v, &unmarshalled); err != nil {
+			log.Error().
+				Err(err).
+				Msg("Failed to unmarshal JSON raw message")
 			return nil, err
 		}
 		return tr.Resolve(unmarshalled)
@@ -61,30 +77,56 @@ func (tr *TemplateResolver) resolveString(s string) string {
 
 // resolveMap recursively resolves templates in all map values.
 func (tr *TemplateResolver) resolveMap(m map[string]interface{}) (map[string]interface{}, error) {
+	log.Debug().
+		Int("mapSize", len(m)).
+		Msg("Resolving map templates")
+
 	resolved := make(map[string]interface{})
 
 	for key, val := range m {
 		resolvedVal, err := tr.Resolve(val)
 		if err != nil {
-			return nil, fmt.Errorf("error resolving value for key '%s': %w", key, err)
+			err = fmt.Errorf("error resolving value for key '%s': %w", key, err)
+			log.Error().
+				Str("key", key).
+				Err(err).
+				Msg("Failed to resolve map value")
+			return nil, err
 		}
 		resolved[key] = resolvedVal
 	}
+
+	log.Debug().
+		Int("mapSize", len(resolved)).
+		Msg("Map templates resolved")
 
 	return resolved, nil
 }
 
 // resolveSlice recursively resolves templates in all slice elements.
 func (tr *TemplateResolver) resolveSlice(s []interface{}) ([]interface{}, error) {
+	log.Debug().
+		Int("sliceSize", len(s)).
+		Msg("Resolving slice templates")
+
 	resolved := make([]interface{}, len(s))
 
 	for i, val := range s {
 		resolvedVal, err := tr.Resolve(val)
 		if err != nil {
-			return nil, fmt.Errorf("error resolving element at index %d: %w", i, err)
+			err = fmt.Errorf("error resolving element at index %d: %w", i, err)
+			log.Error().
+				Int("index", i).
+				Err(err).
+				Msg("Failed to resolve slice element")
+			return nil, err
 		}
 		resolved[i] = resolvedVal
 	}
+
+	log.Debug().
+		Int("sliceSize", len(resolved)).
+		Msg("Slice templates resolved")
 
 	return resolved, nil
 }

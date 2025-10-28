@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rs/zerolog/log"
+
 	"github.com/nanostack-dev/echopoint-flow-engine/pkg/extractors"
 )
 
@@ -62,72 +64,63 @@ func (n *RequestNode) OutputSchema() []string {
 }
 
 func (n *RequestNode) Execute(ctx ExecutionContext) (map[string]interface{}, error) {
-	// Validate that we have all required inputs
-	for _, dep := range n.InputSchema() {
-		if _, exists := ctx.Inputs[dep]; !exists {
-			return nil, fmt.Errorf("missing required input: %s", dep)
-		}
+	log.Debug().
+		Str("nodeID", n.GetID()).
+		Any("inputs", ctx.Inputs).
+		Msg("Starting request node execution")
+
+	if err := n.validateInputsPresent(ctx.Inputs); err != nil {
+		return nil, err
 	}
 
-	output := make(map[string]interface{})
-
-	url, err := n.resolveTemplatesWithError(n.Data.URL, ctx.Inputs)
+	url, body, err := n.prepareRequest(ctx.Inputs)
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve URL templates: %w", err)
+		return nil, err
 	}
-	body := n.resolveTemplates(n.Data.Body, ctx.Inputs)
 
-	// Make the HTTP request
-	resp, err := n.makeRequest(url, n.Data.Method, n.Data.Headers, body, n.Data.Timeout)
+	resp, respBody, err := n.makeRequestAndReadBody(url, n.Data.Method, n.Data.Headers, body, n.Data.Timeout)
 	if err != nil {
+		log.Error().
+			Str("nodeID", n.GetID()).
+			Str("method", n.Data.Method).
+			Str("url", url).
+			Err(err).
+			Msg("HTTP request failed")
 		return nil, err
 	}
 	defer resp.Body.Close()
 
-	// Read response body
-	respBody, err := io.ReadAll(resp.Body)
+	log.Debug().
+		Str("nodeID", n.GetID()).
+		Int("statusCode", resp.StatusCode).
+		Msg("HTTP response received")
+
+	log.Debug().
+		Str("nodeID", n.GetID()).
+		Int("bodySize", len(respBody)).
+		Msg("Response body read")
+
+	parsedBody := n.parseResponseBody(resp.Header.Get("Content-Type"), respBody)
+	respCtx := extractors.NewResponseContext(resp, respBody, parsedBody)
+
+	if assertErr := n.runAssertions(respCtx); assertErr != nil {
+		return nil, assertErr
+	}
+
+	output, err := n.extractOutputs(respCtx)
 	if err != nil {
 		return nil, err
 	}
 
-	// Parse response based on content-type
-	var parsedBody interface{}
-	contentType := resp.Header.Get("Content-Type")
-	if strings.Contains(contentType, "application/json") {
-		if unmarshalErr := json.Unmarshal(respBody, &parsedBody); unmarshalErr != nil {
-			// If JSON parsing fails, treat body as string
-			parsedBody = string(respBody)
-		}
-	} else {
-		parsedBody = string(respBody)
+	if validateErr := n.validateOutput(output); validateErr != nil {
+		return nil, validateErr
 	}
 
-	// Create a ResponseContext that implements all capability interfaces
-	respCtx := extractors.NewResponseContext(resp, respBody, parsedBody)
-
-	// Run assertions (these validate but don't produce output)
-	for _, assertion := range n.GetAssertions() {
-		if !n.validate(assertion, respCtx) {
-			return nil, fmt.Errorf("assertion failed: %v", assertion)
-		}
-	}
-
-	// Extract data as declared in outputSchema
-	// Each extractor declares what capabilities it needs via interface type assertions
-	for _, outputItem := range n.GetOutputs() {
-		value, extractErr := outputItem.Extractor.Extract(respCtx)
-		if extractErr != nil {
-			return nil, extractErr
-		}
-		output[outputItem.Name] = value
-	}
-
-	// Validate output matches OutputSchema()
-	for _, expectedKey := range n.OutputSchema() {
-		if _, exists := output[expectedKey]; !exists {
-			return nil, fmt.Errorf("failed to extract expected output: %s", expectedKey)
-		}
-	}
+	log.Info().
+		Str("nodeID", n.GetID()).
+		Int("outputCount", len(output)).
+		Int("statusCode", resp.StatusCode).
+		Msg("Request node executed successfully")
 
 	return output, nil
 }
@@ -138,8 +131,6 @@ func (n *RequestNode) resolveTemplates(
 	resolver := NewTemplateResolver(inputs)
 	resolved, err := resolver.Resolve(value)
 	if err != nil {
-		// In case of error, return original value
-		// The error will be caught during actual request execution
 		return value
 	}
 	return resolved
@@ -171,15 +162,17 @@ func (n *RequestNode) validate(
 	return true
 }
 
-func (n *RequestNode) makeRequest(
+// makeRequestAndReadBody makes an HTTP request and reads the entire response body
+// within the timeout period. The timeout applies to the entire operation (request + body read).
+func (n *RequestNode) makeRequestAndReadBody(
 	url, method string, headers map[string]string, body interface{}, timeout int,
-) (*http.Response, error) {
+) (*http.Response, []byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Millisecond)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, method, url, nil)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	for key, value := range headers {
 		req.Header.Set(key, value)
@@ -188,15 +181,24 @@ func (n *RequestNode) makeRequest(
 		req.Header.Set("Content-Type", "application/json")
 		jsonBody, marshalErr := json.Marshal(body)
 		if marshalErr != nil {
-			return nil, marshalErr
+			return nil, nil, marshalErr
 		}
 		req.Body = io.NopCloser(strings.NewReader(string(jsonBody)))
 		req.ContentLength = int64(len(jsonBody))
 	}
-	if timeout > 0 {
-		client := &http.Client{Timeout: time.Duration(timeout) * time.Second}
-		return client.Do(req)
-	}
+
 	client := &http.Client{}
-	return client.Do(req)
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Read the response body while still within the timeout context
+	respBody, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		_ = resp.Body.Close()
+		return nil, nil, readErr
+	}
+
+	return resp, respBody, nil
 }

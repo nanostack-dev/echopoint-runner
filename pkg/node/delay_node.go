@@ -3,6 +3,8 @@ package node
 import (
 	"fmt"
 	"time"
+
+	"github.com/rs/zerolog/log"
 )
 
 type DelayData struct {
@@ -45,15 +47,38 @@ func (n *DelayNode) OutputSchema() []string {
 
 // Execute sleeps for the specified duration and optionally passes through input values.
 func (n *DelayNode) Execute(ctx ExecutionContext) (map[string]interface{}, error) {
+	log.Debug().
+		Str("nodeID", n.GetID()).
+		Int("durationMS", n.Data.Duration).
+		Msg("Starting delay node execution")
+
 	// Validate that we have all required inputs
 	for _, dep := range n.InputSchema() {
 		if _, exists := ctx.Inputs[dep]; !exists {
-			return nil, fmt.Errorf("missing required input: %s", dep)
+			err := fmt.Errorf("missing required input: %s", dep)
+			log.Error().
+				Str("nodeID", n.GetID()).
+				Str("missingInput", dep).
+				Err(err).
+				Msg("Delay node input validation failed")
+			return nil, err
 		}
 	}
 
+	log.Debug().
+		Str("nodeID", n.GetID()).
+		Int("durationMS", n.Data.Duration).
+		Msg("Starting delay")
+
 	// Sleep for the specified duration
+	startTime := time.Now()
 	time.Sleep(time.Duration(n.Data.Duration) * time.Millisecond)
+	actualDuration := time.Since(startTime)
+
+	log.Debug().
+		Str("nodeID", n.GetID()).
+		Int64("actualDurationMS", actualDuration.Milliseconds()).
+		Msg("Delay completed")
 
 	// DelayNode typically passes through inputs as outputs (or returns empty if no outputs declared)
 	output := make(map[string]interface{})
@@ -65,6 +90,11 @@ func (n *DelayNode) Execute(ctx ExecutionContext) (map[string]interface{}, error
 			output[outputKey] = val
 		}
 	}
+
+	log.Info().
+		Str("nodeID", n.GetID()).
+		Int64("durationMS", actualDuration.Milliseconds()).
+		Msg("Delay node executed successfully")
 
 	return output, nil
 }

@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nanostack-dev/echopoint-flow-engine/internal/logger"
 	"github.com/nanostack-dev/echopoint-flow-engine/pkg/edge"
 	"github.com/nanostack-dev/echopoint-flow-engine/pkg/engine"
 	"github.com/nanostack-dev/echopoint-flow-engine/pkg/flow"
@@ -12,6 +13,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func init() {
+	// Enable debug logging with human-readable format for tests
+	logger.SetDebugLogging()
+}
 
 // ========== LEGACY TESTS - Old Execute() signature ==========
 

@@ -4,7 +4,8 @@ This package provides a flexible, HTTP-agnostic assertion system for validating 
 
 ## Architecture
 
-The assertion system is built on a **separation of concerns** principle, dividing extraction from validation:
+The assertion system is built on a **separation of concerns** principle, dividing extraction from
+validation:
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -32,7 +33,8 @@ The assertion system is built on a **separation of concerns** principle, dividin
 
 ## Extractors
 
-Extractors are responsible for pulling specific values from responses. They are located in `/internal/extractors/`.
+Extractors are responsible for pulling specific values from responses. They are located in
+`/internal/extractors/`.
 
 ### JSONPathExtractor
 
@@ -81,6 +83,7 @@ Assertions are generic validators that work with any extracted value. They are H
 Validates string values with various operators.
 
 #### Operators
+
 - `equals` - Exact match
 - `notEquals` - Not equal
 - `contains` - Contains substring
@@ -92,6 +95,7 @@ Validates string values with various operators.
 - `notEmpty` - String is not empty
 
 #### Example
+
 ```go
 assertion := assertions.StringAssertion{
     Operator: assertions.StringOperatorEquals,
@@ -104,6 +108,7 @@ assertion := assertions.StringAssertion{
 Validates numeric values with comparison operators.
 
 #### Operators
+
 - `equals` - Exact match
 - `notEquals` - Not equal
 - `greaterThan` - Greater than
@@ -113,6 +118,7 @@ Validates numeric values with comparison operators.
 - `between` - Within range (uses Min and Max fields)
 
 #### Example
+
 ```go
 assertion := assertions.NumberAssertion{
     Operator: assertions.NumberOperatorBetween,
@@ -126,6 +132,7 @@ assertion := assertions.NumberAssertion{
 Validates boolean values.
 
 #### Example
+
 ```go
 assertion := assertions.BooleanAssertion{
     Expected: true,
@@ -134,7 +141,8 @@ assertion := assertions.BooleanAssertion{
 
 ## Composition Pattern
 
-Extractors and assertions are composed together using the `CompositeAssertion` struct in request nodes.
+Extractors and assertions are composed together using the `CompositeAssertion` struct in request
+nodes.
 
 ### Example: Validate JSON field equals a value
 
@@ -148,6 +156,7 @@ Extractors and assertions are composed together using the `CompositeAssertion` s
 ```
 
 This:
+
 1. Extracts the value at `$.user.name` using JSONPathExtractor
 2. Validates it equals "John Doe" using StringAssertion
 
@@ -179,4 +188,5 @@ This:
 2. **Reusable**: StringAssertion can validate JSONPath results, header values, or any string
 3. **Composable**: Mix and match extractors with assertions
 4. **Testable**: Extract and assert logic can be tested independently
-5. **Extensible**: Add new extractors (e.g., GraphQLExtractor) or assertions (e.g., JSONSchemaAssertion) easily
+5. **Extensible**: Add new extractors (e.g., GraphQLExtractor) or assertions (e.g.,
+   JSONSchemaAssertion) easily

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/docker/docker/api/types/container"
+	internalLog "github.com/nanostack-dev/echopoint-flow-engine/internal/logger"
 	"github.com/rs/zerolog/log"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
@@ -33,6 +34,9 @@ func LaunchTest(m *testing.M) {
 }
 
 func setup() {
+	// Enable debug logging with human-readable format for tests
+	internalLog.SetDebugLogging()
+
 	ctx := context.Background()
 
 	// Get absolute path to stubs directory
