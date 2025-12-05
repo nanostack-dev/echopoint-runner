@@ -99,18 +99,9 @@ func (engine *FlowEngine) runNode(n node.AnyNode, state *executionState) error {
 		AllOutputs: state.allOutputs,
 	}
 
-	startTime := time.Now()
-	outputs, err := n.Execute(ctx)
-	duration := time.Since(startTime)
+	result, err := n.Execute(ctx)
 
-	record := node.ExecutionResult{
-		NodeID:     nodeID,
-		Inputs:     inputs,
-		Outputs:    outputs,
-		Error:      err,
-		ExecutedAt: time.Now(),
-	}
-	state.result.ExecutionResults[n.GetID()] = record
+	state.result.ExecutionResults[n.GetID()] = result
 
 	if err != nil {
 		log.Error().
@@ -118,27 +109,27 @@ func (engine *FlowEngine) runNode(n node.AnyNode, state *executionState) error {
 			Str("nodeID", nodeID).
 			Str("nodeType", string(nodeType)).
 			Err(err).
-			Int64("nodeDurationMS", duration.Milliseconds()).
 			Msg("Node execution failed")
 	} else {
 		log.Info().
 			Str("flowName", engine.flow.Name).
 			Str("nodeID", nodeID).
 			Str("nodeType", string(nodeType)).
-			Int64("nodeDurationMS", duration.Milliseconds()).
-			Any("outputs", outputs).
+			Any("outputs", result.GetOutputs()).
 			Msg("Node executed successfully")
 	}
 
+	// Callback with polymorphic result
 	if engine.afterExecution != nil {
-		engine.afterExecution(n, record)
+		engine.afterExecution(n, result)
 	}
 
 	return err
 }
 
 func (engine *FlowEngine) propagateNodeOutputs(n node.AnyNode, state *executionState) {
-	outputs := state.result.ExecutionResults[n.GetID()].Outputs
+	result := state.result.ExecutionResults[n.GetID()]
+	outputs := result.GetOutputs()
 	nodeID := n.GetID()
 	nodeType := n.GetType()
 

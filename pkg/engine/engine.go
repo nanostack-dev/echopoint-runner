@@ -14,7 +14,7 @@ import (
 
 type Options struct {
 	BeforeExecution func(n node.AnyNode)
-	AfterExecution  func(n node.AnyNode, frame node.ExecutionResult)
+	AfterExecution  func(n node.AnyNode, result node.AnyExecutionResult)
 }
 
 type FlowEngine struct {
@@ -23,7 +23,7 @@ type FlowEngine struct {
 	nodeEdgeInput   map[node.AnyNode]int
 	nodeMap         map[string]node.AnyNode
 	beforeExecution func(n node.AnyNode)
-	afterExecution  func(n node.AnyNode, frame node.ExecutionResult)
+	afterExecution  func(n node.AnyNode, result node.AnyExecutionResult)
 }
 
 func NewFlowEngine(flowInstance flow.Flow, options *Options) (*FlowEngine, error) {
@@ -92,7 +92,7 @@ func NewFlowEngine(flowInstance flow.Flow, options *Options) (*FlowEngine, error
 	}
 
 	var beforeExecution func(n node.AnyNode)
-	var afterExecution func(n node.AnyNode, frame node.ExecutionResult)
+	var afterExecution func(n node.AnyNode, result node.AnyExecutionResult)
 	if options != nil {
 		if options.BeforeExecution != nil {
 			beforeExecution = options.BeforeExecution
@@ -132,7 +132,7 @@ func (engine *FlowEngine) Execute(initialInputs map[string]interface{}) (
 		Msg("Starting flow execution")
 
 	result := &node.FlowExecutionResult{
-		ExecutionResults: make(map[string]node.ExecutionResult),
+		ExecutionResults: make(map[string]node.AnyExecutionResult),
 		FinalOutputs:     make(map[string]interface{}),
 		Success:          false,
 	}

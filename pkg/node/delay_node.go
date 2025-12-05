@@ -45,11 +45,14 @@ func (n *DelayNode) OutputSchema() []string {
 	return []string{}
 }
 
-// Execute sleeps for the specified duration and optionally passes through input values.
-func (n *DelayNode) Execute(ctx ExecutionContext) (map[string]interface{}, error) {
+// Execute sleeps for the specified duration and returns a DelayExecutionResult.
+func (n *DelayNode) Execute(ctx ExecutionContext) (AnyExecutionResult, error) {
+	startTime := time.Now()
+	delayMs := n.Data.Duration
+
 	log.Debug().
 		Str("nodeID", n.GetID()).
-		Int("durationMS", n.Data.Duration).
+		Int("durationMS", delayMs).
 		Msg("Starting delay node execution")
 
 	// Validate that we have all required inputs
@@ -67,36 +70,38 @@ func (n *DelayNode) Execute(ctx ExecutionContext) (map[string]interface{}, error
 
 	log.Debug().
 		Str("nodeID", n.GetID()).
-		Int("durationMS", n.Data.Duration).
+		Int("durationMS", delayMs).
 		Msg("Starting delay")
 
 	// Sleep for the specified duration
-	startTime := time.Now()
-	time.Sleep(time.Duration(n.Data.Duration) * time.Millisecond)
-	actualDuration := time.Since(startTime)
+	time.Sleep(time.Duration(delayMs) * time.Millisecond)
 
-	log.Debug().
-		Str("nodeID", n.GetID()).
-		Int64("actualDurationMS", actualDuration.Milliseconds()).
-		Msg("Delay completed")
-
-	// DelayNode typically passes through inputs as outputs (or returns empty if no outputs declared)
-	output := make(map[string]interface{})
-
-	// If no specific outputs are declared, return empty map
-	// If outputs are declared, copy matching inputs to outputs
+	// DelayNode typically doesn't produce outputs, but may pass through declared outputs
+	outputs := make(map[string]interface{})
 	for _, outputKey := range n.OutputSchema() {
 		if val, exists := ctx.Inputs[outputKey]; exists {
-			output[outputKey] = val
+			outputs[outputKey] = val
 		}
+	}
+
+	result := &DelayExecutionResult{
+		BaseExecutionResult: BaseExecutionResult{
+			NodeID:     n.GetID(),
+			NodeType:   TypeDelay,
+			Inputs:     ctx.Inputs,
+			Outputs:    outputs,
+			ExecutedAt: time.Now(),
+		},
+		DelayMs:    int64(delayMs),
+		DelayUntil: startTime.Add(time.Duration(delayMs) * time.Millisecond),
 	}
 
 	log.Info().
 		Str("nodeID", n.GetID()).
-		Int64("durationMS", actualDuration.Milliseconds()).
+		Int64("delayMs", result.DelayMs).
 		Msg("Delay node executed successfully")
 
-	return output, nil
+	return result, nil
 }
 
 func (n *DelayNode) GetData() DelayData {

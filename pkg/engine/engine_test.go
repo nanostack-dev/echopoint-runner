@@ -54,15 +54,33 @@ func (n *MockNode) GetOutputs() []node.Output {
 	return []node.Output{}
 }
 
-func (n *MockNode) Execute(_ node.ExecutionContext) (map[string]interface{}, error) {
+func (n *MockNode) Execute(_ node.ExecutionContext) (node.AnyExecutionResult, error) {
 	n.executed = true
+
+	outputs := map[string]interface{}{}
+	var err error
+
 	if n.shouldError {
-		return nil, errors.New("mock error")
+		err = errors.New("mock error")
+		errMsg := err.Error()
+		errCode := "MOCK_ERROR"
+		return &node.BaseExecutionResult{
+			NodeID:     n.id,
+			NodeType:   n.nodeType,
+			Outputs:    nil,
+			Error:      err,
+			ErrorMsg:   &errMsg,
+			ErrorCode:  &errCode,
+			ExecutedAt: time.Now(),
+		}, err
 	}
-	if !n.shouldPass {
-		return map[string]interface{}{}, nil
-	}
-	return map[string]interface{}{}, nil
+
+	return &node.BaseExecutionResult{
+		NodeID:     n.id,
+		NodeType:   n.nodeType,
+		Outputs:    outputs,
+		ExecutedAt: time.Now(),
+	}, nil
 }
 
 // ========== DATA CONTRACT TESTS - New Execute() signature ==========
@@ -94,22 +112,52 @@ func (n *DataContractMockNode) OutputSchema() []string {
 	return n.outputKeys
 }
 
-func (n *DataContractMockNode) Execute(ctx node.ExecutionContext) (map[string]interface{}, error) {
+func (n *DataContractMockNode) Execute(ctx node.ExecutionContext) (node.AnyExecutionResult, error) {
 	now := time.Now()
 	n.executedAt = &now
 
 	// Validate required inputs
 	for _, dep := range n.inputDeps {
 		if _, exists := ctx.Inputs[dep]; !exists {
-			return nil, errors.New("missing required input: " + dep)
+			err := errors.New("missing required input: " + dep)
+			errMsg := err.Error()
+			errCode := "MISSING_INPUT"
+			return &node.BaseExecutionResult{
+				NodeID:     n.id,
+				NodeType:   n.nodeType,
+				Inputs:     ctx.Inputs,
+				Outputs:    nil,
+				Error:      err,
+				ErrorMsg:   &errMsg,
+				ErrorCode:  &errCode,
+				ExecutedAt: now,
+			}, err
 		}
 	}
 
 	if n.shouldError {
-		return nil, errors.New("intentional error in " + n.id)
+		err := errors.New("intentional error in " + n.id)
+		errMsg := err.Error()
+		errCode := "INTENTIONAL_ERROR"
+		return &node.BaseExecutionResult{
+			NodeID:     n.id,
+			NodeType:   n.nodeType,
+			Inputs:     ctx.Inputs,
+			Outputs:    nil,
+			Error:      err,
+			ErrorMsg:   &errMsg,
+			ErrorCode:  &errCode,
+			ExecutedAt: now,
+		}, err
 	}
 
-	return n.outputs, nil
+	return &node.BaseExecutionResult{
+		NodeID:     n.id,
+		NodeType:   n.nodeType,
+		Inputs:     ctx.Inputs,
+		Outputs:    n.outputs,
+		ExecutedAt: now,
+	}, nil
 }
 
 func (n *DataContractMockNode) GetAssertions() []node.CompositeAssertion {
@@ -368,7 +416,7 @@ func TestFlowEngine_Execute_WithBeforeAndAfterCallbacks(t *testing.T) {
 			BeforeExecution: func(n node.AnyNode) {
 				beforeCalls = append(beforeCalls, n.GetID())
 			},
-			AfterExecution: func(n node.AnyNode, _ node.ExecutionResult) {
+			AfterExecution: func(n node.AnyNode, _ node.AnyExecutionResult) {
 				afterCalls = append(afterCalls, n.GetID())
 			},
 		},
@@ -427,7 +475,7 @@ func TestDataContract_SimpleDataPassing(t *testing.T) {
 
 	// Verify node2 received data from node1
 	frame2 := result.ExecutionResults["fetch-user"]
-	assert.Equal(t, "user-123", frame2.Inputs["create-user.userId"])
+	assert.Equal(t, "user-123", frame2.GetInputs()["create-user.userId"])
 }
 
 // TestDataContract_MissingInput tests error handling for missing inputs.
@@ -484,11 +532,11 @@ func TestDataContract_ExecutionResults(t *testing.T) {
 
 	// Verify frame structure
 	frame1 := result.ExecutionResults["step1"]
-	assert.NotNil(t, frame1.ExecutedAt)
-	require.NoError(t, frame1.Error)
-	assert.Equal(t, map[string]interface{}{"output": "value1"}, frame1.Outputs)
+	assert.NotNil(t, frame1.GetExecutedAt())
+	require.NoError(t, frame1.GetError())
+	assert.Equal(t, map[string]interface{}{"output": "value1"}, frame1.GetOutputs())
 
 	frame2 := result.ExecutionResults["step2"]
-	assert.Equal(t, "value1", frame2.Inputs["step1.output"])
-	assert.Equal(t, map[string]interface{}{"output": "value2"}, frame2.Outputs)
+	assert.Equal(t, "value1", frame2.GetInputs()["step1.output"])
+	assert.Equal(t, map[string]interface{}{"output": "value2"}, frame2.GetOutputs())
 }

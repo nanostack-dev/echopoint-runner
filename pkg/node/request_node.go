@@ -63,19 +63,21 @@ func (n *RequestNode) OutputSchema() []string {
 	return si.InferRequestNodeOutputSchema(n.GetOutputs())
 }
 
-func (n *RequestNode) Execute(ctx ExecutionContext) (map[string]interface{}, error) {
+func (n *RequestNode) Execute(ctx ExecutionContext) (AnyExecutionResult, error) {
+	startTime := time.Now()
+
 	log.Debug().
 		Str("nodeID", n.GetID()).
 		Any("inputs", ctx.Inputs).
 		Msg("Starting request node execution")
 
 	if err := n.validateInputsPresent(ctx.Inputs); err != nil {
-		return nil, err
+		return n.createErrorResult(ctx.Inputs, err, time.Since(startTime)), err
 	}
 
 	url, body, err := n.prepareRequest(ctx.Inputs)
 	if err != nil {
-		return nil, err
+		return n.createErrorResult(ctx.Inputs, err, time.Since(startTime)), err
 	}
 
 	resp, respBody, err := n.makeRequestAndReadBody(url, n.Data.Method, n.Data.Headers, body, n.Data.Timeout)
@@ -86,7 +88,7 @@ func (n *RequestNode) Execute(ctx ExecutionContext) (map[string]interface{}, err
 			Str("url", url).
 			Err(err).
 			Msg("HTTP request failed")
-		return nil, err
+		return n.createErrorResult(ctx.Inputs, err, time.Since(startTime)), err
 	}
 	defer resp.Body.Close()
 
@@ -104,25 +106,70 @@ func (n *RequestNode) Execute(ctx ExecutionContext) (map[string]interface{}, err
 	respCtx := extractors.NewResponseContext(resp, respBody, parsedBody)
 
 	if assertErr := n.runAssertions(respCtx); assertErr != nil {
-		return nil, assertErr
+		return n.createErrorResult(ctx.Inputs, assertErr, time.Since(startTime)), assertErr
 	}
 
-	output, err := n.extractOutputs(respCtx)
+	outputs, err := n.extractOutputs(respCtx)
 	if err != nil {
-		return nil, err
+		return n.createErrorResult(ctx.Inputs, err, time.Since(startTime)), err
 	}
 
-	if validateErr := n.validateOutput(output); validateErr != nil {
-		return nil, validateErr
+	if validateErr := n.validateOutput(outputs); validateErr != nil {
+		return n.createErrorResult(ctx.Inputs, validateErr, time.Since(startTime)), validateErr
+	}
+
+	// Create typed RequestExecutionResult with all HTTP data
+	result := &RequestExecutionResult{
+		BaseExecutionResult: BaseExecutionResult{
+			NodeID:     n.GetID(),
+			NodeType:   TypeRequest,
+			Inputs:     ctx.Inputs,
+			Outputs:    outputs,
+			ExecutedAt: time.Now(),
+		},
+		// HTTP Request
+		RequestMethod:  n.Data.Method,
+		RequestURL:     url,
+		RequestHeaders: n.Data.Headers,
+		RequestBody:    body,
+
+		// HTTP Response
+		ResponseStatusCode: resp.StatusCode,
+		ResponseHeaders:    resp.Header,
+		ResponseBody:       respBody,
+		ResponseBodyParsed: parsedBody,
+
+		DurationMs: time.Since(startTime).Milliseconds(),
 	}
 
 	log.Info().
 		Str("nodeID", n.GetID()).
-		Int("outputCount", len(output)).
+		Int("outputCount", len(outputs)).
 		Int("statusCode", resp.StatusCode).
+		Int64("durationMs", result.DurationMs).
 		Msg("Request node executed successfully")
 
-	return output, nil
+	return result, nil
+}
+
+// createErrorResult creates a RequestExecutionResult for error cases
+func (n *RequestNode) createErrorResult(inputs map[string]interface{}, err error, duration time.Duration) AnyExecutionResult {
+	errMsg := err.Error()
+	errCode := "REQUEST_FAILED"
+
+	return &RequestExecutionResult{
+		BaseExecutionResult: BaseExecutionResult{
+			NodeID:     n.GetID(),
+			NodeType:   TypeRequest,
+			Inputs:     inputs,
+			Outputs:    nil,
+			Error:      err,
+			ErrorMsg:   &errMsg,
+			ErrorCode:  &errCode,
+			ExecutedAt: time.Now(),
+		},
+		DurationMs: duration.Milliseconds(),
+	}
 }
 
 func (n *RequestNode) resolveTemplates(

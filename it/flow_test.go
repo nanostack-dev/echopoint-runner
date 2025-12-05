@@ -68,20 +68,20 @@ func Test_CreateUserFlow(t *testing.T) {
 	require.NotNil(t, createUserFrame, "create-user frame should exist")
 
 	// Verify inputs were properly assembled
-	assert.Equal(t, ctx.WireMockURL, createUserFrame.Inputs["apiUrl"])
-	assert.Equal(t, "Alice Smith", createUserFrame.Inputs["userName"])
-	assert.Equal(t, "alice@example.com", createUserFrame.Inputs["userEmail"])
+	assert.Equal(t, ctx.WireMockURL, createUserFrame.GetInputs()["apiUrl"])
+	assert.Equal(t, "Alice Smith", createUserFrame.GetInputs()["userName"])
+	assert.Equal(t, "alice@example.com", createUserFrame.GetInputs()["userEmail"])
 
 	// Verify request succeeded
-	assert.Equal(t, 201, createUserFrame.Outputs["statusCode"], "create should return 201")
+	assert.Equal(t, 201, createUserFrame.GetOutputs()["statusCode"], "create should return 201")
 
 	// Verify user ID was extracted
-	userID := createUserFrame.Outputs["userId"]
+	userID := createUserFrame.GetOutputs()["userId"]
 	require.NotNil(t, userID, "userId should be extracted")
 	assert.Equal(t, "123", userID, "userId should match WireMock response")
 
 	// Verify full user response was captured
-	createdUserData := createUserFrame.Outputs["createdUser"]
+	createdUserData := createUserFrame.GetOutputs()["createdUser"]
 	require.NotNil(t, createdUserData, "createdUser should be extracted")
 
 	// Parse the response to verify template substitution worked
@@ -100,15 +100,15 @@ func Test_CreateUserFlow(t *testing.T) {
 
 	// CRITICAL: Verify that data from step 1 was passed to step 2
 	assert.Equal(
-		t, "123", verifyUserFrame.Inputs["create-user.userId"],
+		t, "123", verifyUserFrame.GetInputs()["create-user.userId"],
 		"verify step should receive userId from create step",
 	)
 	assert.Equal(
-		t, ctx.WireMockURL, verifyUserFrame.Inputs["apiUrl"],
+		t, ctx.WireMockURL, verifyUserFrame.GetInputs()["apiUrl"],
 		"verify step should receive apiUrl from initial inputs",
 	)
 
-	assert.Equal(t, 200, verifyUserFrame.Outputs["verifyStatus"], "verify should return 200")
+	assert.Equal(t, 200, verifyUserFrame.GetOutputs()["verifyStatus"], "verify should return 200")
 
 	assert.Equal(t, 201, result.FinalOutputs["create-user.statusCode"])
 	assert.Equal(t, "123", result.FinalOutputs["create-user.userId"])
