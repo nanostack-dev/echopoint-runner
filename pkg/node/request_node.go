@@ -152,8 +152,12 @@ func (n *RequestNode) Execute(ctx ExecutionContext) (AnyExecutionResult, error) 
 	return result, nil
 }
 
-// createErrorResult creates a RequestExecutionResult for error cases
-func (n *RequestNode) createErrorResult(inputs map[string]interface{}, err error, duration time.Duration) AnyExecutionResult {
+// createErrorResult creates a RequestExecutionResult for error cases.
+func (n *RequestNode) createErrorResult(
+	inputs map[string]interface{},
+	err error,
+	duration time.Duration,
+) AnyExecutionResult {
 	errMsg := err.Error()
 	errCode := "REQUEST_FAILED"
 

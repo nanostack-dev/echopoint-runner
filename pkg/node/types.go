@@ -48,7 +48,7 @@ type ExecutionContext struct {
 	AllOutputs map[string]map[string]interface{}
 }
 
-// AnyExecutionResult is the interface for all execution results (polymorphic)
+// AnyExecutionResult is the interface for all execution results (polymorphic).
 type AnyExecutionResult interface {
 	GetNodeID() string
 	GetNodeType() Type
@@ -61,7 +61,7 @@ type AnyExecutionResult interface {
 	isExecutionResult()
 }
 
-// BaseExecutionResult provides common fields for all execution results
+// BaseExecutionResult provides common fields for all execution results.
 type BaseExecutionResult struct {
 	NodeID     string                 `json:"node_id"`
 	NodeType   Type                   `json:"node_type"`
@@ -73,16 +73,27 @@ type BaseExecutionResult struct {
 	ExecutedAt time.Time              `json:"executed_at"`
 }
 
-// Implement AnyExecutionResult interface
-func (b *BaseExecutionResult) GetNodeID() string                  { return b.NodeID }
-func (b *BaseExecutionResult) GetNodeType() Type                  { return b.NodeType }
-func (b *BaseExecutionResult) GetInputs() map[string]interface{}  { return b.Inputs }
-func (b *BaseExecutionResult) GetOutputs() map[string]interface{} { return b.Outputs }
-func (b *BaseExecutionResult) GetError() error                    { return b.Error }
-func (b *BaseExecutionResult) GetExecutedAt() time.Time           { return b.ExecutedAt }
-func (b *BaseExecutionResult) isExecutionResult()                 {}
+// GetNodeID returns the node ID.
+func (b *BaseExecutionResult) GetNodeID() string { return b.NodeID }
 
-// RequestExecutionResult stores HTTP request node execution data
+// GetNodeType returns the node type.
+func (b *BaseExecutionResult) GetNodeType() Type { return b.NodeType }
+
+// GetInputs returns the inputs map.
+func (b *BaseExecutionResult) GetInputs() map[string]interface{} { return b.Inputs }
+
+// GetOutputs returns the outputs map.
+func (b *BaseExecutionResult) GetOutputs() map[string]interface{} { return b.Outputs }
+
+// GetError returns the error if any.
+func (b *BaseExecutionResult) GetError() error { return b.Error }
+
+// GetExecutedAt returns the execution timestamp.
+func (b *BaseExecutionResult) GetExecutedAt() time.Time { return b.ExecutedAt }
+
+func (b *BaseExecutionResult) isExecutionResult() {}
+
+// RequestExecutionResult stores HTTP request node execution data.
 type RequestExecutionResult struct {
 	BaseExecutionResult
 
@@ -102,7 +113,7 @@ type RequestExecutionResult struct {
 	DurationMs int64 `json:"duration_ms"`
 }
 
-// DelayExecutionResult stores delay node execution data
+// DelayExecutionResult stores delay node execution data.
 type DelayExecutionResult struct {
 	BaseExecutionResult
 
@@ -110,12 +121,13 @@ type DelayExecutionResult struct {
 	DelayUntil time.Time `json:"delay_until"`
 }
 
-// Helper functions for type-safe casting (like AsRequestNode)
+// AsRequestExecutionResult safely casts an AnyExecutionResult to a RequestExecutionResult.
 func AsRequestExecutionResult(result AnyExecutionResult) (*RequestExecutionResult, bool) {
 	reqResult, ok := result.(*RequestExecutionResult)
 	return reqResult, ok
 }
 
+// MustAsRequestExecutionResult casts an AnyExecutionResult to a RequestExecutionResult, panicking if it fails.
 func MustAsRequestExecutionResult(result AnyExecutionResult) *RequestExecutionResult {
 	reqResult, ok := AsRequestExecutionResult(result)
 	if !ok {
@@ -124,11 +136,13 @@ func MustAsRequestExecutionResult(result AnyExecutionResult) *RequestExecutionRe
 	return reqResult
 }
 
+// AsDelayExecutionResult safely casts an AnyExecutionResult to a DelayExecutionResult.
 func AsDelayExecutionResult(result AnyExecutionResult) (*DelayExecutionResult, bool) {
 	delayResult, ok := result.(*DelayExecutionResult)
 	return delayResult, ok
 }
 
+// MustAsDelayExecutionResult casts an AnyExecutionResult to a DelayExecutionResult, panicking if it fails.
 func MustAsDelayExecutionResult(result AnyExecutionResult) *DelayExecutionResult {
 	delayResult, ok := AsDelayExecutionResult(result)
 	if !ok {
@@ -138,7 +152,7 @@ func MustAsDelayExecutionResult(result AnyExecutionResult) *DelayExecutionResult
 }
 
 // ExecutionResult stores per-node execution results and metadata.
-// DEPRECATED: Use AnyExecutionResult interface and specific types instead
+// Deprecated: Use AnyExecutionResult interface and specific types instead.
 type ExecutionResult struct {
 	NodeID     string
 	Inputs     map[string]interface{}
