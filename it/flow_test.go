@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/nanostack-dev/echopoint-flow-engine/internal/logger"
-	"github.com/nanostack-dev/echopoint-flow-engine/it/shared"
+	testutil "github.com/nanostack-dev/echopoint-flow-engine/it/shared"
 	"github.com/nanostack-dev/echopoint-flow-engine/pkg/engine"
 	"github.com/nanostack-dev/echopoint-flow-engine/pkg/flow"
 	"github.com/stretchr/testify/assert"
@@ -42,7 +42,7 @@ func loadFlowFromJSON(t *testing.T, filename string) *flow.Flow {
 // 3. Fetch the created user (uses extracted user ID from step 1)
 // 4. Verify the data matches what was sent.
 func Test_CreateUserFlow(t *testing.T) {
-	ctx := shared.GetFlowEngineContext()
+	ctx := testutil.GetFlowEngineContext()
 	require.NotNil(t, ctx, "test context should be initialized")
 
 	// Load flow definition from JSON

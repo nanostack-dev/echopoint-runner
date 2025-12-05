@@ -1,4 +1,4 @@
-package http_test
+package httpextractors_test
 
 import (
 	"encoding/json"

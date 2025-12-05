@@ -3,11 +3,11 @@ package it_test
 import (
 	"testing"
 
-	"github.com/nanostack-dev/echopoint-flow-engine/it/shared"
+	testutil "github.com/nanostack-dev/echopoint-flow-engine/it/shared"
 )
 
 func TestSharedSetup(t *testing.T) {
-	ctx := shared.GetFlowEngineContext()
+	ctx := testutil.GetFlowEngineContext()
 
 	if ctx.WireMockURL == "" {
 		t.Fatal("WireMockURL should be set")
@@ -17,5 +17,5 @@ func TestSharedSetup(t *testing.T) {
 }
 
 func TestMain(m *testing.M) {
-	shared.LaunchTest(m)
+	testutil.LaunchTest(m)
 }

@@ -151,16 +151,6 @@ func MustAsDelayExecutionResult(result AnyExecutionResult) *DelayExecutionResult
 	return delayResult
 }
 
-// ExecutionResult stores per-node execution results and metadata.
-// Deprecated: Use AnyExecutionResult interface and specific types instead.
-type ExecutionResult struct {
-	NodeID     string
-	Inputs     map[string]interface{}
-	Outputs    map[string]interface{}
-	Error      error
-	ExecutedAt time.Time
-}
-
 // FlowExecutionResult contains the complete trace of a flow execution.
 type FlowExecutionResult struct {
 	ExecutionResults map[string]AnyExecutionResult `json:"execution_results"` // Polymorphic results!
