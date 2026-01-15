@@ -34,6 +34,10 @@ func (n *MockNode) GetID() string {
 	return n.id
 }
 
+func (n *MockNode) GetDisplayName() string {
+	return n.id
+}
+
 func (n *MockNode) GetType() node.Type {
 	return n.nodeType
 }
@@ -65,21 +69,23 @@ func (n *MockNode) Execute(_ node.ExecutionContext) (node.AnyExecutionResult, er
 		errMsg := err.Error()
 		errCode := "MOCK_ERROR"
 		return &node.BaseExecutionResult{
-			NodeID:     n.id,
-			NodeType:   n.nodeType,
-			Outputs:    nil,
-			Error:      err,
-			ErrorMsg:   &errMsg,
-			ErrorCode:  &errCode,
-			ExecutedAt: time.Now(),
+			NodeID:      n.id,
+			DisplayName: n.id,
+			NodeType:    n.nodeType,
+			Outputs:     nil,
+			Error:       err,
+			ErrorMsg:    &errMsg,
+			ErrorCode:   &errCode,
+			ExecutedAt:  time.Now(),
 		}, err
 	}
 
 	return &node.BaseExecutionResult{
-		NodeID:     n.id,
-		NodeType:   n.nodeType,
-		Outputs:    outputs,
-		ExecutedAt: time.Now(),
+		NodeID:      n.id,
+		DisplayName: n.id,
+		NodeType:    n.nodeType,
+		Outputs:     outputs,
+		ExecutedAt:  time.Now(),
 	}, nil
 }
 
@@ -97,6 +103,10 @@ type DataContractMockNode struct {
 }
 
 func (n *DataContractMockNode) GetID() string {
+	return n.id
+}
+
+func (n *DataContractMockNode) GetDisplayName() string {
 	return n.id
 }
 
@@ -123,14 +133,15 @@ func (n *DataContractMockNode) Execute(ctx node.ExecutionContext) (node.AnyExecu
 			errMsg := err.Error()
 			errCode := "MISSING_INPUT"
 			return &node.BaseExecutionResult{
-				NodeID:     n.id,
-				NodeType:   n.nodeType,
-				Inputs:     ctx.Inputs,
-				Outputs:    nil,
-				Error:      err,
-				ErrorMsg:   &errMsg,
-				ErrorCode:  &errCode,
-				ExecutedAt: now,
+				NodeID:      n.id,
+				DisplayName: n.id,
+				NodeType:    n.nodeType,
+				Inputs:      ctx.Inputs,
+				Outputs:     nil,
+				Error:       err,
+				ErrorMsg:    &errMsg,
+				ErrorCode:   &errCode,
+				ExecutedAt:  now,
 			}, err
 		}
 	}
@@ -152,11 +163,12 @@ func (n *DataContractMockNode) Execute(ctx node.ExecutionContext) (node.AnyExecu
 	}
 
 	return &node.BaseExecutionResult{
-		NodeID:     n.id,
-		NodeType:   n.nodeType,
-		Inputs:     ctx.Inputs,
-		Outputs:    n.outputs,
-		ExecutedAt: now,
+		NodeID:      n.id,
+		DisplayName: n.id,
+		NodeType:    n.nodeType,
+		Inputs:      ctx.Inputs,
+		Outputs:     n.outputs,
+		ExecutedAt:  now,
 	}, nil
 }
 

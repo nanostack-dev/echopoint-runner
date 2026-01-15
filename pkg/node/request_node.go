@@ -121,11 +121,12 @@ func (n *RequestNode) Execute(ctx ExecutionContext) (AnyExecutionResult, error) 
 	// Create typed RequestExecutionResult with all HTTP data
 	result := &RequestExecutionResult{
 		BaseExecutionResult: BaseExecutionResult{
-			NodeID:     n.GetID(),
-			NodeType:   TypeRequest,
-			Inputs:     ctx.Inputs,
-			Outputs:    outputs,
-			ExecutedAt: time.Now(),
+			NodeID:      n.GetID(),
+			DisplayName: n.GetDisplayName(),
+			NodeType:    TypeRequest,
+			Inputs:      ctx.Inputs,
+			Outputs:     outputs,
+			ExecutedAt:  time.Now(),
 		},
 		// HTTP Request
 		RequestMethod:  n.Data.Method,
@@ -163,14 +164,15 @@ func (n *RequestNode) createErrorResult(
 
 	return &RequestExecutionResult{
 		BaseExecutionResult: BaseExecutionResult{
-			NodeID:     n.GetID(),
-			NodeType:   TypeRequest,
-			Inputs:     inputs,
-			Outputs:    nil,
-			Error:      err,
-			ErrorMsg:   &errMsg,
-			ErrorCode:  &errCode,
-			ExecutedAt: time.Now(),
+			NodeID:      n.GetID(),
+			DisplayName: n.GetDisplayName(),
+			NodeType:    TypeRequest,
+			Inputs:      inputs,
+			Outputs:     nil,
+			Error:       err,
+			ErrorMsg:    &errMsg,
+			ErrorCode:   &errCode,
+			ExecutedAt:  time.Now(),
 		},
 		DurationMs: duration.Milliseconds(),
 	}

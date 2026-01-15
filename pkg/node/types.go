@@ -4,6 +4,7 @@ import "time"
 
 type AnyNode interface {
 	GetID() string
+	GetDisplayName() string
 	GetType() Type
 	InputSchema() []string
 
@@ -51,6 +52,7 @@ type ExecutionContext struct {
 // AnyExecutionResult is the interface for all execution results (polymorphic).
 type AnyExecutionResult interface {
 	GetNodeID() string
+	GetDisplayName() string
 	GetNodeType() Type
 	GetInputs() map[string]interface{}
 	GetOutputs() map[string]interface{}
@@ -63,18 +65,22 @@ type AnyExecutionResult interface {
 
 // BaseExecutionResult provides common fields for all execution results.
 type BaseExecutionResult struct {
-	NodeID     string                 `json:"node_id"`
-	NodeType   Type                   `json:"node_type"`
-	Inputs     map[string]interface{} `json:"inputs"`
-	Outputs    map[string]interface{} `json:"outputs"`
-	Error      error                  `json:"-"` // Don't serialize Go error
-	ErrorCode  *string                `json:"error_code,omitempty"`
-	ErrorMsg   *string                `json:"error_message,omitempty"`
-	ExecutedAt time.Time              `json:"executed_at"`
+	NodeID      string                 `json:"node_id"`
+	DisplayName string                 `json:"display_name"`
+	NodeType    Type                   `json:"node_type"`
+	Inputs      map[string]interface{} `json:"inputs"`
+	Outputs     map[string]interface{} `json:"outputs"`
+	Error       error                  `json:"-"` // Don't serialize Go error
+	ErrorCode   *string                `json:"error_code,omitempty"`
+	ErrorMsg    *string                `json:"error_message,omitempty"`
+	ExecutedAt  time.Time              `json:"executed_at"`
 }
 
 // GetNodeID returns the node ID.
 func (b *BaseExecutionResult) GetNodeID() string { return b.NodeID }
+
+// GetDisplayName returns the node display name.
+func (b *BaseExecutionResult) GetDisplayName() string { return b.DisplayName }
 
 // GetNodeType returns the node type.
 func (b *BaseExecutionResult) GetNodeType() Type { return b.NodeType }

@@ -86,11 +86,12 @@ func (n *DelayNode) Execute(ctx ExecutionContext) (AnyExecutionResult, error) {
 
 	result := &DelayExecutionResult{
 		BaseExecutionResult: BaseExecutionResult{
-			NodeID:     n.GetID(),
-			NodeType:   TypeDelay,
-			Inputs:     ctx.Inputs,
-			Outputs:    outputs,
-			ExecutedAt: time.Now(),
+			NodeID:      n.GetID(),
+			DisplayName: n.GetDisplayName(),
+			NodeType:    TypeDelay,
+			Inputs:      ctx.Inputs,
+			Outputs:     outputs,
+			ExecutedAt:  time.Now(),
 		},
 		DelayMs:    int64(delayMs),
 		DelayUntil: startTime.Add(time.Duration(delayMs) * time.Millisecond),

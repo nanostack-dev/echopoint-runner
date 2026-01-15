@@ -11,15 +11,21 @@ type Output struct {
 // BaseNode contains common fields and behavior shared across all node types.
 // All specific node types (RequestNode, DelayNode, AssertionNode, etc.) should embed BaseNode.
 type BaseNode struct {
-	ID         string               `json:"id"`
-	NodeType   Type                 `json:"type"`
-	Assertions []CompositeAssertion `json:"assertions"`
-	Outputs    []Output             `json:"outputs"`
+	ID          string               `json:"id"`
+	DisplayName string               `json:"display_name"`
+	NodeType    Type                 `json:"type"`
+	Assertions  []CompositeAssertion `json:"assertions"`
+	Outputs     []Output             `json:"outputs"`
 }
 
 // GetID returns the unique identifier for this node.
 func (bn *BaseNode) GetID() string {
 	return bn.ID
+}
+
+// GetDisplayName returns the display name for this node.
+func (bn *BaseNode) GetDisplayName() string {
+	return bn.DisplayName
 }
 
 // GetType returns the type of this node (request, delay, assertion, etc.)
