@@ -63,14 +63,15 @@ jobs:
           NEW_MAJOR=$((MAJOR + 1))
           NEW_MINOR=0
           NEW_PATCH=0
-        elif echo "$COMMITS" | grep -qiE "(feat|feature|minor)"; then
-          NEW_MAJOR=$MAJOR
-          NEW_MINOR=$((MINOR + 1))
-          NEW_PATCH=0
-        else
+        elif echo "$COMMITS" | grep -qiE "(fix|patch)"; then
           NEW_MAJOR=$MAJOR
           NEW_MINOR=$MINOR
           NEW_PATCH=$((PATCH + 1))
+        else
+          # Default: increment minor version
+          NEW_MAJOR=$MAJOR
+          NEW_MINOR=$((MINOR + 1))
+          NEW_PATCH=0
         fi
 
         NEW_VERSION="v${NEW_MAJOR}.${NEW_MINOR}.${NEW_PATCH}"

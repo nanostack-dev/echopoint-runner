@@ -25,7 +25,7 @@ func (n *RequestNode) validateInputsPresent(inputs map[string]interface{}) error
 	return nil
 }
 
-func (n *RequestNode) prepareRequest(inputs map[string]interface{}) (string, interface{}, error) {
+func (n *RequestNode) prepareRequest(inputs map[string]interface{}) (string, map[string]string, interface{}, error) {
 	log.Debug().
 		Str("nodeID", n.GetID()).
 		Str("rawURL", n.Data.URL).
@@ -38,7 +38,7 @@ func (n *RequestNode) prepareRequest(inputs map[string]interface{}) (string, int
 			Str("nodeID", n.GetID()).
 			Err(err).
 			Msg("URL template resolution failed")
-		return "", nil, err
+		return "", nil, nil, err
 	}
 
 	log.Debug().
@@ -46,7 +46,33 @@ func (n *RequestNode) prepareRequest(inputs map[string]interface{}) (string, int
 		Str("resolvedURL", url).
 		Msg("URL templates resolved successfully")
 
+	// Resolve headers
+	headers := make(map[string]string)
+	for k, v := range n.Data.Headers {
+		resolved := n.resolveTemplates(v, inputs)
+		if s, ok := resolved.(string); ok {
+			headers[k] = s
+		} else {
+			headers[k] = fmt.Sprintf("%v", resolved)
+		}
+	}
+
 	body := n.resolveTemplates(n.Data.Body, inputs)
+
+	// Resolve query parameters and append to URL
+	if len(n.Data.QueryParams) > 0 {
+		var queryString []string
+		for k, v := range n.Data.QueryParams {
+			resolvedK := n.resolveTemplates(k, inputs)
+			resolvedV := n.resolveTemplates(v, inputs)
+			queryString = append(queryString, fmt.Sprintf("%v=%v", resolvedK, resolvedV))
+		}
+		if strings.Contains(url, "?") {
+			url += "&" + strings.Join(queryString, "&")
+		} else {
+			url += "?" + strings.Join(queryString, "&")
+		}
+	}
 
 	log.Debug().
 		Str("nodeID", n.GetID()).
@@ -55,7 +81,7 @@ func (n *RequestNode) prepareRequest(inputs map[string]interface{}) (string, int
 		Int("timeout", n.Data.Timeout).
 		Msg("Making HTTP request")
 
-	return url, body, nil
+	return url, headers, body, nil
 }
 
 func (n *RequestNode) parseResponseBody(contentType string, respBody []byte) interface{} {

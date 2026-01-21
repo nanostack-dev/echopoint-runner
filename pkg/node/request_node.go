@@ -51,6 +51,14 @@ func (n *RequestNode) GetData() RequestData {
 	return n.Data
 }
 
+func (n *RequestNode) GetOutputs() []Output {
+	return n.Outputs
+}
+
+func (n *RequestNode) GetAssertions() []CompositeAssertion {
+	return n.Assertions
+}
+
 // InputSchema infers inputs from template variables in URL, Headers, QueryParams, and Body.
 func (n *RequestNode) InputSchema() []string {
 	si := &SchemaInference{}
@@ -75,12 +83,12 @@ func (n *RequestNode) Execute(ctx ExecutionContext) (AnyExecutionResult, error) 
 		return n.createErrorResult(ctx.Inputs, err, time.Since(startTime)), err
 	}
 
-	url, body, err := n.prepareRequest(ctx.Inputs)
+	url, headers, body, err := n.prepareRequest(ctx.Inputs)
 	if err != nil {
 		return n.createErrorResult(ctx.Inputs, err, time.Since(startTime)), err
 	}
 
-	resp, respBody, err := n.makeRequestAndReadBody(url, n.Data.Method, n.Data.Headers, body, n.Data.Timeout)
+	resp, respBody, err := n.makeRequestAndReadBody(url, n.Data.Method, headers, body, n.Data.Timeout)
 	if err != nil {
 		log.Error().
 			Str("nodeID", n.GetID()).
