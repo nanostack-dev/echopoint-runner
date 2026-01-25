@@ -30,6 +30,10 @@ func (si *SchemaInference) extractVariablesRecursive(data interface{}, vars map[
 		for _, val := range v {
 			si.extractVariablesRecursive(val, vars)
 		}
+	case map[string]string:
+		for _, val := range v {
+			si.extractVariablesRecursive(val, vars)
+		}
 	case []interface{}:
 		for _, val := range v {
 			si.extractVariablesRecursive(val, vars)

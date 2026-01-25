@@ -139,7 +139,7 @@ func (n *RequestNode) Execute(ctx ExecutionContext) (AnyExecutionResult, error) 
 		// HTTP Request
 		RequestMethod:  n.Data.Method,
 		RequestURL:     url,
-		RequestHeaders: n.Data.Headers,
+		RequestHeaders: headers,
 		RequestBody:    body,
 
 		// HTTP Response
