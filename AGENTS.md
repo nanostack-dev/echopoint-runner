@@ -14,3 +14,6 @@ Engine for processing webhook events and logical flows.
 - Optimize JSONPath queries for performance.
 - Ensure thorough unit testing for complex flow logic.
 - Maintain idempotency in event processing.
+
+## Tools & MCP
+- When working with external libraries, **use the Context7 MCP** for accurate usage and API details.
