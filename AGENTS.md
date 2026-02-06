@@ -17,3 +17,13 @@ Engine for processing webhook events and logical flows.
 
 ## Tools & MCP
 - When working with external libraries, **use the Context7 MCP** for accurate usage and API details.
+
+## Git Conventions
+- **Commit Messages**: Follow [Conventional Commits](https://www.conventionalcommits.org/):
+  - `feat: add new flow node type`
+  - `fix: resolve JSONPath evaluation bug`
+  - `perf: optimize flow execution path`
+- **Branch Naming**: When working on tracked tasks, include ticket number:
+  - Format: `<type>/<TICKET-ID>-<description>`
+  - Examples: `feat/ENG-10-add-delay-node`, `fix/ENG-20-jsonpath-bug`
+  - For untracked work: `<type>/<description>` (e.g., `refactor/simplify-engine`)
