@@ -1,8 +1,8 @@
 package compatibility
 
 import (
-	"github.com/nanostack-dev/echopoint-flow-engine/pkg/extractors"
-	"github.com/nanostack-dev/echopoint-flow-engine/pkg/operators"
+	"github.com/nanostack-dev/echopoint-runner/pkg/extractors"
+	"github.com/nanostack-dev/echopoint-runner/pkg/operators"
 )
 
 // ExtractorOperatorCompatibility defines which operators are compatible with each extractor.

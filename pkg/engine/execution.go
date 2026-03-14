@@ -6,7 +6,7 @@ import (
 
 	"github.com/rs/zerolog/log"
 
-	"github.com/nanostack-dev/echopoint-flow-engine/pkg/node"
+	"github.com/nanostack-dev/echopoint-runner/pkg/node"
 )
 
 type executionState struct {

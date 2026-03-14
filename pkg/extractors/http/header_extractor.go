@@ -6,7 +6,7 @@ import (
 
 	"github.com/rs/zerolog/log"
 
-	"github.com/nanostack-dev/echopoint-flow-engine/pkg/extractors"
+	"github.com/nanostack-dev/echopoint-runner/pkg/extractors"
 )
 
 // HeaderExtractor extracts HTTP header values from a response.

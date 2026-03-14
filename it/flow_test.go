@@ -6,10 +6,10 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/nanostack-dev/echopoint-flow-engine/internal/logger"
-	testutil "github.com/nanostack-dev/echopoint-flow-engine/it/shared"
-	"github.com/nanostack-dev/echopoint-flow-engine/pkg/engine"
-	"github.com/nanostack-dev/echopoint-flow-engine/pkg/flow"
+	"github.com/nanostack-dev/echopoint-runner/internal/logger"
+	testutil "github.com/nanostack-dev/echopoint-runner/it/shared"
+	"github.com/nanostack-dev/echopoint-runner/pkg/engine"
+	"github.com/nanostack-dev/echopoint-runner/pkg/flow"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

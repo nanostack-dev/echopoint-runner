@@ -4,9 +4,9 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/nanostack-dev/echopoint-flow-engine/internal/logger"
-	"github.com/nanostack-dev/echopoint-flow-engine/pkg/extractors"
-	httpextractors "github.com/nanostack-dev/echopoint-flow-engine/pkg/extractors/http"
+	"github.com/nanostack-dev/echopoint-runner/internal/logger"
+	"github.com/nanostack-dev/echopoint-runner/pkg/extractors"
+	httpextractors "github.com/nanostack-dev/echopoint-runner/pkg/extractors/http"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

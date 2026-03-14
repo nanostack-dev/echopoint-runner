@@ -3,8 +3,8 @@ package flow
 import (
 	"encoding/json"
 
-	"github.com/nanostack-dev/echopoint-flow-engine/pkg/edge"
-	"github.com/nanostack-dev/echopoint-flow-engine/pkg/node"
+	"github.com/nanostack-dev/echopoint-runner/pkg/edge"
+	"github.com/nanostack-dev/echopoint-runner/pkg/node"
 )
 
 type Flow struct {

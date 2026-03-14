@@ -1,6 +1,6 @@
 package node
 
-import "github.com/nanostack-dev/echopoint-flow-engine/pkg/extractors"
+import "github.com/nanostack-dev/echopoint-runner/pkg/extractors"
 
 // Output represents a named output with an associated extractor.
 type Output struct {

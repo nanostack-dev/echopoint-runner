@@ -7,7 +7,7 @@ import (
 
 	"github.com/rs/zerolog/log"
 
-	"github.com/nanostack-dev/echopoint-flow-engine/pkg/extractors"
+	"github.com/nanostack-dev/echopoint-runner/pkg/extractors"
 )
 
 func (n *RequestNode) validateInputsPresent(inputs map[string]interface{}) error {
