@@ -3,7 +3,7 @@ package it_test
 import (
 	"testing"
 
-	testutil "github.com/nanostack-dev/echopoint-flow-engine/it/shared"
+	testutil "github.com/nanostack-dev/echopoint-runner/it/shared"
 )
 
 func TestSharedSetup(t *testing.T) {

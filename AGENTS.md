@@ -1,4 +1,4 @@
-# Agent Guide: Echopoint Flow Engine
+# Agent Guide: Echopoint Runner
 
 Engine for processing webhook events and logical flows.
 

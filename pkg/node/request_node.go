@@ -11,7 +11,7 @@ import (
 
 	"github.com/rs/zerolog/log"
 
-	"github.com/nanostack-dev/echopoint-flow-engine/pkg/extractors"
+	"github.com/nanostack-dev/echopoint-runner/pkg/extractors"
 )
 
 type RequestData struct {

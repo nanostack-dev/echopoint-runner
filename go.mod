@@ -1,4 +1,4 @@
-module github.com/nanostack-dev/echopoint-flow-engine
+module github.com/nanostack-dev/echopoint-runner
 
 go 1.25.1
 

@@ -4,12 +4,12 @@ import (
 	"os"
 	"testing"
 
-	"github.com/nanostack-dev/echopoint-flow-engine/internal/logger"
-	"github.com/nanostack-dev/echopoint-flow-engine/pkg/edge"
-	"github.com/nanostack-dev/echopoint-flow-engine/pkg/extractors"
-	httpextractors "github.com/nanostack-dev/echopoint-flow-engine/pkg/extractors/http"
-	"github.com/nanostack-dev/echopoint-flow-engine/pkg/flow"
-	"github.com/nanostack-dev/echopoint-flow-engine/pkg/node"
+	"github.com/nanostack-dev/echopoint-runner/internal/logger"
+	"github.com/nanostack-dev/echopoint-runner/pkg/edge"
+	"github.com/nanostack-dev/echopoint-runner/pkg/extractors"
+	httpextractors "github.com/nanostack-dev/echopoint-runner/pkg/extractors/http"
+	"github.com/nanostack-dev/echopoint-runner/pkg/flow"
+	"github.com/nanostack-dev/echopoint-runner/pkg/node"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

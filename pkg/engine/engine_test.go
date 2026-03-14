@@ -5,11 +5,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nanostack-dev/echopoint-flow-engine/internal/logger"
-	"github.com/nanostack-dev/echopoint-flow-engine/pkg/edge"
-	"github.com/nanostack-dev/echopoint-flow-engine/pkg/engine"
-	"github.com/nanostack-dev/echopoint-flow-engine/pkg/flow"
-	"github.com/nanostack-dev/echopoint-flow-engine/pkg/node"
+	"github.com/nanostack-dev/echopoint-runner/internal/logger"
+	"github.com/nanostack-dev/echopoint-runner/pkg/edge"
+	"github.com/nanostack-dev/echopoint-runner/pkg/engine"
+	"github.com/nanostack-dev/echopoint-runner/pkg/flow"
+	"github.com/nanostack-dev/echopoint-runner/pkg/node"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

@@ -3,11 +3,11 @@ package operators_test
 import (
 	"testing"
 
-	"github.com/nanostack-dev/echopoint-flow-engine/internal/logger"
+	"github.com/nanostack-dev/echopoint-runner/internal/logger"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/nanostack-dev/echopoint-flow-engine/pkg/operators"
+	"github.com/nanostack-dev/echopoint-runner/pkg/operators"
 )
 
 func init() {

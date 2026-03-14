@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/docker/docker/api/types/container"
-	internalLog "github.com/nanostack-dev/echopoint-flow-engine/internal/logger"
+	internalLog "github.com/nanostack-dev/echopoint-runner/internal/logger"
 	"github.com/rs/zerolog/log"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"

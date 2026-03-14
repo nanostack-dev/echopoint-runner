@@ -3,10 +3,10 @@ package assertions_test
 import (
 	"testing"
 
-	"github.com/nanostack-dev/echopoint-flow-engine/internal/logger"
+	"github.com/nanostack-dev/echopoint-runner/internal/logger"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/nanostack-dev/echopoint-flow-engine/pkg/assertions"
+	"github.com/nanostack-dev/echopoint-runner/pkg/assertions"
 )
 
 func init() {

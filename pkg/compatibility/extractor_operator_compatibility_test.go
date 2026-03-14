@@ -3,10 +3,10 @@ package compatibility_test
 import (
 	"testing"
 
-	"github.com/nanostack-dev/echopoint-flow-engine/internal/logger"
-	"github.com/nanostack-dev/echopoint-flow-engine/pkg/compatibility"
-	"github.com/nanostack-dev/echopoint-flow-engine/pkg/extractors"
-	"github.com/nanostack-dev/echopoint-flow-engine/pkg/operators"
+	"github.com/nanostack-dev/echopoint-runner/internal/logger"
+	"github.com/nanostack-dev/echopoint-runner/pkg/compatibility"
+	"github.com/nanostack-dev/echopoint-runner/pkg/extractors"
+	"github.com/nanostack-dev/echopoint-runner/pkg/operators"
 	"github.com/stretchr/testify/assert"
 )
 

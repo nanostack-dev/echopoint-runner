@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/nanostack-dev/echopoint-flow-engine/pkg/extractors"
-	_ "github.com/nanostack-dev/echopoint-flow-engine/pkg/extractors/http" // Register HTTP extractors in init()
+	"github.com/nanostack-dev/echopoint-runner/pkg/extractors"
+	_ "github.com/nanostack-dev/echopoint-runner/pkg/extractors/http" // Register HTTP extractors in init()
 )
 
 // CompositeAssertion combines an extractor with an operator for validation.

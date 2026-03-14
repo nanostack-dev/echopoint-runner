@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/nanostack-dev/echopoint-flow-engine/pkg/extractors"
+	"github.com/nanostack-dev/echopoint-runner/pkg/extractors"
 )
 
 //nolint:gochecknoinits
