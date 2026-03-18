@@ -1,7 +1,7 @@
 {
   "request": {
     "method": "GET",
-    "urlPathPattern": "/users/.*"
+    "urlPath": "/users/404"
   },
   "response": {
     "status": 404,
