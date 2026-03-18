@@ -1,5 +1,8 @@
 name: Go Build and Test
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 on:
   push:
     branches: [ main ]
@@ -40,8 +43,8 @@ jobs:
           version: latest
           working-directory: .
           args: --timeout 5m --path-mode=abs
-          skip-pkg-cache: true
-          skip-build-cache: true
+          skip-cache: true
+          skip-save-cache: true
 
   tests-runner:
     name: Test echopoint-runner
