@@ -91,6 +91,14 @@ func (r *Runtime) runClaimLoop(ctx context.Context) error {
 			return err
 		}
 
+		claimStartedAt := time.Now()
+		log.Info().
+			Str("runner_id", r.config.RunnerID).
+			Str("boot_id", r.bootID.String()).
+			Str("organization_id", r.config.OrganizationID).
+			Int("max_parallel_flows", r.config.MaxParallelFlows).
+			Msg("waiting for runner job via long poll")
+
 		claimedJob, err := r.client.ClaimNext(ctx, controlplane.ClaimNextRequest{
 			RunnerID:         r.config.RunnerID,
 			BootID:           r.bootID,
@@ -99,13 +107,17 @@ func (r *Runtime) runClaimLoop(ctx context.Context) error {
 		if err != nil {
 			r.releaseSlot()
 			if errors.Is(err, controlplane.ErrNoJobAvailable) {
+				log.Info().
+					Dur("poll_duration", time.Since(claimStartedAt)).
+					Dur("idle_backoff", r.config.IdleBackoff).
+					Msg("runner long poll returned no job")
 				if sleepErr := sleepContext(ctx, r.config.IdleBackoff); sleepErr != nil {
 					return sleepErr
 				}
 				continue
 			}
 
-			log.Error().Err(err).Msg("failed to claim runner job")
+			log.Error().Err(err).Dur("poll_duration", time.Since(claimStartedAt)).Msg("failed to claim runner job")
 			if sleepErr := sleepContext(ctx, r.config.ErrorBackoff); sleepErr != nil {
 				return sleepErr
 			}
@@ -122,6 +134,7 @@ func (r *Runtime) runClaimLoop(ctx context.Context) error {
 			Str("job_id", claimedJob.JobID.String()).
 			Str("execution_id", claimedJob.ExecutionID.String()).
 			Str("flow_id", claimedJob.FlowID.String()).
+			Dur("poll_duration", time.Since(claimStartedAt)).
 			Time("lease_expires_at", claimedJob.LeaseExpiresAt).
 			Msg("claimed runner job")
 
@@ -256,8 +269,10 @@ func (r *Runtime) runHeartbeatLoop(ctx context.Context) error {
 		}
 
 		results, err := r.client.Heartbeat(ctx, controlplane.HeartbeatRequest{
-			BootID: r.bootID,
-			JobIDs: jobIDs,
+			RunnerID:         r.config.RunnerID,
+			BootID:           r.bootID,
+			MaxParallelFlows: r.config.MaxParallelFlows,
+			JobIDs:           jobIDs,
 		})
 		if err != nil {
 			log.Error().Err(err).Msg("runner heartbeat failed")
