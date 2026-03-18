@@ -36,6 +36,7 @@ func run() error {
 		Str("runner_id", configValue.RunnerID).
 		Str("boot_id", runtime.BootID().String()).
 		Str("base_url", configValue.BaseURL).
+		Str("organization_id", configValue.OrganizationID).
 		Msg("runner booted")
 
 	runErr := runtime.Run(ctx)

@@ -13,6 +13,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/nanostack-dev/echopoint-runner/pkg/node"
+	"github.com/rs/zerolog/log"
 )
 
 const (
@@ -64,8 +65,10 @@ type CompleteJobRequest struct {
 }
 
 type HeartbeatRequest struct {
-	BootID uuid.UUID   `json:"boot_id"`
-	JobIDs []uuid.UUID `json:"job_ids"`
+	RunnerID         string      `json:"runner_id"`
+	BootID           uuid.UUID   `json:"boot_id"`
+	MaxParallelFlows int         `json:"max_parallel_flows"`
+	JobIDs           []uuid.UUID `json:"job_ids"`
 }
 
 type HeartbeatResult struct {
@@ -93,10 +96,21 @@ func NewClient(config Config) *Client {
 }
 
 func (c *Client) ClaimNext(ctx context.Context, request ClaimNextRequest) (*ClaimedJob, error) {
+	startedAt := time.Now()
 	statusCode, responseBody, requestErr := c.postJSON(ctx, nextJobPath, request)
 	if requestErr != nil {
+		log.Error().
+			Err(requestErr).
+			Str("operation", "claim_next").
+			Dur("duration", time.Since(startedAt)).
+			Msg("runner control-plane request failed")
 		return nil, requestErr
 	}
+	log.Info().
+		Str("operation", "claim_next").
+		Int("status_code", statusCode).
+		Dur("duration", time.Since(startedAt)).
+		Msg("runner control-plane request completed")
 
 	if statusCode == http.StatusNoContent {
 		return nil, ErrNoJobAvailable
