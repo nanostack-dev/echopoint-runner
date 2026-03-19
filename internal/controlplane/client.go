@@ -12,12 +12,14 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/nanostack-dev/echopoint-runner/pkg/executionevents"
 	"github.com/nanostack-dev/echopoint-runner/pkg/node"
 	"github.com/rs/zerolog/log"
 )
 
 const (
 	nextJobPath   = "/runner/jobs/next"
+	eventsPathFmt = "/runner/jobs/%s/events"
 	heartbeatPath = "/runner/jobs/heartbeat"
 )
 
@@ -53,15 +55,32 @@ type ClaimedJob struct {
 }
 
 type CompleteJobRequest struct {
-	RunnerID     string                  `json:"runner_id"`
-	BootID       uuid.UUID               `json:"boot_id"`
-	Status       string                  `json:"status"`
-	StartedAt    time.Time               `json:"started_at"`
-	CompletedAt  time.Time               `json:"completed_at"`
-	DurationMs   int64                   `json:"duration_ms"`
-	Result       *map[string]interface{} `json:"result,omitempty"`
-	ErrorMessage *string                 `json:"error_message,omitempty"`
-	ErrorCode    *string                 `json:"error_code,omitempty"`
+	RunnerID          string                  `json:"runner_id"`
+	BootID            uuid.UUID               `json:"boot_id"`
+	Status            string                  `json:"status"`
+	StartedAt         time.Time               `json:"started_at"`
+	CompletedAt       time.Time               `json:"completed_at"`
+	DurationMs        int64                   `json:"duration_ms"`
+	Result            *map[string]interface{} `json:"result,omitempty"`
+	ErrorMessage      *string                 `json:"error_message,omitempty"`
+	ErrorCode         *string                 `json:"error_code,omitempty"`
+	LastEventSequence *int64                  `json:"last_event_sequence,omitempty"`
+}
+
+type RunnerProgressEvent struct {
+	Sequence int64                  `json:"sequence"`
+	Type     executionevents.Type   `json:"type"`
+	Payload  map[string]interface{} `json:"payload"`
+}
+
+type SendJobEventsRequest struct {
+	RunnerID string                `json:"runner_id"`
+	BootID   uuid.UUID             `json:"boot_id"`
+	Events   []RunnerProgressEvent `json:"events"`
+}
+
+type SendJobEventsResponse struct {
+	LastAcceptedSequence int64 `json:"last_accepted_sequence"`
 }
 
 type HeartbeatRequest struct {
@@ -141,6 +160,28 @@ func (c *Client) Complete(ctx context.Context, jobID uuid.UUID, request Complete
 	return nil
 }
 
+func (c *Client) SendJobEvents(
+	ctx context.Context,
+	jobID uuid.UUID,
+	request SendJobEventsRequest,
+) (*SendJobEventsResponse, error) {
+	path := fmt.Sprintf(eventsPathFmt, jobID.String())
+	statusCode, responseBody, requestErr := c.postJSON(ctx, path, request)
+	if requestErr != nil {
+		return nil, requestErr
+	}
+	if statusCode != http.StatusOK {
+		return nil, readAPIError(statusCode, responseBody)
+	}
+
+	var response SendJobEventsResponse
+	if decodeErr := json.Unmarshal(responseBody, &response); decodeErr != nil {
+		return nil, fmt.Errorf("decode runner events response: %w", decodeErr)
+	}
+
+	return &response, nil
+}
+
 func (c *Client) Heartbeat(ctx context.Context, request HeartbeatRequest) ([]HeartbeatResult, error) {
 	statusCode, responseBody, requestErr := c.postJSON(ctx, heartbeatPath, request)
 	if requestErr != nil {
@@ -164,18 +205,20 @@ func FlowExecutionResultToPayload(result *node.FlowExecutionResult) (map[string]
 		return map[string]interface{}{}, nil
 	}
 
-	payload := map[string]interface{}{
-		"execution_results": map[string]interface{}{},
-		"final_outputs":     result.FinalOutputs,
-		"success":           result.Success,
-		"duration_ms":       result.DurationMS,
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		return nil, fmt.Errorf("encode flow execution result: %w", err)
 	}
 
-	if result.ErrorCode != nil {
-		payload["error_code"] = *result.ErrorCode
+	var payload map[string]interface{}
+	if decodeErr := json.Unmarshal(encoded, &payload); decodeErr != nil {
+		return nil, fmt.Errorf("decode flow execution result payload: %w", decodeErr)
 	}
-	if result.ErrorMsg != nil {
-		payload["error_message"] = *result.ErrorMsg
+	if payload["execution_results"] == nil {
+		payload["execution_results"] = map[string]interface{}{}
+	}
+	if payload["final_outputs"] == nil {
+		payload["final_outputs"] = map[string]interface{}{}
 	}
 
 	return payload, nil

@@ -149,16 +149,24 @@ func (r *Runtime) runClaimLoop(ctx context.Context) error {
 func (r *Runtime) executeClaimedJob(active *activeJob) {
 	defer r.releaseSlot()
 	defer r.removeActiveJob(active.job.JobID)
+	reporter := newJobEventReporter(r.client, active.job, r.config.RunnerID, r.bootID, r.config.RequestTimeout)
+	defer reporter.Close()
 
 	flowDef, err := flowpkg.ParseFromJSON(active.job.FlowDefinition)
 	if err != nil {
-		r.completeWithFailure(active, fmt.Sprintf("parse flow definition: %v", err), nil)
+		r.completeWithFailure(active, reporter, fmt.Sprintf("parse flow definition: %v", err), nil)
 		return
 	}
+	if reporterErr := reporter.FlowStarted(flowDef.Name, time.Now().UTC()); reporterErr != nil {
+		log.Warn().Err(reporterErr).Str("job_id", active.job.JobID.String()).Msg("failed to enqueue flow.started event")
+	}
 
-	flowEngine, err := engine.NewFlowEngine(*flowDef, nil)
+	flowEngine, err := engine.NewFlowEngine(*flowDef, &engine.Options{
+		BeforeExecution: reporter.BeforeExecution,
+		AfterExecution:  reporter.AfterExecution,
+	})
 	if err != nil {
-		r.completeWithFailure(active, fmt.Sprintf("build flow engine: %v", err), nil)
+		r.completeWithFailure(active, reporter, fmt.Sprintf("build flow engine: %v", err), nil)
 		return
 	}
 
@@ -180,14 +188,26 @@ func (r *Runtime) executeClaimedJob(active *activeJob) {
 				errorMsg = *result.ErrorMsg
 			}
 		}
-		r.completeWithFailure(active, errorMsg, errorCode)
+		if flushErr := reporter.FlushWithRetry(context.Background()); flushErr != nil {
+			log.Error().
+				Err(flushErr).
+				Str("job_id", active.job.JobID.String()).
+				Msg("failed to flush runner progress before failed completion")
+		}
+		r.completeWithFailure(active, reporter, errorMsg, errorCode)
 		return
 	}
 
 	payload, err := controlplane.FlowExecutionResultToPayload(result)
 	if err != nil {
-		r.completeWithFailure(active, fmt.Sprintf("encode execution result: %v", err), nil)
+		r.completeWithFailure(active, reporter, fmt.Sprintf("encode execution result: %v", err), nil)
 		return
+	}
+	if flushErr := reporter.FlushWithRetry(context.Background()); flushErr != nil {
+		log.Error().
+			Err(flushErr).
+			Str("job_id", active.job.JobID.String()).
+			Msg("failed to flush runner progress before completion")
 	}
 	if r.isRejected(active.job.JobID) {
 		log.Warn().
@@ -198,13 +218,14 @@ func (r *Runtime) executeClaimedJob(active *activeJob) {
 
 	completedAt := time.Now().UTC()
 	if completeErr := r.completeJob(active.job.JobID, controlplane.CompleteJobRequest{
-		RunnerID:    r.config.RunnerID,
-		BootID:      r.bootID,
-		Status:      "completed",
-		StartedAt:   active.startedAt,
-		CompletedAt: completedAt,
-		DurationMs:  completedAt.Sub(active.startedAt).Milliseconds(),
-		Result:      &payload,
+		RunnerID:          r.config.RunnerID,
+		BootID:            r.bootID,
+		Status:            "completed",
+		StartedAt:         active.startedAt,
+		CompletedAt:       completedAt,
+		DurationMs:        completedAt.Sub(active.startedAt).Milliseconds(),
+		Result:            &payload,
+		LastEventSequence: reporter.LastSequencePtr(),
 	}); completeErr != nil {
 		log.Error().Err(completeErr).Str("job_id", active.job.JobID.String()).Msg("failed to complete runner job")
 		return
@@ -219,6 +240,7 @@ func (r *Runtime) executeClaimedJob(active *activeJob) {
 
 func (r *Runtime) completeWithFailure(
 	active *activeJob,
+	reporter *jobEventReporter,
 	errorMsg string,
 	errorCode *string,
 ) {
@@ -231,14 +253,15 @@ func (r *Runtime) completeWithFailure(
 
 	completedAt := time.Now().UTC()
 	err := r.completeJob(active.job.JobID, controlplane.CompleteJobRequest{
-		RunnerID:     r.config.RunnerID,
-		BootID:       r.bootID,
-		Status:       "failed",
-		StartedAt:    active.startedAt,
-		CompletedAt:  completedAt,
-		DurationMs:   completedAt.Sub(active.startedAt).Milliseconds(),
-		ErrorMessage: &errorMsg,
-		ErrorCode:    errorCode,
+		RunnerID:          r.config.RunnerID,
+		BootID:            r.bootID,
+		Status:            "failed",
+		StartedAt:         active.startedAt,
+		CompletedAt:       completedAt,
+		DurationMs:        completedAt.Sub(active.startedAt).Milliseconds(),
+		ErrorMessage:      &errorMsg,
+		ErrorCode:         errorCode,
+		LastEventSequence: reporter.LastSequencePtr(),
 	})
 	if err != nil {
 		log.Error().Err(err).Str("job_id", active.job.JobID.String()).Msg("failed to report runner job failure")
