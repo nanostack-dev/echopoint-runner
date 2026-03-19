@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/nanostack-dev/echopoint-runner/internal/controlplane"
+	"github.com/nanostack-dev/echopoint-runner/pkg/engine"
 	"github.com/nanostack-dev/echopoint-runner/pkg/executionevents"
 	"github.com/nanostack-dev/echopoint-runner/pkg/node"
 	"github.com/rs/zerolog/log"
@@ -25,15 +26,15 @@ type jobEventReporter struct {
 	client         *controlplane.Client
 	jobID          uuid.UUID
 	executionID    uuid.UUID
+	flowName       string
 	runnerID       string
 	bootID         uuid.UUID
 	requestTimeout time.Duration
 
-	mu             sync.Mutex
-	nextSequence   int64
-	pending        []controlplane.RunnerProgressEvent
-	pendingBytes   int
-	nodeStartTimes map[string]time.Time
+	mu           sync.Mutex
+	nextSequence int64
+	pending      []controlplane.RunnerProgressEvent
+	pendingBytes int
 
 	flushMu sync.Mutex
 	stopCh  chan struct{}
@@ -54,7 +55,6 @@ func newJobEventReporter(
 		runnerID:       runnerID,
 		bootID:         bootID,
 		requestTimeout: requestTimeout,
-		nodeStartTimes: make(map[string]time.Time),
 		stopCh:         make(chan struct{}),
 		doneCh:         make(chan struct{}),
 	}
@@ -99,59 +99,48 @@ func (r *jobEventReporter) LastSequencePtr() *int64 {
 	return &value
 }
 
-func (r *jobEventReporter) FlowStarted(flowName string, at time.Time) error {
-	return r.enqueue(string(executionevents.FlowStarted), map[string]interface{}{
+func (r *jobEventReporter) FlowStarted(evt engine.FlowStartedEvent) {
+	r.flowName = evt.FlowName
+	if err := r.enqueue(string(executionevents.FlowStarted), map[string]interface{}{
 		"execution_id": r.executionID.String(),
-		"flowName":     flowName,
-		"timestamp":    at.Format(time.RFC3339),
-	})
+		"flowName":     evt.FlowName,
+		"timestamp":    evt.StartedAt.Format(time.RFC3339),
+	}); err != nil {
+		log.Warn().Err(err).Str("job_id", r.jobID.String()).Msg("failed to enqueue flow.started event")
+	}
 }
 
-func (r *jobEventReporter) BeforeExecution(n node.AnyNode) {
-	startedAt := time.Now().UTC()
-
-	r.mu.Lock()
-	r.nodeStartTimes[n.GetID()] = startedAt
-	r.mu.Unlock()
-
+func (r *jobEventReporter) NodeStarted(evt engine.NodeStartedEvent) {
 	if err := r.enqueue(string(executionevents.NodeStarted), map[string]interface{}{
-		"nodeId":      n.GetID(),
-		"displayName": n.GetDisplayName(),
-		"nodeType":    string(n.GetType()),
-		"timestamp":   startedAt.Format(time.RFC3339),
+		"nodeId":      evt.NodeID,
+		"displayName": evt.DisplayName,
+		"nodeType":    string(evt.NodeType),
+		"timestamp":   evt.StartedAt.Format(time.RFC3339),
 	}); err != nil {
 		log.Warn().
 			Err(err).
 			Str("job_id", r.jobID.String()).
-			Str("node_id", n.GetID()).
+			Str("node_id", evt.NodeID).
 			Msg("failed to enqueue node.started event")
 	}
 }
 
-func (r *jobEventReporter) AfterExecution(n node.AnyNode, result node.AnyExecutionResult) {
-	completedAt := time.Now().UTC()
-	durationMs := r.nodeDuration(n.GetID(), completedAt)
-
-	if result != nil && result.GetExecutedAt().After(time.Time{}) {
-		completedAt = result.GetExecutedAt().UTC()
-		durationMs = r.nodeDuration(n.GetID(), completedAt)
-	}
-
+func (r *jobEventReporter) NodeFinished(evt engine.NodeFinishedEvent) {
 	payload := map[string]interface{}{
-		"nodeId":      n.GetID(),
-		"displayName": n.GetDisplayName(),
-		"duration":    durationMs,
-		"timestamp":   completedAt.Format(time.RFC3339),
+		"nodeId":      evt.NodeID,
+		"displayName": evt.DisplayName,
+		"duration":    evt.DurationMs,
+		"timestamp":   evt.FinishedAt.Format(time.RFC3339),
 	}
 
 	eventType := executionevents.NodeCompleted
-	if result != nil && result.GetError() == nil {
+	if evt.Result != nil && evt.Result.GetError() == nil {
 		payload["success"] = true
-		payload["result"] = executionResultToEventPayload(result)
+		payload["result"] = executionResultToEventPayload(evt.Result)
 	} else {
 		eventType = executionevents.NodeFailed
-		if result != nil && result.GetError() != nil {
-			payload["error"] = result.GetError().Error()
+		if evt.Result != nil && evt.Result.GetError() != nil {
+			payload["error"] = evt.Result.GetError().Error()
 		} else {
 			payload["error"] = "node execution failed"
 		}
@@ -161,9 +150,16 @@ func (r *jobEventReporter) AfterExecution(n node.AnyNode, result node.AnyExecuti
 		log.Warn().
 			Err(err).
 			Str("job_id", r.jobID.String()).
-			Str("node_id", n.GetID()).
+			Str("node_id", evt.NodeID).
 			Msg("failed to enqueue node terminal event")
 	}
+}
+
+func (r *jobEventReporter) FlowFinished(evt engine.FlowFinishedEvent) {
+	if evt.Result == nil {
+		return
+	}
+	_ = evt
 }
 
 func (r *jobEventReporter) FlushWithRetry(ctx context.Context) error {
@@ -269,18 +265,6 @@ func (r *jobEventReporter) prependPending(events []controlplane.RunnerProgressEv
 	defer r.mu.Unlock()
 	r.pending = append(events, r.pending...)
 	r.pendingBytes += bytes
-}
-
-func (r *jobEventReporter) nodeDuration(nodeID string, completedAt time.Time) int64 {
-	r.mu.Lock()
-	startedAt := r.nodeStartTimes[nodeID]
-	delete(r.nodeStartTimes, nodeID)
-	r.mu.Unlock()
-	if startedAt.IsZero() {
-		return 0
-	}
-
-	return completedAt.Sub(startedAt).Milliseconds()
 }
 
 func eventSize(event controlplane.RunnerProgressEvent) int {

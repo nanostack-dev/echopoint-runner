@@ -190,6 +190,29 @@ func newDataContractMockNode(id string, inputDeps, outputKeys []string) *DataCon
 	}
 }
 
+type testObserver struct {
+	flowStarts   []engine.FlowStartedEvent
+	nodeStarts   []engine.NodeStartedEvent
+	nodeFinishes []engine.NodeFinishedEvent
+	flowFinishes []engine.FlowFinishedEvent
+}
+
+func (o *testObserver) FlowStarted(evt engine.FlowStartedEvent) {
+	o.flowStarts = append(o.flowStarts, evt)
+}
+
+func (o *testObserver) NodeStarted(evt engine.NodeStartedEvent) {
+	o.nodeStarts = append(o.nodeStarts, evt)
+}
+
+func (o *testObserver) NodeFinished(evt engine.NodeFinishedEvent) {
+	o.nodeFinishes = append(o.nodeFinishes, evt)
+}
+
+func (o *testObserver) FlowFinished(evt engine.FlowFinishedEvent) {
+	o.flowFinishes = append(o.flowFinishes, evt)
+}
+
 func TestNewFlowEngine_Success(t *testing.T) {
 	node1 := &MockNode{id: "node1", nodeType: node.TypeRequest, shouldPass: true}
 	node2 := &MockNode{id: "node2", nodeType: node.TypeRequest, shouldPass: true}
@@ -290,12 +313,11 @@ func TestFlowEngine_Execute_ParallelFlow(t *testing.T) {
 		Version: "1.0",
 	}
 
+	observer := &testObserver{}
 	var executionOrder []string
 	flowEngine, err := engine.NewFlowEngine(
 		flowInstance, &engine.Options{
-			BeforeExecution: func(n node.AnyNode) {
-				executionOrder = append(executionOrder, n.GetID())
-			},
+			Observer: observer,
 		},
 	)
 	require.NoError(t, err)
@@ -303,6 +325,9 @@ func TestFlowEngine_Execute_ParallelFlow(t *testing.T) {
 
 	require.NoError(t, err)
 	require.True(t, result.Success)
+	for _, evt := range observer.nodeStarts {
+		executionOrder = append(executionOrder, evt.NodeID)
+	}
 	assert.True(t, node1.executed, "node1 should be executed")
 	assert.True(t, node2.executed, "node2 should be executed")
 	assert.True(t, node3.executed, "node3 should be executed after both node1 and node2")
@@ -407,12 +432,11 @@ func TestFlowEngine_Execute_CycleDetection(t *testing.T) {
 	assert.Contains(t, err.Error(), "cycle detected or unreachable nodes")
 }
 
-func TestFlowEngine_Execute_WithBeforeAndAfterCallbacks(t *testing.T) {
+func TestFlowEngine_Execute_WithObserver(t *testing.T) {
 	node1 := &MockNode{id: "node1", nodeType: node.TypeRequest, shouldPass: true}
 	node2 := &MockNode{id: "node2", nodeType: node.TypeRequest, shouldPass: true}
 
-	var beforeCalls []string
-	var afterCalls []string
+	observer := &testObserver{}
 
 	flowInstance := flow.Flow{
 		Name:  "Callback Flow",
@@ -425,12 +449,7 @@ func TestFlowEngine_Execute_WithBeforeAndAfterCallbacks(t *testing.T) {
 
 	flowEngine, err := engine.NewFlowEngine(
 		flowInstance, &engine.Options{
-			BeforeExecution: func(n node.AnyNode) {
-				beforeCalls = append(beforeCalls, n.GetID())
-			},
-			AfterExecution: func(n node.AnyNode, _ node.AnyExecutionResult) {
-				afterCalls = append(afterCalls, n.GetID())
-			},
+			Observer: observer,
 		},
 	)
 	require.NoError(t, err)
@@ -439,13 +458,26 @@ func TestFlowEngine_Execute_WithBeforeAndAfterCallbacks(t *testing.T) {
 
 	require.NoError(t, err)
 	require.True(t, result.Success)
+	var beforeCalls []string
+	var afterCalls []string
+	for _, evt := range observer.nodeStarts {
+		beforeCalls = append(beforeCalls, evt.NodeID)
+	}
+	for _, evt := range observer.nodeFinishes {
+		afterCalls = append(afterCalls, evt.NodeID)
+	}
 	assert.Equal(
 		t, []string{"node1", "node2"}, beforeCalls,
-		"beforeExecution should be called for each node",
+		"node started should be observed for each node",
 	)
 	assert.Equal(
-		t, []string{"node1", "node2"}, afterCalls, "afterExecution should be called for each node",
+		t, []string{"node1", "node2"}, afterCalls, "node finished should be observed for each node",
 	)
+	require.Len(t, observer.flowStarts, 1)
+	require.Len(t, observer.flowFinishes, 1)
+	assert.Equal(t, flowInstance.Name, observer.flowStarts[0].FlowName)
+	assert.Equal(t, flowInstance.Name, observer.flowFinishes[0].FlowName)
+	assert.True(t, observer.flowFinishes[0].Result.Success)
 }
 
 // ========== DATA CONTRACT TESTS ==========

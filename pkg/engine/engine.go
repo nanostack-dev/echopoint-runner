@@ -13,17 +13,15 @@ import (
 )
 
 type Options struct {
-	BeforeExecution func(n node.AnyNode)
-	AfterExecution  func(n node.AnyNode, result node.AnyExecutionResult)
+	Observer ExecutionObserver
 }
 
 type FlowEngine struct {
-	flow            flow.Flow
-	nodeEdgeOutput  map[node.AnyNode][]node.AnyNode
-	nodeEdgeInput   map[node.AnyNode]int
-	nodeMap         map[string]node.AnyNode
-	beforeExecution func(n node.AnyNode)
-	afterExecution  func(n node.AnyNode, result node.AnyExecutionResult)
+	flow           flow.Flow
+	nodeEdgeOutput map[node.AnyNode][]node.AnyNode
+	nodeEdgeInput  map[node.AnyNode]int
+	nodeMap        map[string]node.AnyNode
+	observer       ExecutionObserver
 }
 
 func NewFlowEngine(flowInstance flow.Flow, options *Options) (*FlowEngine, error) {
@@ -91,14 +89,10 @@ func NewFlowEngine(flowInstance flow.Flow, options *Options) (*FlowEngine, error
 			Msg("Registered edge")
 	}
 
-	var beforeExecution func(n node.AnyNode)
-	var afterExecution func(n node.AnyNode, result node.AnyExecutionResult)
+	observer := ExecutionObserver(NoopObserver{})
 	if options != nil {
-		if options.BeforeExecution != nil {
-			beforeExecution = options.BeforeExecution
-		}
-		if options.AfterExecution != nil {
-			afterExecution = options.AfterExecution
+		if options.Observer != nil {
+			observer = options.Observer
 		}
 	}
 
@@ -114,8 +108,7 @@ func NewFlowEngine(flowInstance flow.Flow, options *Options) (*FlowEngine, error
 		nodeEdgeOutput,
 		nodeEdgeInput,
 		nodeMap,
-		beforeExecution,
-		afterExecution,
+		observer,
 	}, nil
 }
 
@@ -136,10 +129,21 @@ func (engine *FlowEngine) Execute(initialInputs map[string]interface{}) (
 		FinalOutputs:     make(map[string]interface{}),
 		Success:          false,
 	}
+	engine.observer.FlowStarted(FlowStartedEvent{
+		FlowName:  engine.flow.Name,
+		StartedAt: startTime,
+	})
 
 	if len(engine.nodeEdgeInput) == 0 {
 		result.Error = errors.New("no nodes to execute")
 		result.DurationMS = time.Since(startTime).Milliseconds()
+		engine.observer.FlowFinished(FlowFinishedEvent{
+			FlowName:   engine.flow.Name,
+			StartedAt:  startTime,
+			FinishedAt: time.Now(),
+			DurationMs: result.DurationMS,
+			Result:     result,
+		})
 		log.Error().
 			Str("flowName", engine.flow.Name).
 			Err(result.Error).
@@ -149,8 +153,22 @@ func (engine *FlowEngine) Execute(initialInputs map[string]interface{}) (
 	}
 
 	if err := engine.executeNodes(initialInputs, result, startTime); err != nil {
+		engine.observer.FlowFinished(FlowFinishedEvent{
+			FlowName:   engine.flow.Name,
+			StartedAt:  startTime,
+			FinishedAt: time.Now(),
+			DurationMs: result.DurationMS,
+			Result:     result,
+		})
 		return result, err
 	}
+	engine.observer.FlowFinished(FlowFinishedEvent{
+		FlowName:   engine.flow.Name,
+		StartedAt:  startTime,
+		FinishedAt: time.Now(),
+		DurationMs: result.DurationMS,
+		Result:     result,
+	})
 
 	return result, nil
 }
