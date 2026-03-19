@@ -157,13 +157,9 @@ func (r *Runtime) executeClaimedJob(active *activeJob) {
 		r.completeWithFailure(active, reporter, fmt.Sprintf("parse flow definition: %v", err), nil)
 		return
 	}
-	if reporterErr := reporter.FlowStarted(flowDef.Name, time.Now().UTC()); reporterErr != nil {
-		log.Warn().Err(reporterErr).Str("job_id", active.job.JobID.String()).Msg("failed to enqueue flow.started event")
-	}
 
 	flowEngine, err := engine.NewFlowEngine(*flowDef, &engine.Options{
-		BeforeExecution: reporter.BeforeExecution,
-		AfterExecution:  reporter.AfterExecution,
+		Observer: reporter,
 	})
 	if err != nil {
 		r.completeWithFailure(active, reporter, fmt.Sprintf("build flow engine: %v", err), nil)

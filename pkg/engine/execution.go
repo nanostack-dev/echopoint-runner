@@ -62,7 +62,9 @@ func (engine *FlowEngine) executeNodes(
 
 func (engine *FlowEngine) runNode(n node.AnyNode, state *executionState) error {
 	nodeID := n.GetID()
+	displayName := n.GetDisplayName()
 	nodeType := n.GetType()
+	startedAt := time.Now()
 
 	log.Debug().
 		Str("flowName", engine.flow.Name).
@@ -90,9 +92,12 @@ func (engine *FlowEngine) runNode(n node.AnyNode, state *executionState) error {
 		Any("inputs", inputs).
 		Msg("Assembled inputs for node")
 
-	if engine.beforeExecution != nil {
-		engine.beforeExecution(n)
-	}
+	engine.observer.NodeStarted(NodeStartedEvent{
+		NodeID:      nodeID,
+		DisplayName: displayName,
+		NodeType:    nodeType,
+		StartedAt:   startedAt,
+	})
 
 	ctx := node.ExecutionContext{
 		Inputs:     inputs,
@@ -102,6 +107,11 @@ func (engine *FlowEngine) runNode(n node.AnyNode, state *executionState) error {
 	result, err := n.Execute(ctx)
 
 	state.result.ExecutionResults[n.GetID()] = result
+	finishedAt := time.Now()
+	if result != nil && !result.GetExecutedAt().IsZero() {
+		finishedAt = result.GetExecutedAt()
+	}
+	durationMs := finishedAt.Sub(startedAt).Milliseconds()
 
 	if err != nil {
 		log.Error().
@@ -119,10 +129,15 @@ func (engine *FlowEngine) runNode(n node.AnyNode, state *executionState) error {
 			Msg("Node executed successfully")
 	}
 
-	// Callback with polymorphic result
-	if engine.afterExecution != nil {
-		engine.afterExecution(n, result)
-	}
+	engine.observer.NodeFinished(NodeFinishedEvent{
+		NodeID:      nodeID,
+		DisplayName: displayName,
+		NodeType:    nodeType,
+		StartedAt:   startedAt,
+		FinishedAt:  finishedAt,
+		DurationMs:  durationMs,
+		Result:      result,
+	})
 
 	return err
 }
