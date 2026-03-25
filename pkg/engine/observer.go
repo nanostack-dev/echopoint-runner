@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"sync"
 	"time"
 
 	"github.com/nanostack-dev/echopoint-runner/pkg/node"
@@ -86,4 +87,33 @@ func (m MultiObserver) FlowFinished(evt FlowFinishedEvent) {
 		}
 		observer.FlowFinished(evt)
 	}
+}
+
+type synchronizedObserver struct {
+	inner ExecutionObserver
+	mu    sync.Mutex
+}
+
+func (s *synchronizedObserver) FlowStarted(evt FlowStartedEvent) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.inner.FlowStarted(evt)
+}
+
+func (s *synchronizedObserver) NodeStarted(evt NodeStartedEvent) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.inner.NodeStarted(evt)
+}
+
+func (s *synchronizedObserver) NodeFinished(evt NodeFinishedEvent) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.inner.NodeFinished(evt)
+}
+
+func (s *synchronizedObserver) FlowFinished(evt FlowFinishedEvent) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.inner.FlowFinished(evt)
 }

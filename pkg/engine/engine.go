@@ -92,7 +92,7 @@ func NewFlowEngine(flowInstance flow.Flow, options *Options) (*FlowEngine, error
 	observer := ExecutionObserver(NoopObserver{})
 	if options != nil {
 		if options.Observer != nil {
-			observer = options.Observer
+			observer = &synchronizedObserver{inner: options.Observer}
 		}
 	}
 
