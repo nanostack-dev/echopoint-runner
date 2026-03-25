@@ -6,4 +6,4 @@
 {"run":5,"commit":"14c48f9","metric":131964369,"metrics":{"parallel_flow_b_per_op":399348,"parallel_flow_allocs_per_op":2665},"status":"discard","description":"reuse a shared http client in request nodes","timestamp":1774467765,"segment":0}
 {"run":6,"commit":"948b0aa","metric":57957945,"metrics":{"parallel_flow_b_per_op":385893,"parallel_flow_allocs_per_op":2652},"status":"keep","description":"fast-path singleton ready batches","timestamp":1774467765,"segment":0}
 {"run":7,"commit":"2fd3963","metric":57640743,"metrics":{"parallel_flow_b_per_op":327939,"parallel_flow_allocs_per_op":2634},"status":"keep","description":"preserve flow order in ready node scans","timestamp":1774467765,"segment":0}
-{"run":8,"commit":"HEADPEND","metric":56074748,"metrics":{"parallel_flow_b_per_op":365472,"parallel_flow_allocs_per_op":2693},"status":"keep","description":"make AllOutputs a read-only snapshot view","timestamp":1774467765,"segment":0}
+{"run":8,"commit":"2170ad5","metric":56074748,"metrics":{"parallel_flow_b_per_op":365472,"parallel_flow_allocs_per_op":2693},"status":"keep","description":"make AllOutputs a read-only snapshot view","timestamp":1774467765,"segment":0}

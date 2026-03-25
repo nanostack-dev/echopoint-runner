@@ -13,4 +13,4 @@
 | 5 | 14c48f9 | 131964369ns/op (-83.4%) | discard | reuse a shared http client in request nodes |
 | 6 | 948b0aa | 57957945ns/op (-92.7%) | keep | fast-path singleton ready batches |
 | 7 | 2fd3963 | 57640743ns/op (-92.8%) | keep | preserve flow order in ready node scans |
-| 8 | HEADPEND | 56074748ns/op (-93.0%) | keep | make AllOutputs a read-only snapshot view |
+| 8 | 2170ad5 | 56074748ns/op (-93.0%) | keep | make AllOutputs a read-only snapshot view |

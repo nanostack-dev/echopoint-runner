@@ -44,7 +44,7 @@ The current runtime already runs multiple claimed jobs concurrently, but the flo
 - Run 5 (`14c48f9`, discard): reused a shared `http.Client` in request nodes. It came close (`131964369 ns/op`) but still lost to the current best.
 - Run 6 (`948b0aa`, keep): added singleton-batch fast paths in the scheduler to skip sorting and goroutine fan-out when only one node is ready. Metric improved to `57957945 ns/op` (-92.7%).
 - Run 7 (`2fd3963`, keep): iterated ready nodes in declared flow order instead of sorting by ID every loop. Metric improved again to `57640743 ns/op` (-92.8%).
-- Run 8 (`HEADPEND`, keep): introduced a read-only `OutputView` snapshot for `ExecutionContext.AllOutputs` and copied committed node outputs before storing them. Metric improved to `56074748 ns/op` (-93.0%) while closing the shared-state mutation risk in the parallel engine.
+- Run 8 (`2170ad5`, keep): introduced a read-only `OutputView` snapshot for `ExecutionContext.AllOutputs` and copied committed node outputs before storing them. Metric improved to `56074748 ns/op` (-93.0%) while closing the shared-state mutation risk in the parallel engine.
 - Key observation from source review: `pkg/engine/execution.go` currently executes exactly one ready node per loop iteration, so "parallel" flow shapes are still serialized inside a single flow execution.
 - Existing runtime concurrency (`internal/runtime/runtime.go`) already allows multiple claimed jobs via `MaxParallelFlows`, so engine-level fan-out looks like the clearest first lever.
 - New architectural insight: the scheduler can parallelize ready-node batches safely as long as dependency mutation and output publication happen after the batch joins, and observer callbacks are serialized at the boundary.
