@@ -98,8 +98,13 @@ func (engine *FlowEngine) runReadyNodes(
 	ready []node.AnyNode,
 	state *executionState,
 ) []nodeRunResult {
+	views := make([]node.OutputView, len(ready))
+	for i := range ready {
+		views[i] = node.NewOutputView(state.allOutputs)
+	}
+
 	if len(ready) == 1 {
-		result, err := engine.runNode(ready[0], state)
+		result, err := engine.runNode(ready[0], views[0], state)
 		return []nodeRunResult{{
 			node:   ready[0],
 			result: result,
@@ -112,16 +117,16 @@ func (engine *FlowEngine) runReadyNodes(
 	wg.Add(len(ready))
 
 	for i, readyNode := range ready {
-		go func(index int, n node.AnyNode) {
+		go func(index int, n node.AnyNode, outputView node.OutputView) {
 			defer wg.Done()
 
-			result, err := engine.runNode(n, state)
+			result, err := engine.runNode(n, outputView, state)
 			results[index] = nodeRunResult{
 				node:   n,
 				result: result,
 				err:    err,
 			}
-		}(i, readyNode)
+		}(i, readyNode, views[i])
 	}
 
 	wg.Wait()
@@ -130,6 +135,7 @@ func (engine *FlowEngine) runReadyNodes(
 
 func (engine *FlowEngine) runNode(
 	n node.AnyNode,
+	outputView node.OutputView,
 	state *executionState,
 ) (node.AnyExecutionResult, error) {
 	nodeID := n.GetID()
@@ -143,7 +149,7 @@ func (engine *FlowEngine) runNode(
 		Str("nodeType", string(nodeType)).
 		Msg("Preparing node execution")
 
-	if err := engine.validateInputs(n, state.allOutputs); err != nil {
+	if err := engine.validateInputs(n, outputView); err != nil {
 		log.Error().
 			Str("flowName", engine.flow.Name).
 			Str("nodeID", nodeID).
@@ -154,7 +160,7 @@ func (engine *FlowEngine) runNode(
 		return nil, err
 	}
 
-	inputs := engine.assembleInputs(n, state.allOutputs)
+	inputs := engine.assembleInputs(n, outputView)
 
 	log.Debug().
 		Str("flowName", engine.flow.Name).
@@ -172,7 +178,7 @@ func (engine *FlowEngine) runNode(
 
 	ctx := node.ExecutionContext{
 		Inputs:     inputs,
-		AllOutputs: state.allOutputs,
+		AllOutputs: outputView,
 	}
 
 	result, err := n.Execute(ctx)
@@ -219,10 +225,14 @@ func (engine *FlowEngine) propagateNodeOutputs(
 	outputs := result.GetOutputs()
 	nodeID := n.GetID()
 	nodeType := n.GetType()
-
-	state.allOutputs[nodeID] = outputs
-
+	copiedOutputs := make(map[string]interface{}, len(outputs))
 	for key, value := range outputs {
+		copiedOutputs[key] = value
+	}
+
+	state.allOutputs[nodeID] = copiedOutputs
+
+	for key, value := range copiedOutputs {
 		flatKey := fmt.Sprintf("%s.%s", nodeID, key)
 		state.result.FinalOutputs[flatKey] = value
 	}

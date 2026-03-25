@@ -2,6 +2,13 @@ package node
 
 import "time"
 
+type OutputView interface {
+	HasNode(nodeID string) bool
+	Get(nodeID, outputKey string) (interface{}, bool)
+	// Node returns a defensive copy of the requested node outputs.
+	Node(nodeID string) map[string]interface{}
+}
+
 type AnyNode interface {
 	GetID() string
 	GetDisplayName() string
@@ -43,10 +50,9 @@ type ExecutionContext struct {
 	// Inputs contains all the data this node declared it needs in InputSchema()
 	// Keys are in format "nodeId.outputKey" (e.g., "create-user.userId")
 	Inputs map[string]interface{}
-	// AllOutputs contains outputs from ALL nodes executed so far
-	// Structure: map[nodeID]map[outputKey]value
-	// (for advanced use cases like conditional data passing)
-	AllOutputs map[string]map[string]interface{}
+	// AllOutputs exposes a read-only snapshot of outputs from nodes that completed
+	// before the current scheduling batch started.
+	AllOutputs OutputView
 }
 
 // AnyExecutionResult is the interface for all execution results (polymorphic).
