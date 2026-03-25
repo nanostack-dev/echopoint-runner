@@ -175,7 +175,7 @@ func (engine *FlowEngine) Execute(initialInputs map[string]interface{}) (
 
 // validateInputs checks that all required inputs for a node are available in allOutputs.
 func (engine *FlowEngine) validateInputs(
-	nodeToExecute node.AnyNode, allOutputs map[string]map[string]interface{},
+	nodeToExecute node.AnyNode, allOutputs node.OutputView,
 ) error {
 	for _, inputKey := range nodeToExecute.InputSchema() {
 		sourceNodeID, outputKey, err := parseDataRef(inputKey)
@@ -191,8 +191,7 @@ func (engine *FlowEngine) validateInputs(
 			)
 		}
 
-		sourceOutputs, exists := allOutputs[sourceNodeID]
-		if !exists {
+		if !allOutputs.HasNode(sourceNodeID) {
 			log.Warn().
 				Str("flowName", engine.flow.Name).
 				Str("nodeID", nodeToExecute.GetID()).
@@ -205,7 +204,7 @@ func (engine *FlowEngine) validateInputs(
 			)
 		}
 
-		_, exists = sourceOutputs[outputKey]
+		_, exists := allOutputs.Get(sourceNodeID, outputKey)
 		if !exists {
 			log.Warn().
 				Str("flowName", engine.flow.Name).
@@ -224,14 +223,13 @@ func (engine *FlowEngine) validateInputs(
 
 // assembleInputs gathers inputs for a node from previous outputs.
 func (engine *FlowEngine) assembleInputs(
-	nodeToExecute node.AnyNode, allOutputs map[string]map[string]interface{},
+	nodeToExecute node.AnyNode, allOutputs node.OutputView,
 ) map[string]interface{} {
 	inputs := make(map[string]interface{})
 
 	for _, inputKey := range nodeToExecute.InputSchema() {
 		sourceNodeID, outputKey, _ := parseDataRef(inputKey)
-		sourceOutputs := allOutputs[sourceNodeID]
-		value := sourceOutputs[outputKey]
+		value, _ := allOutputs.Get(sourceNodeID, outputKey)
 		// Store with full reference key (e.g., "create-user.userId")
 		inputs[inputKey] = value
 	}
@@ -259,14 +257,4 @@ func parseDataRef(ref string) (string, string, error) {
 	return "", "", fmt.Errorf(
 		"invalid reference format, expected 'nodeId.outputKey' or 'variableName', got '%s'", ref,
 	)
-}
-
-// findNodeWithoutInput finds a node that has no remaining input dependencies.
-func (engine *FlowEngine) findNodeWithoutInput(remainingInputs map[node.AnyNode]int) node.AnyNode {
-	for nodeKey, inputCount := range remainingInputs {
-		if inputCount == 0 {
-			return nodeKey
-		}
-	}
-	return nil
 }

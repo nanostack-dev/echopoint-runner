@@ -37,6 +37,19 @@ The current runtime already runs multiple claimed jobs concurrently, but the flo
 - Prefer simpler scheduling changes over invasive architectural rewrites.
 
 ## What's Been Tried
-- Session initialized. No experiments logged yet.
+- Run 1 (`3705141`, keep): established a clean baseline after disabling benchmark logging noise. Baseline is `796991230 ns/op`, `301328 B/op`, `2442 allocs/op`.
+- Run 2 (`fc435aa`, keep): executed all currently ready nodes concurrently inside `pkg/engine/execution.go`. This dropped the primary metric to `167201083 ns/op` (-79.0%), confirming that within-flow serialization was the dominant cost on this workload.
+- Run 3 (`14c48f9`, keep): wrapped observers with a synchronized adapter so existing callbacks remain safe under parallel node execution. Metric improved again to `129007182 ns/op` (-83.8%).
+- Run 4 (`14c48f9`, discard): precompiled template regexes in `pkg/node`, which reduced allocations but regressed the primary metric to `222101774 ns/op`. Allocation-only wins are not enough here.
+- Run 5 (`14c48f9`, discard): reused a shared `http.Client` in request nodes. It came close (`131964369 ns/op`) but still lost to the current best.
+- Run 6 (`948b0aa`, keep): added singleton-batch fast paths in the scheduler to skip sorting and goroutine fan-out when only one node is ready. Metric improved to `57957945 ns/op` (-92.7%).
+- Run 7 (`2fd3963`, keep): iterated ready nodes in declared flow order instead of sorting by ID every loop. Metric improved again to `57640743 ns/op` (-92.8%).
+- Run 8 (`HEADPEND`, keep): introduced a read-only `OutputView` snapshot for `ExecutionContext.AllOutputs` and copied committed node outputs before storing them. Metric improved to `56074748 ns/op` (-93.0%) while closing the shared-state mutation risk in the parallel engine.
 - Key observation from source review: `pkg/engine/execution.go` currently executes exactly one ready node per loop iteration, so "parallel" flow shapes are still serialized inside a single flow execution.
 - Existing runtime concurrency (`internal/runtime/runtime.go`) already allows multiple claimed jobs via `MaxParallelFlows`, so engine-level fan-out looks like the clearest first lever.
+- New architectural insight: the scheduler can parallelize ready-node batches safely as long as dependency mutation and output publication happen after the batch joins, and observer callbacks are serialized at the boundary.
+- New negative result: request-path micro-optimizations that mainly reduce allocations can still lose on latency; benchmark decisions must continue to follow `ns/op` first.
+- Another negative result: per-node `http.Client` construction is not the dominant remaining cost in this benchmark.
+- New architectural insight: once wide fan-out work runs concurrently, the scheduler should specialize small ready sets instead of treating them like full parallel batches.
+- Another architectural insight: the flow definition already provides a deterministic node order, which is cheaper than recomputing a sorted ready set each iteration.
+- Long-term correctness insight: `AllOutputs` should be treated as immutable historical state, not a live shared map. A read-only snapshot API makes the parallel scheduler safe by construction.
