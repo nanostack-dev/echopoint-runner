@@ -6,8 +6,10 @@ import (
 	"os"
 	"testing"
 
+	internalLogger "github.com/nanostack-dev/echopoint-runner/internal/logger"
 	"github.com/nanostack-dev/echopoint-runner/pkg/engine"
 	"github.com/nanostack-dev/echopoint-runner/pkg/flow"
+	"github.com/rs/zerolog"
 )
 
 const benchmarkBranchCount = 6
@@ -17,6 +19,8 @@ func BenchmarkParallelHTTPFlow(b *testing.B) {
 	if baseURL == "" {
 		b.Skip("ECHOPOINT_BENCH_BASE_URL is not set")
 	}
+
+	internalLogger.InitLogger(zerolog.Disabled, internalLogger.JSON)
 
 	flowJSON := buildBenchmarkFlowJSON(b, baseURL, benchmarkBranchCount)
 
