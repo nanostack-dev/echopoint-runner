@@ -2,7 +2,6 @@ package engine
 
 import (
 	"fmt"
-	"sort"
 	"sync"
 	"time"
 
@@ -85,14 +84,12 @@ func (engine *FlowEngine) readyNodes(remainingInputs map[node.AnyNode]int) []nod
 		return ready
 	}
 
-	for nodeKey, inputCount := range remainingInputs {
-		if inputCount == 0 {
+	for _, nodeKey := range engine.flow.Nodes {
+		inputCount, exists := remainingInputs[nodeKey]
+		if exists && inputCount == 0 {
 			ready = append(ready, nodeKey)
 		}
 	}
-	sort.Slice(ready, func(i, j int) bool {
-		return ready[i].GetID() < ready[j].GetID()
-	})
 
 	return ready
 }
