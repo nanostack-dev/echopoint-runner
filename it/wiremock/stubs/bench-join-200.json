@@ -1,0 +1,15 @@
+{
+  "request": {
+    "method": "GET",
+    "urlPath": "/bench/join"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "jsonBody": {
+      "joined": true
+    }
+  }
+}

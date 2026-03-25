@@ -1,0 +1,16 @@
+{
+  "request": {
+    "method": "GET",
+    "urlPathPattern": "/bench/slow/[^/]+"
+  },
+  "response": {
+    "status": 200,
+    "fixedDelayMilliseconds": 50,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "jsonBody": {
+      "ok": true
+    }
+  }
+}
