@@ -76,6 +76,15 @@ func (engine *FlowEngine) executeNodes(
 
 func (engine *FlowEngine) readyNodes(remainingInputs map[node.AnyNode]int) []node.AnyNode {
 	ready := make([]node.AnyNode, 0, len(remainingInputs))
+	if len(remainingInputs) == 1 {
+		for nodeKey, inputCount := range remainingInputs {
+			if inputCount == 0 {
+				return append(ready, nodeKey)
+			}
+		}
+		return ready
+	}
+
 	for nodeKey, inputCount := range remainingInputs {
 		if inputCount == 0 {
 			ready = append(ready, nodeKey)
@@ -92,6 +101,15 @@ func (engine *FlowEngine) runReadyNodes(
 	ready []node.AnyNode,
 	state *executionState,
 ) []nodeRunResult {
+	if len(ready) == 1 {
+		result, err := engine.runNode(ready[0], state)
+		return []nodeRunResult{{
+			node:   ready[0],
+			result: result,
+			err:    err,
+		}}
+	}
+
 	results := make([]nodeRunResult, len(ready))
 	var wg sync.WaitGroup
 	wg.Add(len(ready))
