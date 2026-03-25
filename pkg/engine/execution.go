@@ -2,6 +2,8 @@ package engine
 
 import (
 	"fmt"
+	"sort"
+	"sync"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -15,6 +17,12 @@ type executionState struct {
 	executedCount   int
 	result          *node.FlowExecutionResult
 	startTime       time.Time
+}
+
+type nodeRunResult struct {
+	node   node.AnyNode
+	result node.AnyExecutionResult
+	err    error
 }
 
 func (engine *FlowEngine) executeNodes(
@@ -42,25 +50,73 @@ func (engine *FlowEngine) executeNodes(
 	}
 
 	for {
-		next := engine.findNodeWithoutInput(state.remainingInputs)
-
-		if next == nil {
+		ready := engine.readyNodes(state.remainingInputs)
+		if len(ready) == 0 {
 			return engine.finalizeExecution(state)
 		}
 
-		if err := engine.runNode(next, state); err != nil {
-			state.result.Error = err
-			state.result.DurationMS = time.Since(state.startTime).Milliseconds()
-			return err
+		completed := engine.runReadyNodes(ready, state)
+		for _, nodeResult := range completed {
+			state.result.ExecutionResults[nodeResult.node.GetID()] = nodeResult.result
+			if nodeResult.err != nil {
+				state.result.Error = nodeResult.err
+				state.result.DurationMS = time.Since(state.startTime).Milliseconds()
+				return nodeResult.err
+			}
+
+			state.executedCount++
+			engine.propagateNodeOutputs(nodeResult.node, nodeResult.result, state)
 		}
 
-		state.executedCount++
-		engine.propagateNodeOutputs(next, state)
-		engine.markNodeComplete(next, state)
+		for _, nodeResult := range completed {
+			engine.markNodeComplete(nodeResult.node, state)
+		}
 	}
 }
 
-func (engine *FlowEngine) runNode(n node.AnyNode, state *executionState) error {
+func (engine *FlowEngine) readyNodes(remainingInputs map[node.AnyNode]int) []node.AnyNode {
+	ready := make([]node.AnyNode, 0, len(remainingInputs))
+	for nodeKey, inputCount := range remainingInputs {
+		if inputCount == 0 {
+			ready = append(ready, nodeKey)
+		}
+	}
+	sort.Slice(ready, func(i, j int) bool {
+		return ready[i].GetID() < ready[j].GetID()
+	})
+
+	return ready
+}
+
+func (engine *FlowEngine) runReadyNodes(
+	ready []node.AnyNode,
+	state *executionState,
+) []nodeRunResult {
+	results := make([]nodeRunResult, len(ready))
+	var wg sync.WaitGroup
+	wg.Add(len(ready))
+
+	for i, readyNode := range ready {
+		go func(index int, n node.AnyNode) {
+			defer wg.Done()
+
+			result, err := engine.runNode(n, state)
+			results[index] = nodeRunResult{
+				node:   n,
+				result: result,
+				err:    err,
+			}
+		}(i, readyNode)
+	}
+
+	wg.Wait()
+	return results
+}
+
+func (engine *FlowEngine) runNode(
+	n node.AnyNode,
+	state *executionState,
+) (node.AnyExecutionResult, error) {
 	nodeID := n.GetID()
 	displayName := n.GetDisplayName()
 	nodeType := n.GetType()
@@ -80,7 +136,7 @@ func (engine *FlowEngine) runNode(n node.AnyNode, state *executionState) error {
 			Err(err).
 			Int64("durationMS", time.Since(state.startTime).Milliseconds()).
 			Msg("Node execution failed: input validation error")
-		return err
+		return nil, err
 	}
 
 	inputs := engine.assembleInputs(n, state.allOutputs)
@@ -105,8 +161,6 @@ func (engine *FlowEngine) runNode(n node.AnyNode, state *executionState) error {
 	}
 
 	result, err := n.Execute(ctx)
-
-	state.result.ExecutionResults[n.GetID()] = result
 	finishedAt := time.Now()
 	if result != nil && !result.GetExecutedAt().IsZero() {
 		finishedAt = result.GetExecutedAt()
@@ -139,11 +193,14 @@ func (engine *FlowEngine) runNode(n node.AnyNode, state *executionState) error {
 		Result:      result,
 	})
 
-	return err
+	return result, err
 }
 
-func (engine *FlowEngine) propagateNodeOutputs(n node.AnyNode, state *executionState) {
-	result := state.result.ExecutionResults[n.GetID()]
+func (engine *FlowEngine) propagateNodeOutputs(
+	n node.AnyNode,
+	result node.AnyExecutionResult,
+	state *executionState,
+) {
 	outputs := result.GetOutputs()
 	nodeID := n.GetID()
 	nodeType := n.GetType()
