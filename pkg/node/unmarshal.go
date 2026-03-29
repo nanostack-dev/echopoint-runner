@@ -27,6 +27,12 @@ func UnmarshalNode(data []byte) (AnyNode, error) {
 			return nil, fmt.Errorf("failed to unmarshal delay node: %w", err)
 		}
 		return &node, nil
+	case TypeDebug:
+		var node DebugNode
+		if err := json.Unmarshal(data, &node); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal debug node: %w", err)
+		}
+		return &node, nil
 	default:
 		return nil, fmt.Errorf("unknown node type: %s", peek.Type)
 	}

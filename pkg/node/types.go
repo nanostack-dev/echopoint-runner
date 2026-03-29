@@ -36,6 +36,7 @@ type Type string
 const (
 	TypeRequest Type = "request"
 	TypeDelay   Type = "delay"
+	TypeDebug   Type = "debug"
 )
 
 // ExecutionContext provides inputs and context for a node's execution.
@@ -166,4 +167,33 @@ type FlowExecutionResult struct {
 	ErrorCode        *string                       `json:"error_code,omitempty"`
 	ErrorMsg         *string                       `json:"error_message,omitempty"`
 	DurationMS       int64                         `json:"duration_ms"`
+}
+
+type DebugResultItem struct {
+	Expression string      `json:"expression"`
+	Value      interface{} `json:"value,omitempty"`
+	Error      string      `json:"error,omitempty"`
+}
+
+// DebugExecutionResult stores debug node execution data.
+type DebugExecutionResult struct {
+	BaseExecutionResult
+
+	Results    []DebugResultItem `json:"results"`
+	DurationMs int64             `json:"duration_ms"`
+}
+
+// AsDebugExecutionResult safely casts an AnyExecutionResult to a DebugExecutionResult.
+func AsDebugExecutionResult(result AnyExecutionResult) (*DebugExecutionResult, bool) {
+	debugResult, ok := result.(*DebugExecutionResult)
+	return debugResult, ok
+}
+
+// MustAsDebugExecutionResult casts an AnyExecutionResult to a DebugExecutionResult, panicking if it fails.
+func MustAsDebugExecutionResult(result AnyExecutionResult) *DebugExecutionResult {
+	debugResult, ok := AsDebugExecutionResult(result)
+	if !ok {
+		panic("expected DebugExecutionResult but got different type")
+	}
+	return debugResult
 }
