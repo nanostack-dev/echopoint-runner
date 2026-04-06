@@ -1,6 +1,6 @@
 module github.com/nanostack-dev/echopoint-runner
 
-go 1.25.1
+go 1.26.1
 
 require (
 	github.com/rs/zerolog v1.34.0
