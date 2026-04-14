@@ -1,12 +1,15 @@
 FROM golang:1.26.1-alpine AS builder
 
+ARG TARGETOS=linux
+ARG TARGETARCH
+
 WORKDIR /src
 
 COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/echopoint-runner ./cmd/runner
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -o /out/echopoint-runner ./cmd/runner
 
 FROM alpine:3.22
 
