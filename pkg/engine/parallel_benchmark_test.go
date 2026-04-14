@@ -27,7 +27,7 @@ func BenchmarkParallelHTTPFlow(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		flowDef, err := flow.ParseFromJSON(flowJSON)
 		if err != nil {
 			b.Fatalf("parse benchmark flow: %v", err)
