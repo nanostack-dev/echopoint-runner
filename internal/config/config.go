@@ -38,7 +38,6 @@ type Config struct {
 	ShutdownGracePeriod time.Duration
 	LogLevel            zerolog.Level
 	LogFormat           string
-	AcceptanceFlowID    string
 	FlowAPIKey          string
 }
 
@@ -98,7 +97,6 @@ func Load() (Config, error) {
 		ShutdownGracePeriod: shutdownGracePeriod,
 		LogLevel:            logLevel,
 		LogFormat:           strings.TrimSpace(getEnvOrDefault("ECHOPOINT_LOG_FORMAT", defaultLogFormat)),
-		AcceptanceFlowID:    strings.TrimSpace(os.Getenv("ECHOPOINT_ACCEPTANCE_FLOW_ID")),
 		FlowAPIKey:          strings.TrimSpace(os.Getenv("ECHOPOINT_FLOW_API_KEY")),
 	}
 
