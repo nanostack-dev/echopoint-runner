@@ -14,6 +14,7 @@ type BaseNode struct {
 	ID          string               `json:"id"`
 	DisplayName string               `json:"display_name"`
 	NodeType    Type                 `json:"type"`
+	RunWhen     RunWhen              `json:"run_when,omitempty"`
 	Assertions  []CompositeAssertion `json:"assertions"`
 	Outputs     []Output             `json:"outputs"`
 }
@@ -31,6 +32,13 @@ func (bn *BaseNode) GetDisplayName() string {
 // GetType returns the type of this node (request, delay, assertion, etc.)
 func (bn *BaseNode) GetType() Type {
 	return bn.NodeType
+}
+
+func (bn *BaseNode) GetRunWhen() RunWhen {
+	if bn.RunWhen == "" {
+		return RunWhenOnSuccess
+	}
+	return bn.RunWhen
 }
 
 // InputSchema returns the list of required inputs for this node

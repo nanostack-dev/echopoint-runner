@@ -20,11 +20,17 @@ func UnmarshalNode(data []byte) (AnyNode, error) {
 		if err := json.Unmarshal(data, &node); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal request node: %w", err)
 		}
+		if node.RunWhen == "" {
+			node.RunWhen = RunWhenOnSuccess
+		}
 		return &node, nil
 	case TypeDelay:
 		var node DelayNode
 		if err := json.Unmarshal(data, &node); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal delay node: %w", err)
+		}
+		if node.RunWhen == "" {
+			node.RunWhen = RunWhenOnSuccess
 		}
 		return &node, nil
 	default:

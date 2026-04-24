@@ -19,6 +19,7 @@ type Options struct {
 type FlowEngine struct {
 	flow           flow.Flow
 	nodeEdgeOutput map[node.AnyNode][]node.AnyNode
+	nodeEdgeSource map[node.AnyNode][]node.AnyNode
 	nodeEdgeInput  map[node.AnyNode]int
 	nodeMap        map[string]node.AnyNode
 	observer       ExecutionObserver
@@ -27,6 +28,7 @@ type FlowEngine struct {
 func NewFlowEngine(flowInstance flow.Flow, options *Options) (*FlowEngine, error) {
 	nodeMap := make(map[string]node.AnyNode, len(flowInstance.Nodes))
 	nodeEdgeOutput := make(map[node.AnyNode][]node.AnyNode)
+	nodeEdgeSource := make(map[node.AnyNode][]node.AnyNode)
 	nodeEdgeInput := make(map[node.AnyNode]int)
 
 	log.Debug().
@@ -40,6 +42,7 @@ func NewFlowEngine(flowInstance flow.Flow, options *Options) (*FlowEngine, error
 		nodeMap[nodeInstance.GetID()] = nodeInstance
 		nodeEdgeInput[nodeInstance] = 0
 		nodeEdgeOutput[nodeInstance] = nil
+		nodeEdgeSource[nodeInstance] = nil
 		log.Debug().
 			Str("flowName", flowInstance.Name).
 			Str("nodeID", nodeInstance.GetID()).
@@ -79,6 +82,7 @@ func NewFlowEngine(flowInstance flow.Flow, options *Options) (*FlowEngine, error
 			return nil, err
 		}
 		nodeEdgeOutput[sourceNode] = append(nodeEdgeOutput[sourceNode], targetNode)
+		nodeEdgeSource[targetNode] = append(nodeEdgeSource[targetNode], sourceNode)
 		nodeEdgeInput[targetNode]++
 		log.Debug().
 			Str("flowName", flowInstance.Name).
@@ -106,6 +110,7 @@ func NewFlowEngine(flowInstance flow.Flow, options *Options) (*FlowEngine, error
 	return &FlowEngine{
 		flowInstance,
 		nodeEdgeOutput,
+		nodeEdgeSource,
 		nodeEdgeInput,
 		nodeMap,
 		observer,

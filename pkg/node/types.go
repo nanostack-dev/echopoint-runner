@@ -13,6 +13,7 @@ type AnyNode interface {
 	GetID() string
 	GetDisplayName() string
 	GetType() Type
+	GetRunWhen() RunWhen
 	InputSchema() []string
 
 	// OutputSchema defines what this node produces
@@ -45,6 +46,13 @@ const (
 	TypeDelay   Type = "delay"
 )
 
+type RunWhen string
+
+const (
+	RunWhenOnSuccess RunWhen = "on_success"
+	RunWhenAlways    RunWhen = "always"
+)
+
 // ExecutionContext provides inputs and context for a node's execution.
 type ExecutionContext struct {
 	// Inputs contains all the data this node declared it needs in InputSchema()
@@ -71,15 +79,18 @@ type AnyExecutionResult interface {
 
 // BaseExecutionResult provides common fields for all execution results.
 type BaseExecutionResult struct {
-	NodeID      string                 `json:"node_id"`
-	DisplayName string                 `json:"display_name"`
-	NodeType    Type                   `json:"node_type"`
-	Inputs      map[string]interface{} `json:"inputs"`
-	Outputs     map[string]interface{} `json:"outputs"`
-	Error       error                  `json:"-"` // Don't serialize Go error
-	ErrorCode   *string                `json:"error_code,omitempty"`
-	ErrorMsg    *string                `json:"error_message,omitempty"`
-	ExecutedAt  time.Time              `json:"executed_at"`
+	NodeID        string                 `json:"node_id"`
+	DisplayName   string                 `json:"display_name"`
+	NodeType      Type                   `json:"node_type"`
+	RunWhen       RunWhen                `json:"run_when,omitempty"`
+	Inputs        map[string]interface{} `json:"inputs"`
+	Outputs       map[string]interface{} `json:"outputs"`
+	Error         error                  `json:"-"` // Don't serialize Go error
+	ErrorCode     *string                `json:"error_code,omitempty"`
+	ErrorMsg      *string                `json:"error_message,omitempty"`
+	SkipReason    *string                `json:"skip_reason,omitempty"`
+	MissingInputs []string               `json:"missing_inputs,omitempty"`
+	ExecutedAt    time.Time              `json:"executed_at"`
 }
 
 // GetNodeID returns the node ID.

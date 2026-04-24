@@ -16,6 +16,7 @@ type executionState struct {
 	executedCount   int
 	result          *node.FlowExecutionResult
 	startTime       time.Time
+	mainFailed      bool
 }
 
 type nodeRunResult struct {
@@ -48,36 +49,88 @@ func (engine *FlowEngine) executeNodes(
 		state.remainingInputs[k] = v
 	}
 
+	engine.runOnSuccessPhase(state)
+	engine.runAlwaysPhase(state)
+
+	return engine.finalizeExecution(state)
+}
+
+func (engine *FlowEngine) runOnSuccessPhase(state *executionState) {
 	for {
-		ready := engine.readyNodes(state.remainingInputs)
+		ready := engine.readyNodes(state.remainingInputs, node.RunWhenOnSuccess)
 		if len(ready) == 0 {
-			return engine.finalizeExecution(state)
+			return
 		}
 
 		completed := engine.runReadyNodes(ready, state)
-		for _, nodeResult := range completed {
-			state.result.ExecutionResults[nodeResult.node.GetID()] = nodeResult.result
-			if nodeResult.err != nil {
-				state.result.Error = nodeResult.err
-				state.result.DurationMS = time.Since(state.startTime).Milliseconds()
-				return nodeResult.err
-			}
-
-			state.executedCount++
-			engine.propagateNodeOutputs(nodeResult.node, nodeResult.result, state)
-		}
-
-		for _, nodeResult := range completed {
-			engine.markNodeComplete(nodeResult.node, state)
+		if engine.recordOnSuccessResults(completed, state) {
+			return
 		}
 	}
 }
 
-func (engine *FlowEngine) readyNodes(remainingInputs map[node.AnyNode]int) []node.AnyNode {
+func (engine *FlowEngine) runAlwaysPhase(state *executionState) {
+	for {
+		ready := engine.readyNodes(state.remainingInputs, node.RunWhenAlways)
+		if len(ready) == 0 {
+			if !engine.skipFrontierAlwaysNodes(state) {
+				return
+			}
+			continue
+		}
+
+		completed := engine.runReadyNodes(ready, state)
+		engine.recordAlwaysResults(completed, state)
+	}
+}
+
+func (engine *FlowEngine) recordOnSuccessResults(completed []nodeRunResult, state *executionState) bool {
+	mainPhaseFailed := false
+	for _, nodeResult := range completed {
+		state.result.ExecutionResults[nodeResult.node.GetID()] = nodeResult.result
+		if nodeResult.err != nil {
+			if state.result.Error == nil {
+				state.result.Error = nodeResult.err
+			}
+			state.mainFailed = true
+			mainPhaseFailed = true
+		} else {
+			state.executedCount++
+		}
+
+		if resultWithOutputs := nodeResult.result; resultWithOutputs != nil {
+			engine.propagateNodeOutputs(nodeResult.node, resultWithOutputs, state)
+		}
+	}
+
+	for _, nodeResult := range completed {
+		engine.markNodeComplete(nodeResult.node, state)
+	}
+
+	return mainPhaseFailed
+}
+
+func (engine *FlowEngine) recordAlwaysResults(completed []nodeRunResult, state *executionState) {
+	for _, nodeResult := range completed {
+		state.result.ExecutionResults[nodeResult.node.GetID()] = nodeResult.result
+		if nodeResult.err == nil {
+			state.executedCount++
+			engine.propagateNodeOutputs(nodeResult.node, nodeResult.result, state)
+		} else if state.result.Error == nil {
+			state.result.Error = nodeResult.err
+		}
+	}
+
+	for _, nodeResult := range completed {
+		engine.markNodeComplete(nodeResult.node, state)
+	}
+}
+
+func (engine *FlowEngine) readyNodes(remainingInputs map[node.AnyNode]int, phase node.RunWhen) []node.AnyNode {
 	ready := make([]node.AnyNode, 0, len(remainingInputs))
 	if len(remainingInputs) == 1 {
 		for nodeKey, inputCount := range remainingInputs {
-			if inputCount == 0 {
+			if inputCount == 0 && nodeKey.GetRunWhen() == phase {
 				return append(ready, nodeKey)
 			}
 		}
@@ -86,7 +139,7 @@ func (engine *FlowEngine) readyNodes(remainingInputs map[node.AnyNode]int) []nod
 
 	for _, nodeKey := range engine.flow.Nodes {
 		inputCount, exists := remainingInputs[nodeKey]
-		if exists && inputCount == 0 {
+		if exists && inputCount == 0 && nodeKey.GetRunWhen() == phase {
 			ready = append(ready, nodeKey)
 		}
 	}
@@ -150,6 +203,19 @@ func (engine *FlowEngine) runNode(
 		Msg("Preparing node execution")
 
 	if err := engine.validateInputs(n, outputView); err != nil {
+		if n.GetRunWhen() == node.RunWhenAlways {
+			skipped := engine.createSkippedNodeResult(n, err, outputView)
+			engine.observer.NodeFinished(NodeFinishedEvent{
+				NodeID:      nodeID,
+				DisplayName: displayName,
+				NodeType:    nodeType,
+				StartedAt:   startedAt,
+				FinishedAt:  time.Now(),
+				DurationMs:  time.Since(startedAt).Milliseconds(),
+				Result:      skipped,
+			})
+			return skipped, nil
+		}
 		log.Error().
 			Str("flowName", engine.flow.Name).
 			Str("nodeID", nodeID).
@@ -254,6 +320,12 @@ func (engine *FlowEngine) markNodeComplete(n node.AnyNode, state *executionState
 }
 
 func (engine *FlowEngine) finalizeExecution(state *executionState) error {
+	if state.result.Error != nil {
+		state.result.Success = false
+		state.result.DurationMS = time.Since(state.startTime).Milliseconds()
+		return state.result.Error
+	}
+
 	if len(state.remainingInputs) > 0 {
 		state.result.Error = fmt.Errorf(
 			"cycle detected or unreachable nodes: %d nodes not executed",
@@ -277,4 +349,51 @@ func (engine *FlowEngine) finalizeExecution(state *executionState) error {
 		Int64("durationMS", state.result.DurationMS).
 		Msg("Flow execution completed successfully")
 	return nil
+}
+
+// skipFrontierAlwaysNodes skips cleanup nodes that are blocked only by nodes from
+// the already-aborted main phase. Skipping those frontier nodes can unblock later
+// cleanup joins that still have all required runtime inputs, such as delete_product
+// after an earlier delete_* step was itself skipped.
+func (engine *FlowEngine) skipFrontierAlwaysNodes(state *executionState) bool {
+	toSkip := make([]node.AnyNode, 0)
+	for _, currentNode := range engine.flow.Nodes {
+		if currentNode.GetRunWhen() != node.RunWhenAlways {
+			continue
+		}
+		if _, exists := state.remainingInputs[currentNode]; !exists {
+			continue
+		}
+		if engine.hasRemainingAlwaysPredecessor(currentNode, state) {
+			continue
+		}
+		toSkip = append(toSkip, currentNode)
+	}
+
+	if len(toSkip) == 0 {
+		return false
+	}
+
+	for _, currentNode := range toSkip {
+		result := engine.createSkippedNodeResult(currentNode, nil, node.NewOutputView(state.allOutputs))
+		state.result.ExecutionResults[currentNode.GetID()] = result
+		engine.markNodeComplete(currentNode, state)
+	}
+
+	return true
+}
+
+func (engine *FlowEngine) hasRemainingAlwaysPredecessor(
+	currentNode node.AnyNode,
+	state *executionState,
+) bool {
+	for _, predecessor := range engine.nodeEdgeSource[currentNode] {
+		if _, exists := state.remainingInputs[predecessor]; !exists {
+			continue
+		}
+		if predecessor.GetRunWhen() == node.RunWhenAlways {
+			return true
+		}
+	}
+	return false
 }
