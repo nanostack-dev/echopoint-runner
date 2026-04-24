@@ -114,42 +114,49 @@ func (n *RequestNode) Execute(ctx ExecutionContext) (AnyExecutionResult, error) 
 	respCtx := extractors.NewResponseContext(resp, respBody, parsedBody)
 
 	if assertErr := n.runAssertions(respCtx); assertErr != nil {
-		return n.createErrorResult(ctx.Inputs, assertErr, time.Since(startTime)), assertErr
+		return n.createResponseBackedErrorResult(
+			ctx.Inputs,
+			url,
+			headers,
+			body,
+			resp,
+			respBody,
+			parsedBody,
+			assertErr,
+			time.Since(startTime),
+		), assertErr
 	}
 
 	outputs, err := n.extractOutputs(respCtx)
 	if err != nil {
-		return n.createErrorResult(ctx.Inputs, err, time.Since(startTime)), err
+		return n.createResponseBackedErrorResult(
+			ctx.Inputs,
+			url,
+			headers,
+			body,
+			resp,
+			respBody,
+			parsedBody,
+			err,
+			time.Since(startTime),
+		), err
 	}
 
 	if validateErr := n.validateOutput(outputs); validateErr != nil {
-		return n.createErrorResult(ctx.Inputs, validateErr, time.Since(startTime)), validateErr
+		return n.createResponseBackedErrorResult(
+			ctx.Inputs,
+			url,
+			headers,
+			body,
+			resp,
+			respBody,
+			parsedBody,
+			validateErr,
+			time.Since(startTime),
+		), validateErr
 	}
 
-	// Create typed RequestExecutionResult with all HTTP data
-	result := &RequestExecutionResult{
-		BaseExecutionResult: BaseExecutionResult{
-			NodeID:      n.GetID(),
-			DisplayName: n.GetDisplayName(),
-			NodeType:    TypeRequest,
-			Inputs:      ctx.Inputs,
-			Outputs:     outputs,
-			ExecutedAt:  time.Now(),
-		},
-		// HTTP Request
-		RequestMethod:  n.Data.Method,
-		RequestURL:     url,
-		RequestHeaders: headers,
-		RequestBody:    body,
-
-		// HTTP Response
-		ResponseStatusCode: resp.StatusCode,
-		ResponseHeaders:    resp.Header,
-		ResponseBody:       respBody,
-		ResponseBodyParsed: parsedBody,
-
-		DurationMs: time.Since(startTime).Milliseconds(),
-	}
+	result := n.createSuccessResult(ctx.Inputs, outputs, url, headers, body, resp, respBody, parsedBody, startTime)
 
 	log.Info().
 		Str("nodeID", n.GetID()).
@@ -159,6 +166,38 @@ func (n *RequestNode) Execute(ctx ExecutionContext) (AnyExecutionResult, error) 
 		Msg("Request node executed successfully")
 
 	return result, nil
+}
+
+func (n *RequestNode) createSuccessResult(
+	inputs map[string]interface{},
+	outputs map[string]interface{},
+	url string,
+	headers map[string]string,
+	body interface{},
+	resp *http.Response,
+	respBody []byte,
+	parsedBody interface{},
+	startTime time.Time,
+) *RequestExecutionResult {
+	return &RequestExecutionResult{
+		BaseExecutionResult: BaseExecutionResult{
+			NodeID:      n.GetID(),
+			DisplayName: n.GetDisplayName(),
+			NodeType:    TypeRequest,
+			Inputs:      inputs,
+			Outputs:     outputs,
+			ExecutedAt:  time.Now(),
+		},
+		RequestMethod:      n.Data.Method,
+		RequestURL:         url,
+		RequestHeaders:     headers,
+		RequestBody:        body,
+		ResponseStatusCode: resp.StatusCode,
+		ResponseHeaders:    resp.Header,
+		ResponseBody:       respBody,
+		ResponseBodyParsed: parsedBody,
+		DurationMs:         time.Since(startTime).Milliseconds(),
+	}
 }
 
 // createErrorResult creates a RequestExecutionResult for error cases.
@@ -184,6 +223,37 @@ func (n *RequestNode) createErrorResult(
 		},
 		DurationMs: duration.Milliseconds(),
 	}
+}
+
+func (n *RequestNode) createResponseBackedErrorResult(
+	inputs map[string]interface{},
+	url string,
+	headers map[string]string,
+	body interface{},
+	resp *http.Response,
+	respBody []byte,
+	parsedBody interface{},
+	err error,
+	duration time.Duration,
+) AnyExecutionResult {
+	result := n.createErrorResult(inputs, err, duration)
+	reqResult, ok := result.(*RequestExecutionResult)
+	if !ok {
+		return result
+	}
+
+	reqResult.RequestMethod = n.Data.Method
+	reqResult.RequestURL = url
+	reqResult.RequestHeaders = headers
+	reqResult.RequestBody = body
+	if resp != nil {
+		reqResult.ResponseStatusCode = resp.StatusCode
+		reqResult.ResponseHeaders = resp.Header
+	}
+	reqResult.ResponseBody = respBody
+	reqResult.ResponseBodyParsed = parsedBody
+
+	return reqResult
 }
 
 func (n *RequestNode) resolveTemplates(

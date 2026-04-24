@@ -195,6 +195,213 @@ func TestParseFromJSON_EmptyNodes(t *testing.T) {
 	assert.Empty(t, flowResult.Edges, "should have 0 edges")
 }
 
+func TestParseFromJSON_RejectsUnknownBareVariableReferences(t *testing.T) {
+	flowJSON := []byte(`{
+		"version": "1.0",
+		"name": "Invalid Flow",
+		"description": "Bare variable should fail",
+		"nodes": [
+			{
+				"id": "step-login",
+				"display_name": "Login",
+				"type": "request",
+				"data": {
+					"method": "POST",
+					"url": "https://example.com/login",
+					"timeout": 1000
+				},
+				"outputs": [
+					{"name": "token", "extractor": {"type": "body"}}
+				]
+			},
+			{
+				"id": "step-create-product",
+				"display_name": "Create Product",
+				"type": "request",
+				"data": {
+					"method": "POST",
+					"url": "https://example.com/products",
+					"headers": {"Authorization": "Bearer {{token}}"},
+					"timeout": 1000
+				}
+			}
+		],
+		"edges": []
+	}`)
+
+	flowResult, err := flow.ParseFromJSON(flowJSON)
+	require.Error(t, err)
+	assert.Nil(t, flowResult)
+	assert.Contains(t, err.Error(), "references unknown initial variable 'token'")
+}
+
+func TestParseFromJSON_AllowsDeclaredInitialInputs(t *testing.T) {
+	flowJSON := []byte(`{
+		"version": "1.0",
+		"name": "Valid Flow",
+		"description": "Initial variable is allowed",
+		"initialInputs": {
+			"API_URL": "https://example.com"
+		},
+		"nodes": [
+			{
+				"id": "step-create-product",
+				"display_name": "Create Product",
+				"type": "request",
+				"data": {
+					"method": "POST",
+					"url": "{{API_URL}}/products",
+					"timeout": 1000
+				}
+			}
+		],
+		"edges": []
+	}`)
+
+	flowResult, err := flow.ParseFromJSON(flowJSON)
+	require.NoError(t, err)
+	require.NotNil(t, flowResult)
+	assert.Len(t, flowResult.Nodes, 1)
+}
+
+func TestParseFromJSONWithOptions_AllowsUnknownInitialInputsWhenConfigured(t *testing.T) {
+	flowJSON := []byte(`{
+		"version": "1.0",
+		"name": "Valid Flow",
+		"description": "Unknown initial variable is tolerated when configured",
+		"nodes": [
+			{
+				"id": "step-create-product",
+				"display_name": "Create Product",
+				"type": "request",
+				"data": {
+					"method": "POST",
+					"url": "{{EMAIL}}/products",
+					"timeout": 1000
+				}
+			}
+		],
+		"edges": []
+	}`)
+
+	flowResult, err := flow.ParseFromJSONWithOptions(flowJSON, flow.ParseOptions{
+		AllowUnknownInitialInputs: true,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, flowResult)
+	assert.Len(t, flowResult.Nodes, 1)
+}
+
+func TestParseFromJSON_AllowsPriorNodeOutputReferences(t *testing.T) {
+	flowJSON := []byte(`{
+		"version": "1.0",
+		"name": "Valid Flow",
+		"description": "Prior output is allowed",
+		"nodes": [
+			{
+				"id": "step-login",
+				"display_name": "Login",
+				"type": "request",
+				"data": {
+					"method": "POST",
+					"url": "https://example.com/login",
+					"timeout": 1000
+				},
+				"outputs": [
+					{"name": "token", "extractor": {"type": "body"}}
+				]
+			},
+			{
+				"id": "step-create-product",
+				"display_name": "Create Product",
+				"type": "request",
+				"data": {
+					"method": "POST",
+					"url": "https://example.com/products",
+					"headers": {"Authorization": "Bearer {{step-login.token}}"},
+					"timeout": 1000
+				}
+			}
+		],
+		"edges": []
+	}`)
+
+	flowResult, err := flow.ParseFromJSON(flowJSON)
+	require.NoError(t, err)
+	require.NotNil(t, flowResult)
+	assert.Len(t, flowResult.Nodes, 2)
+}
+
+func TestParseFromJSON_AllowsPriorNodeOutputReferencesWithTripleBraces(t *testing.T) {
+	flowJSON := []byte(`{
+		"version": "1.0",
+		"name": "Valid Flow",
+		"description": "Prior output is allowed in raw JSON body",
+		"nodes": [
+			{
+				"id": "search_product_permissions",
+				"display_name": "Search Product Permissions",
+				"type": "request",
+				"data": {
+					"method": "GET",
+					"url": "https://example.com/permissions",
+					"timeout": 1000
+				},
+				"outputs": [
+					{"name": "allPermissionNames", "extractor": {"type": "body"}}
+				]
+			},
+			{
+				"id": "create_product_api_key",
+				"display_name": "Create Product API Key",
+				"type": "request",
+				"data": {
+					"method": "POST",
+					"url": "https://example.com/api-keys",
+					"body": {
+						"permissions": "{{{search_product_permissions.allPermissionNames}}}"
+					},
+					"timeout": 1000
+				}
+			}
+		],
+		"edges": []
+	}`)
+
+	flowResult, err := flow.ParseFromJSON(flowJSON)
+	require.NoError(t, err)
+	require.NotNil(t, flowResult)
+	assert.Len(t, flowResult.Nodes, 2)
+	assert.Equal(t, "create_product_api_key", flowResult.Nodes[1].GetID())
+}
+
+func TestParseFromJSON_RejectsUnknownSourceNodeOutputs(t *testing.T) {
+	flowJSON := []byte(`{
+		"version": "1.0",
+		"name": "Invalid Flow",
+		"description": "Unknown source node should fail",
+		"nodes": [
+			{
+				"id": "step-create-product",
+				"display_name": "Create Product",
+				"type": "request",
+				"data": {
+					"method": "POST",
+					"url": "https://example.com/products",
+					"headers": {"Authorization": "Bearer {{step-login.token}}"},
+					"timeout": 1000
+				}
+			}
+		],
+		"edges": []
+	}`)
+
+	flowResult, err := flow.ParseFromJSON(flowJSON)
+	require.Error(t, err)
+	assert.Nil(t, flowResult)
+	assert.Contains(t, err.Error(), "source node 'step-login' not available")
+}
+
 func TestParseFromJSON_ExtractorTypes(t *testing.T) {
 	// Test that extractors are properly unmarshaled with correct types
 	file, err := os.ReadFile("test.json")

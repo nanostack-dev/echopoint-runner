@@ -4,9 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"strings"
 
 	"github.com/rs/zerolog/log"
 )
+
+var rawVariablePattern = regexp.MustCompile(`^\{\{\{\s*([^{}]+?)\s*\}\}\}$`)
+var stringVariablePattern = regexp.MustCompile(`\{\{([^}]+)\}\}`)
 
 // TemplateResolver handles resolution of {{variableName}} templates in strings and objects.
 type TemplateResolver struct {
@@ -29,6 +33,13 @@ func (tr *TemplateResolver) Resolve(value interface{}) (interface{}, error) {
 
 	switch v := value.(type) {
 	case string:
+		if resolved, ok := tr.resolveRawVariable(v); ok {
+			log.Debug().
+				Str("original", v).
+				Any("resolved", resolved).
+				Msg("Raw variable template resolved")
+			return resolved, nil
+		}
 		resolved := tr.resolveString(v)
 		log.Debug().
 			Str("original", v).
@@ -58,10 +69,7 @@ func (tr *TemplateResolver) Resolve(value interface{}) (interface{}, error) {
 
 // resolveString replaces all {{variableName}} patterns with their values.
 func (tr *TemplateResolver) resolveString(s string) string {
-	// Pattern: {{variableName}}
-	pattern := regexp.MustCompile(`\{\{([^}]+)\}\}`)
-
-	result := pattern.ReplaceAllStringFunc(
+	result := stringVariablePattern.ReplaceAllStringFunc(
 		s, func(match string) string {
 			// Extract variable name from {{varName}}
 			varName := match[2 : len(match)-2]
@@ -73,6 +81,21 @@ func (tr *TemplateResolver) resolveString(s string) string {
 	)
 
 	return result
+}
+
+func (tr *TemplateResolver) resolveRawVariable(value string) (interface{}, bool) {
+	match := rawVariablePattern.FindStringSubmatch(strings.TrimSpace(value))
+	if len(match) != 1+1 {
+		return nil, false
+	}
+
+	varName := strings.TrimSpace(match[1])
+	resolved, exists := tr.variables[varName]
+	if !exists {
+		return value, true
+	}
+
+	return resolved, true
 }
 
 // resolveMap recursively resolves templates in all map values.

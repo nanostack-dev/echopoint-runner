@@ -16,6 +16,11 @@ type Flow struct {
 	InitialInputs map[string]interface{} `json:"initialInputs"`
 }
 
+type ParseOptions struct {
+	AllowedInitialInputKeys   []string
+	AllowUnknownInitialInputs bool
+}
+
 func ParseFromMap(data map[string]interface{}) (*Flow, error) {
 	jsonData, err := json.Marshal(data)
 	if err != nil {
@@ -23,7 +28,12 @@ func ParseFromMap(data map[string]interface{}) (*Flow, error) {
 	}
 	return ParseFromJSON(jsonData)
 }
+
 func ParseFromJSON(data []byte) (*Flow, error) {
+	return ParseFromJSONWithOptions(data, ParseOptions{})
+}
+
+func ParseFromJSONWithOptions(data []byte, options ParseOptions) (*Flow, error) {
 	var raw struct {
 		Name          string                 `json:"name"`
 		Description   string                 `json:"description"`
@@ -52,12 +62,16 @@ func ParseFromJSON(data []byte) (*Flow, error) {
 		raw.InitialInputs = make(map[string]interface{})
 	}
 
-	return &Flow{
+	parsedFlow := &Flow{
 		Name:          raw.Name,
 		Description:   raw.Description,
 		Version:       raw.Version,
 		Nodes:         nodes,
 		Edges:         raw.Edges,
 		InitialInputs: raw.InitialInputs,
-	}, nil
+	}
+	if err := validateFlowReferences(parsedFlow, options); err != nil {
+		return nil, err
+	}
+	return parsedFlow, nil
 }

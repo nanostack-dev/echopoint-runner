@@ -5,6 +5,8 @@ import (
 	"strings"
 )
 
+var templateVariablePattern = regexp.MustCompile(`\{\{\{?\s*([^}]+?)\s*\}\}\}?`)
+
 // SchemaInference provides utilities to infer input and output schemas from node configurations.
 type SchemaInference struct{}
 
@@ -43,9 +45,7 @@ func (si *SchemaInference) extractVariablesRecursive(data interface{}, vars map[
 
 // extractVariablesFromString finds all {{variable}} patterns in a string.
 func (si *SchemaInference) extractVariablesFromString(s string, vars map[string]bool) {
-	// Match {{variable}} patterns
-	re := regexp.MustCompile(`\{\{([^}]+)\}\}`)
-	matches := re.FindAllStringSubmatch(s, -1)
+	matches := templateVariablePattern.FindAllStringSubmatch(s, -1)
 	for _, match := range matches {
 		if len(match) > 1 {
 			varName := strings.TrimSpace(match[1])

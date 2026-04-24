@@ -25,6 +25,7 @@ func init() {
 type MockNode struct {
 	id          string
 	nodeType    node.Type
+	runWhen     node.RunWhen
 	executed    bool
 	shouldPass  bool
 	shouldError bool
@@ -40,6 +41,13 @@ func (n *MockNode) GetDisplayName() string {
 
 func (n *MockNode) GetType() node.Type {
 	return n.nodeType
+}
+
+func (n *MockNode) GetRunWhen() node.RunWhen {
+	if n.runWhen == "" {
+		return node.RunWhenOnSuccess
+	}
+	return n.runWhen
 }
 
 func (n *MockNode) InputSchema() []string {
@@ -72,6 +80,7 @@ func (n *MockNode) Execute(_ node.ExecutionContext) (node.AnyExecutionResult, er
 			NodeID:      n.id,
 			DisplayName: n.id,
 			NodeType:    n.nodeType,
+			RunWhen:     n.GetRunWhen(),
 			Outputs:     nil,
 			Error:       err,
 			ErrorMsg:    &errMsg,
@@ -84,6 +93,7 @@ func (n *MockNode) Execute(_ node.ExecutionContext) (node.AnyExecutionResult, er
 		NodeID:      n.id,
 		DisplayName: n.id,
 		NodeType:    n.nodeType,
+		RunWhen:     n.GetRunWhen(),
 		Outputs:     outputs,
 		ExecutedAt:  time.Now(),
 	}, nil
@@ -95,6 +105,7 @@ func (n *MockNode) Execute(_ node.ExecutionContext) (node.AnyExecutionResult, er
 type DataContractMockNode struct {
 	id          string
 	nodeType    node.Type
+	runWhen     node.RunWhen
 	inputDeps   []string
 	outputKeys  []string
 	outputs     map[string]interface{}
@@ -112,6 +123,13 @@ func (n *DataContractMockNode) GetDisplayName() string {
 
 func (n *DataContractMockNode) GetType() node.Type {
 	return n.nodeType
+}
+
+func (n *DataContractMockNode) GetRunWhen() node.RunWhen {
+	if n.runWhen == "" {
+		return node.RunWhenOnSuccess
+	}
+	return n.runWhen
 }
 
 func (n *DataContractMockNode) InputSchema() []string {
@@ -136,6 +154,7 @@ func (n *DataContractMockNode) Execute(ctx node.ExecutionContext) (node.AnyExecu
 				NodeID:      n.id,
 				DisplayName: n.id,
 				NodeType:    n.nodeType,
+				RunWhen:     n.GetRunWhen(),
 				Inputs:      ctx.Inputs,
 				Outputs:     nil,
 				Error:       err,
@@ -153,6 +172,7 @@ func (n *DataContractMockNode) Execute(ctx node.ExecutionContext) (node.AnyExecu
 		return &node.BaseExecutionResult{
 			NodeID:     n.id,
 			NodeType:   n.nodeType,
+			RunWhen:    n.GetRunWhen(),
 			Inputs:     ctx.Inputs,
 			Outputs:    nil,
 			Error:      err,
@@ -166,6 +186,7 @@ func (n *DataContractMockNode) Execute(ctx node.ExecutionContext) (node.AnyExecu
 		NodeID:      n.id,
 		DisplayName: n.id,
 		NodeType:    n.nodeType,
+		RunWhen:     n.GetRunWhen(),
 		Inputs:      ctx.Inputs,
 		Outputs:     n.outputs,
 		ExecutedAt:  now,
@@ -388,6 +409,232 @@ func TestFlowEngine_Execute_NodeFailsWithError(t *testing.T) {
 	assert.True(t, node1.executed, "node1 should be executed")
 	assert.True(t, node2.executed, "node2 should be executed")
 	assert.False(t, node3.executed, "node3 should not be executed due to error")
+}
+
+func TestFlowEngine_Execute_AlwaysNodeRunsAfterMainFailure(t *testing.T) {
+	create := newDataContractMockNode("create", nil, []string{"resourceId"})
+	create.outputs["resourceId"] = "res-123"
+	fail := newDataContractMockNode("fail", []string{"create.resourceId"}, nil)
+	fail.shouldError = true
+	cleanup := newDataContractMockNode("cleanup", []string{"create.resourceId"}, nil)
+	cleanup.runWhen = node.RunWhenAlways
+
+	flowInstance := flow.Flow{
+		Name:  "Always After Failure",
+		Nodes: []node.AnyNode{create, fail, cleanup},
+		Edges: []edge.Edge{
+			{ID: "e1", Source: "create", Target: "fail", Type: edge.TypeSuccess},
+			{ID: "e2", Source: "create", Target: "cleanup", Type: edge.TypeSuccess},
+		},
+		Version: "1.0",
+	}
+
+	flowEngine, err := engine.NewFlowEngine(flowInstance, &engine.Options{})
+	require.NoError(t, err)
+
+	result, err := flowEngine.Execute(map[string]interface{}{})
+	require.Error(t, err)
+	require.False(t, result.Success)
+	assert.NotNil(t, cleanup.executedAt)
+	assert.Contains(t, result.ExecutionResults, "cleanup")
+	assert.Contains(t, result.FinalOutputs, "create.resourceId")
+	assert.Contains(t, result.Error.Error(), "fail")
+	cleanupResult := result.ExecutionResults["cleanup"]
+	assert.NoError(t, cleanupResult.GetError())
+}
+
+func TestFlowEngine_Execute_AlwaysNodeSkippedWhenInputsMissing(t *testing.T) {
+	fail := newDataContractMockNode("fail", nil, nil)
+	fail.shouldError = true
+	cleanup := newDataContractMockNode("cleanup", []string{"create.resourceId"}, nil)
+	cleanup.runWhen = node.RunWhenAlways
+
+	flowInstance := flow.Flow{
+		Name:    "Always Skipped",
+		Nodes:   []node.AnyNode{fail, cleanup},
+		Edges:   []edge.Edge{},
+		Version: "1.0",
+	}
+
+	flowEngine, err := engine.NewFlowEngine(flowInstance, &engine.Options{})
+	require.NoError(t, err)
+
+	result, err := flowEngine.Execute(map[string]interface{}{})
+	require.Error(t, err)
+	require.False(t, result.Success)
+	require.Contains(t, result.ExecutionResults, "cleanup")
+	skipped := result.ExecutionResults["cleanup"]
+	require.NoError(t, skipped.GetError())
+	requestResult, ok := skipped.(*node.RequestExecutionResult)
+	require.True(t, ok)
+	base := requestResult.BaseExecutionResult
+	require.NotNil(t, base.SkipReason)
+	assert.Equal(t, "missing_inputs", *base.SkipReason)
+	assert.Equal(t, []string{"create.resourceId"}, base.MissingInputs)
+	assert.Nil(t, cleanup.executedAt)
+}
+
+func TestFlowEngine_Execute_AlwaysCleanupChainContinuesAfterIntermediateSkip(t *testing.T) {
+	login := newDataContractMockNode("step-login", []string{"email", "password"}, []string{"accessToken"})
+	login.outputs["accessToken"] = "token-123"
+
+	createProduct := newDataContractMockNode(
+		"step-create-product",
+		[]string{"step-login.accessToken"},
+		[]string{"productId"},
+	)
+	createProduct.outputs["productId"] = "prod-123"
+
+	createAPIKey := newDataContractMockNode(
+		"step-create-api-key",
+		[]string{"step-login.accessToken", "step-create-product.productId"},
+		[]string{"apiKeyId"},
+	)
+	createAPIKey.shouldError = true
+
+	deleteAPIKey := newDataContractMockNode(
+		"step-delete-api-key",
+		[]string{
+			"step-login.accessToken",
+			"step-create-product.productId",
+			"step-create-api-key.apiKeyId",
+		},
+		nil,
+	)
+	deleteAPIKey.runWhen = node.RunWhenAlways
+
+	deleteProduct := newDataContractMockNode(
+		"step-delete-product",
+		[]string{"step-login.accessToken", "step-create-product.productId"},
+		nil,
+	)
+	deleteProduct.runWhen = node.RunWhenAlways
+
+	flowInstance := flow.Flow{
+		Name: "Platform API Key CRUD Cleanup",
+		Nodes: []node.AnyNode{
+			login,
+			createProduct,
+			createAPIKey,
+			deleteAPIKey,
+			deleteProduct,
+		},
+		Edges: []edge.Edge{
+			{ID: "e1", Source: "step-login", Target: "step-create-product", Type: edge.TypeSuccess},
+			{ID: "e2", Source: "step-create-product", Target: "step-create-api-key", Type: edge.TypeSuccess},
+			{ID: "e3", Source: "step-create-api-key", Target: "step-delete-api-key", Type: edge.TypeSuccess},
+			{ID: "e4", Source: "step-delete-api-key", Target: "step-delete-product", Type: edge.TypeSuccess},
+		},
+		Version: "1.0",
+	}
+
+	flowEngine, err := engine.NewFlowEngine(flowInstance, &engine.Options{})
+	require.NoError(t, err)
+
+	result, err := flowEngine.Execute(map[string]interface{}{
+		"email":    "alexis@nanostack.dev",
+		"password": "secret",
+	})
+	require.Error(t, err)
+	require.False(t, result.Success)
+
+	assert.NotNil(t, login.executedAt)
+	assert.NotNil(t, createProduct.executedAt)
+	assert.NotNil(t, createAPIKey.executedAt)
+	assert.Nil(t, deleteAPIKey.executedAt)
+	assert.NotNil(t, deleteProduct.executedAt)
+
+	require.Contains(t, result.ExecutionResults, "step-delete-api-key")
+	require.Contains(t, result.ExecutionResults, "step-delete-product")
+
+	deleteAPIKeyResult, ok := result.ExecutionResults["step-delete-api-key"].(*node.RequestExecutionResult)
+	require.True(t, ok)
+	require.NotNil(t, deleteAPIKeyResult.SkipReason)
+	assert.Equal(t, "missing_inputs", *deleteAPIKeyResult.SkipReason)
+	assert.Equal(t, []string{"step-create-api-key.apiKeyId"}, deleteAPIKeyResult.MissingInputs)
+
+	deleteProductResult := result.ExecutionResults["step-delete-product"]
+	require.NoError(t, deleteProductResult.GetError())
+	assert.Equal(t, "prod-123", deleteProductResult.GetInputs()["step-create-product.productId"])
+	assert.Equal(t, "token-123", deleteProductResult.GetInputs()["step-login.accessToken"])
+}
+
+func TestFlowEngine_Execute_AlwaysCleanupJoinRunsAfterUpstreamCleanupIsSkipped(t *testing.T) {
+	createProduct := newDataContractMockNode("step-create-product", nil, []string{"productId"})
+	createProduct.outputs["productId"] = "prod-123"
+
+	// This branch fails first and aborts the main phase before search-roles runs.
+	failMidFlow := newDataContractMockNode("step-fail-mid-flow", []string{"step-create-product.productId"}, nil)
+	failMidFlow.shouldError = true
+
+	// This setup branch would normally unlock cleanup, but it never gets to finish
+	// the main phase once fail-mid-flow errors.
+	prepareRoleSearch := newDataContractMockNode(
+		"step-prepare-role-search",
+		[]string{"step-create-product.productId"},
+		nil,
+	)
+	searchRoles := newDataContractMockNode("step-search-roles", nil, nil)
+
+	deleteRole := newDataContractMockNode(
+		"step-delete-role",
+		[]string{"step-create-product.productId"},
+		nil,
+	)
+	deleteRole.runWhen = node.RunWhenAlways
+
+	deleteProduct := newDataContractMockNode(
+		"step-delete-product",
+		[]string{"step-create-product.productId"},
+		nil,
+	)
+	deleteProduct.runWhen = node.RunWhenAlways
+
+	flowInstance := flow.Flow{
+		Name: "Cleanup Join After Skipped Upstream Cleanup",
+		Nodes: []node.AnyNode{
+			createProduct,
+			failMidFlow,
+			prepareRoleSearch,
+			searchRoles,
+			deleteRole,
+			deleteProduct,
+		},
+		Edges: []edge.Edge{
+			{ID: "e1", Source: "step-create-product", Target: "step-fail-mid-flow", Type: edge.TypeSuccess},
+			{ID: "e2", Source: "step-create-product", Target: "step-prepare-role-search", Type: edge.TypeSuccess},
+			{ID: "e3", Source: "step-prepare-role-search", Target: "step-search-roles", Type: edge.TypeSuccess},
+			{ID: "e4", Source: "step-search-roles", Target: "step-delete-role", Type: edge.TypeSuccess},
+			{ID: "e5", Source: "step-delete-role", Target: "step-delete-product", Type: edge.TypeSuccess},
+		},
+		Version: "1.0",
+	}
+
+	flowEngine, err := engine.NewFlowEngine(flowInstance, &engine.Options{})
+	require.NoError(t, err)
+
+	result, err := flowEngine.Execute(map[string]interface{}{})
+	require.Error(t, err)
+	require.False(t, result.Success)
+
+	assert.NotNil(t, createProduct.executedAt)
+	assert.NotNil(t, failMidFlow.executedAt)
+	assert.NotNil(t, prepareRoleSearch.executedAt)
+	assert.Nil(t, searchRoles.executedAt)
+	assert.Nil(t, deleteRole.executedAt)
+	assert.NotNil(t, deleteProduct.executedAt)
+
+	require.Contains(t, result.ExecutionResults, "step-delete-role")
+	require.Contains(t, result.ExecutionResults, "step-delete-product")
+
+	deleteRoleResult, ok := result.ExecutionResults["step-delete-role"].(*node.RequestExecutionResult)
+	require.True(t, ok)
+	require.NotNil(t, deleteRoleResult.SkipReason)
+	assert.Equal(t, "not_reachable_after_main_phase", *deleteRoleResult.SkipReason)
+
+	deleteProductResult := result.ExecutionResults["step-delete-product"]
+	require.NoError(t, deleteProductResult.GetError())
+	assert.Equal(t, "prod-123", deleteProductResult.GetInputs()["step-create-product.productId"])
 }
 
 func TestFlowEngine_Execute_NoNodes(t *testing.T) {
