@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -1055,6 +1056,58 @@ func TestFlowEngine_Execute_ModuleNodeFailsWhenChildOutputBindingMissing(t *test
 	assert.Equal(t, "flow-child", moduleResult.FlowID)
 }
 
+func TestFlowEngine_Execute_ModuleNodeTrimsFlowID(t *testing.T) {
+	parentJSON := []byte(`{
+		"name": "Parent Flow",
+		"version": "1.0",
+		"nodes": [
+			{
+				"id": "module-step",
+				"display_name": "Module Step",
+				"type": "module",
+				"data": {
+					"flow_id": "  flow-child  "
+				}
+			}
+		],
+		"edges": []
+	}`)
+
+	childJSON := []byte(`{
+		"name": "Child Flow",
+		"version": "1.0",
+		"nodes": [
+			{
+				"id": "child-step",
+				"display_name": "Child Step",
+				"type": "delay",
+				"data": {"duration": 1}
+			}
+		],
+		"edges": []
+	}`)
+
+	parentFlow, err := flow.ParseFromJSON(parentJSON)
+	require.NoError(t, err)
+
+	resolver := staticModuleResolver{
+		"flow-child": {
+			FlowDefinition: childJSON,
+		},
+	}
+
+	result, err := engine.ExecuteFlowDefinition(*parentFlow, map[string]interface{}{}, &engine.ExecuteOptions{
+		ModuleResolver: resolver,
+	})
+	require.NoError(t, err)
+	require.True(t, result.Success)
+
+	moduleResult := node.MustAsModuleExecutionResult(result.ExecutionResults["module-step"])
+	assert.Equal(t, "flow-child", moduleResult.FlowID)
+	assert.Empty(t, moduleResult.GetOutputs())
+	assert.Empty(t, moduleResult.ChildFinalOutputs)
+}
+
 func TestFlowExecutionResultToPayload_IncludesModuleExecutionResult(t *testing.T) {
 	result := &node.FlowExecutionResult{
 		ExecutionResults: map[string]node.AnyExecutionResult{
@@ -1149,10 +1202,9 @@ func TestFlowEngine_Execute_ModuleNodeRejectsDirectCycle(t *testing.T) {
 	require.Error(t, err)
 	require.False(t, result.Success)
 	assert.Contains(t, err.Error(), "module cycle detected: flow-self -> flow-self")
-
-	moduleResult := node.MustAsModuleExecutionResult(result.ExecutionResults["module-step"])
-	require.Error(t, moduleResult.GetError())
-	assert.Contains(t, moduleResult.GetError().Error(), "module cycle detected")
+	assert.Equal(t, "FLOW_VALIDATION_FAILED", *result.ErrorCode)
+	assert.Empty(t, result.ExecutionResults)
+	assert.Empty(t, result.FinalOutputs)
 }
 
 func TestFlowEngine_Execute_ModuleNodeRejectsIndirectCycle(t *testing.T) {
@@ -1218,8 +1270,117 @@ func TestFlowEngine_Execute_ModuleNodeRejectsIndirectCycle(t *testing.T) {
 	require.Error(t, err)
 	require.False(t, result.Success)
 	assert.Contains(t, err.Error(), "module cycle detected: flow-a -> flow-b -> flow-a")
+	assert.Equal(t, "FLOW_VALIDATION_FAILED", *result.ErrorCode)
+	assert.Empty(t, result.ExecutionResults)
+	assert.Empty(t, result.FinalOutputs)
+}
 
-	moduleResult := node.MustAsModuleExecutionResult(result.ExecutionResults["start-module-a"])
-	require.Error(t, moduleResult.GetError())
-	assert.Contains(t, moduleResult.GetError().Error(), "flow-a -> flow-b -> flow-a")
+func TestFlowEngine_Execute_ModuleNodeRejectsIndirectCycleBeforeSideEffects(t *testing.T) {
+	var (
+		requestCount int
+		mu           sync.Mutex
+	)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		mu.Lock()
+		requestCount++
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer server.Close()
+
+	parentJSON := []byte(`{
+		"name": "Parent Flow",
+		"version": "1.0",
+		"nodes": [
+			{
+				"id": "start-module-a",
+				"display_name": "Start Module A",
+				"type": "module",
+				"data": {
+					"flow_id": "flow-a"
+				}
+			}
+		],
+		"edges": []
+	}`)
+
+	flowAJSON := []byte(`{
+		"name": "Flow A",
+		"version": "1.0",
+		"nodes": [
+			{
+				"id": "call-api-a",
+				"display_name": "Call API A",
+				"type": "request",
+				"data": {
+					"method": "POST",
+					"url": "` + server.URL + `/a",
+					"timeout": 1000
+				}
+			},
+			{
+				"id": "call-b",
+				"display_name": "Call B",
+				"type": "module",
+				"data": {
+					"flow_id": "flow-b"
+				}
+			}
+		],
+		"edges": [
+			{"id": "e1", "source": "call-api-a", "target": "call-b", "type": "success"}
+		]
+	}`)
+
+	flowBJSON := []byte(`{
+		"name": "Flow B",
+		"version": "1.0",
+		"nodes": [
+			{
+				"id": "call-api-b",
+				"display_name": "Call API B",
+				"type": "request",
+				"data": {
+					"method": "POST",
+					"url": "` + server.URL + `/b",
+					"timeout": 1000
+				}
+			},
+			{
+				"id": "call-a",
+				"display_name": "Call A",
+				"type": "module",
+				"data": {
+					"flow_id": "flow-a"
+				}
+			}
+		],
+		"edges": [
+			{"id": "e1", "source": "call-api-b", "target": "call-a", "type": "success"}
+		]
+	}`)
+
+	parentFlow, err := flow.ParseFromJSON(parentJSON)
+	require.NoError(t, err)
+
+	resolver := staticModuleResolver{
+		"flow-a": {FlowDefinition: flowAJSON},
+		"flow-b": {FlowDefinition: flowBJSON},
+	}
+
+	result, err := engine.ExecuteFlowDefinition(*parentFlow, map[string]interface{}{}, &engine.ExecuteOptions{
+		ModuleResolver: resolver,
+	})
+	require.Error(t, err)
+	require.False(t, result.Success)
+	assert.Contains(t, err.Error(), "module cycle detected: flow-a -> flow-b -> flow-a")
+	assert.Equal(t, "FLOW_VALIDATION_FAILED", *result.ErrorCode)
+
+	mu.Lock()
+	defer mu.Unlock()
+	assert.Equal(t, 0, requestCount)
+	assert.Empty(t, result.ExecutionResults)
+	assert.Empty(t, result.FinalOutputs)
 }
