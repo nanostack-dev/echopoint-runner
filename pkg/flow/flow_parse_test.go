@@ -375,6 +375,58 @@ func TestParseFromJSON_AllowsPriorNodeOutputReferencesWithTripleBraces(t *testin
 	assert.Equal(t, "create_product_api_key", flowResult.Nodes[1].GetID())
 }
 
+func TestParseFromJSON_ModuleNode(t *testing.T) {
+	flowJSON := []byte(`{
+		"version": "1.0",
+		"name": "Parent Flow",
+		"description": "Module node is parsed",
+		"nodes": [
+			{
+				"id": "lookup-user",
+				"display_name": "Lookup User",
+				"type": "request",
+				"data": {
+					"method": "GET",
+					"url": "https://example.com/users/123",
+					"timeout": 1000
+				},
+				"outputs": [
+					{"name": "customerId", "extractor": {"type": "body"}}
+				]
+			},
+			{
+				"id": "charge-customer",
+				"display_name": "Charge Customer",
+				"type": "module",
+				"data": {
+					"flow_id": "flow-charge",
+					"input_bindings": {
+						"customerId": "{{lookup-user.customerId}}",
+						"baseUrl": "{{BASE_URL}}"
+					},
+					"output_bindings": {
+						"chargeId": "create-charge.chargeId",
+						"status": "create-charge.status"
+					}
+				}
+			}
+		],
+		"edges": []
+	}`)
+
+	flowResult, err := flow.ParseFromJSONWithOptions(flowJSON, flow.ParseOptions{
+		AllowedInitialInputKeys: []string{"BASE_URL"},
+	})
+	require.NoError(t, err)
+	require.Len(t, flowResult.Nodes, 2)
+
+	moduleNode, ok := node.AsModuleNode(flowResult.Nodes[1])
+	require.True(t, ok)
+	assert.Equal(t, "flow-charge", moduleNode.Data.FlowID)
+	assert.Equal(t, []string{"BASE_URL", "lookup-user.customerId"}, moduleNode.InputSchema())
+	assert.Equal(t, []string{"chargeId", "status"}, moduleNode.OutputSchema())
+}
+
 func TestParseFromJSON_RejectsUnknownSourceNodeOutputs(t *testing.T) {
 	flowJSON := []byte(`{
 		"version": "1.0",

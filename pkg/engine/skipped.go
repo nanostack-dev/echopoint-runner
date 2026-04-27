@@ -45,6 +45,8 @@ func (engine *FlowEngine) createSkippedNodeResult(
 		return &node.RequestExecutionResult{BaseExecutionResult: base}
 	case node.TypeDelay:
 		return &node.DelayExecutionResult{BaseExecutionResult: base}
+	case node.TypeModule:
+		return &node.ModuleExecutionResult{BaseExecutionResult: base}
 	}
 
 	panic(fmt.Sprintf("unsupported node type: %s", n.GetType()))

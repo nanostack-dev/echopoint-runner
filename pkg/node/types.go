@@ -34,6 +34,25 @@ type AnyNode interface {
 	Execute(ctx ExecutionContext) (AnyExecutionResult, error)
 }
 
+type ResolvedModuleFlow struct {
+	FlowDefinition []byte
+	Environment    map[string]string
+}
+
+type ModuleResolver interface {
+	ResolveFlow(flowID string) (ResolvedModuleFlow, bool)
+}
+
+type ModuleExecutionRequest struct {
+	FlowID         string
+	FlowDefinition []byte
+	Inputs         map[string]interface{}
+}
+
+type ModuleExecutor interface {
+	ExecuteModule(request ModuleExecutionRequest) (*FlowExecutionResult, error)
+}
+
 type TypeNode[T any] interface {
 	AnyNode
 	GetData() T
@@ -44,6 +63,7 @@ type Type string
 const (
 	TypeRequest Type = "request"
 	TypeDelay   Type = "delay"
+	TypeModule  Type = "module"
 )
 
 type RunWhen string
@@ -61,6 +81,11 @@ type ExecutionContext struct {
 	// AllOutputs exposes a read-only snapshot of outputs from nodes that completed
 	// before the current scheduling batch started.
 	AllOutputs OutputView
+	// ModuleResolver exposes the additional flow definitions available to module
+	// nodes during nested execution.
+	ModuleResolver ModuleResolver
+	// ModuleExecutor runs nested flows for module nodes.
+	ModuleExecutor ModuleExecutor
 }
 
 // AnyExecutionResult is the interface for all execution results (polymorphic).
@@ -144,6 +169,15 @@ type DelayExecutionResult struct {
 	DelayUntil time.Time `json:"delay_until"`
 }
 
+// ModuleExecutionResult stores nested module execution data.
+type ModuleExecutionResult struct {
+	BaseExecutionResult
+
+	FlowID            string                 `json:"flow_id"`
+	ChildFinalOutputs map[string]interface{} `json:"child_final_outputs,omitempty"`
+	DurationMs        int64                  `json:"duration_ms"`
+}
+
 // AsRequestExecutionResult safely casts an AnyExecutionResult to a RequestExecutionResult.
 func AsRequestExecutionResult(result AnyExecutionResult) (*RequestExecutionResult, bool) {
 	reqResult, ok := result.(*RequestExecutionResult)
@@ -172,6 +206,21 @@ func MustAsDelayExecutionResult(result AnyExecutionResult) *DelayExecutionResult
 		panic("expected DelayExecutionResult but got different type")
 	}
 	return delayResult
+}
+
+// AsModuleExecutionResult safely casts an AnyExecutionResult to a ModuleExecutionResult.
+func AsModuleExecutionResult(result AnyExecutionResult) (*ModuleExecutionResult, bool) {
+	moduleResult, ok := result.(*ModuleExecutionResult)
+	return moduleResult, ok
+}
+
+// MustAsModuleExecutionResult casts an AnyExecutionResult to a ModuleExecutionResult, panicking if it fails.
+func MustAsModuleExecutionResult(result AnyExecutionResult) *ModuleExecutionResult {
+	moduleResult, ok := AsModuleExecutionResult(result)
+	if !ok {
+		panic("expected ModuleExecutionResult but got different type")
+	}
+	return moduleResult
 }
 
 // FlowExecutionResult contains the complete trace of a flow execution.
