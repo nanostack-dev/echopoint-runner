@@ -94,6 +94,16 @@ type synchronizedObserver struct {
 	mu    sync.Mutex
 }
 
+func ensureSynchronizedObserver(observer ExecutionObserver) ExecutionObserver {
+	if observer == nil {
+		return NoopObserver{}
+	}
+	if synchronized, ok := observer.(*synchronizedObserver); ok {
+		return synchronized
+	}
+	return &synchronizedObserver{inner: observer}
+}
+
 func (s *synchronizedObserver) FlowStarted(evt FlowStartedEvent) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

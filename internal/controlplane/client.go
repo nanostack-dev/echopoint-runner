@@ -13,6 +13,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/nanostack-dev/echopoint-runner/pkg/executionevents"
+	flowpkg "github.com/nanostack-dev/echopoint-runner/pkg/flow"
 	"github.com/nanostack-dev/echopoint-runner/pkg/node"
 	"github.com/rs/zerolog/log"
 )
@@ -46,12 +47,13 @@ type ClaimNextRequest struct {
 }
 
 type ClaimedJob struct {
-	JobID          uuid.UUID         `json:"job_id"`
-	ExecutionID    uuid.UUID         `json:"execution_id"`
-	FlowID         uuid.UUID         `json:"flow_id"`
-	LeaseExpiresAt time.Time         `json:"lease_expires_at"`
-	FlowDefinition json.RawMessage   `json:"flow_definition"`
-	Environment    map[string]string `json:"environment"`
+	JobID           uuid.UUID                      `json:"job_id"`
+	ExecutionID     uuid.UUID                      `json:"execution_id"`
+	FlowID          uuid.UUID                      `json:"flow_id"`
+	LeaseExpiresAt  time.Time                      `json:"lease_expires_at"`
+	FlowDefinition  json.RawMessage                `json:"flow_definition"`
+	Environment     map[string]string              `json:"environment"`
+	ReferencedFlows flowpkg.ReferencedFlowRegistry `json:"referenced_flows,omitempty"`
 }
 
 type CompleteJobRequest struct {
