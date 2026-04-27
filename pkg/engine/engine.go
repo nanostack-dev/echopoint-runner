@@ -38,7 +38,7 @@ type moduleExecutor struct {
 func (e moduleExecutor) ExecuteModule(request node.ModuleExecutionRequest) (*node.FlowExecutionResult, error) {
 	trimmedFlowID := strings.TrimSpace(request.FlowID)
 	if trimmedFlowID == "" {
-		return nil, fmt.Errorf("module flow_id is required")
+		return nil, errors.New("module flow_id is required")
 	}
 	for _, activeFlowID := range e.callStack {
 		if activeFlowID == trimmedFlowID {
@@ -129,10 +129,8 @@ func NewFlowEngine(flowInstance flow.Flow, options *Options) (*FlowEngine, error
 	}
 
 	observer := ExecutionObserver(NoopObserver{})
-	if options != nil {
-		if options.Observer != nil {
-			observer = &synchronizedObserver{inner: options.Observer}
-		}
+	if options != nil && options.Observer != nil {
+		observer = ensureSynchronizedObserver(options.Observer)
 	}
 
 	log.Info().
@@ -176,9 +174,29 @@ func ExecuteFlowDefinition(
 	options *ExecuteOptions,
 ) (*node.FlowExecutionResult, error) {
 	startTime := time.Now()
+	result := &node.FlowExecutionResult{
+		ExecutionResults: make(map[string]node.AnyExecutionResult),
+		FinalOutputs:     make(map[string]interface{}),
+		Success:          false,
+	}
+
+	if validateErr := validateModuleGraph(
+		flowInstance,
+		nilIfNoModuleResolver(options),
+		moduleCallStack(options),
+	); validateErr != nil {
+		errMsg := validateErr.Error()
+		errCode := "FLOW_VALIDATION_FAILED"
+		result.Error = validateErr
+		result.ErrorMsg = &errMsg
+		result.ErrorCode = &errCode
+		result.DurationMS = time.Since(startTime).Milliseconds()
+		return result, validateErr
+	}
+
 	observer := ExecutionObserver(NoopObserver{})
 	if options != nil && options.Observer != nil {
-		observer = &synchronizedObserver{inner: options.Observer}
+		observer = options.Observer
 	}
 	flowEngine, err := NewFlowEngine(flowInstance, &Options{
 		Observer:        observer,
@@ -196,11 +214,6 @@ func ExecuteFlowDefinition(
 		Int("totalEdges", len(flowEngine.flow.Edges)).
 		Msg("Starting flow execution")
 
-	result := &node.FlowExecutionResult{
-		ExecutionResults: make(map[string]node.AnyExecutionResult),
-		FinalOutputs:     make(map[string]interface{}),
-		Success:          false,
-	}
 	flowEngine.observer.FlowStarted(FlowStartedEvent{
 		FlowName:  flowEngine.flow.Name,
 		StartedAt: startTime,
@@ -224,7 +237,8 @@ func ExecuteFlowDefinition(
 		return result, result.Error
 	}
 
-	if err := flowEngine.executeNodes(initialInputs, result, startTime); err != nil {
+	execErr := flowEngine.executeNodes(initialInputs, result, startTime)
+	if execErr != nil {
 		flowEngine.observer.FlowFinished(FlowFinishedEvent{
 			FlowName:   flowEngine.flow.Name,
 			StartedAt:  startTime,
@@ -232,7 +246,7 @@ func ExecuteFlowDefinition(
 			DurationMs: result.DurationMS,
 			Result:     result,
 		})
-		return result, err
+		return result, execErr
 	}
 	flowEngine.observer.FlowFinished(FlowFinishedEvent{
 		FlowName:   flowEngine.flow.Name,

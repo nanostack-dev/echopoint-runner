@@ -1,6 +1,7 @@
 package node
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -64,33 +65,34 @@ func (n *ModuleNode) OutputSchema() []string {
 
 func (n *ModuleNode) Execute(ctx ExecutionContext) (AnyExecutionResult, error) {
 	startTime := time.Now()
-	if strings.TrimSpace(n.Data.FlowID) == "" {
-		err := fmt.Errorf("module flow_id is required")
-		return n.createErrorResult(ctx.Inputs, err, startTime, nil), err
+	flowID := strings.TrimSpace(n.Data.FlowID)
+	if flowID == "" {
+		err := errors.New("module flow_id is required")
+		return n.createErrorResult(ctx.Inputs, flowID, err, startTime, nil), err
 	}
 	if ctx.ModuleResolver == nil {
-		err := fmt.Errorf("module resolver unavailable")
-		return n.createErrorResult(ctx.Inputs, err, startTime, nil), err
+		err := errors.New("module resolver unavailable")
+		return n.createErrorResult(ctx.Inputs, flowID, err, startTime, nil), err
 	}
 	if ctx.ModuleExecutor == nil {
-		err := fmt.Errorf("module executor unavailable")
-		return n.createErrorResult(ctx.Inputs, err, startTime, nil), err
+		err := errors.New("module executor unavailable")
+		return n.createErrorResult(ctx.Inputs, flowID, err, startTime, nil), err
 	}
 
-	resolvedFlow, ok := ctx.ModuleResolver.ResolveFlow(n.Data.FlowID)
+	resolvedFlow, ok := ctx.ModuleResolver.ResolveFlow(flowID)
 	if !ok {
-		err := fmt.Errorf("referenced flow %q not found", n.Data.FlowID)
-		return n.createErrorResult(ctx.Inputs, err, startTime, nil), err
+		resolveErr := fmt.Errorf("referenced flow %q not found", flowID)
+		return n.createErrorResult(ctx.Inputs, flowID, resolveErr, startTime, nil), resolveErr
 	}
 
 	moduleInputs, err := n.resolveModuleInputs(ctx.Inputs)
 	if err != nil {
-		return n.createErrorResult(ctx.Inputs, err, startTime, nil), err
+		return n.createErrorResult(ctx.Inputs, flowID, err, startTime, nil), err
 	}
 
 	log.Debug().
 		Str("nodeID", n.GetID()).
-		Str("flowID", n.Data.FlowID).
+		Str("flowID", flowID).
 		Any("moduleInputs", moduleInputs).
 		Msg("Starting module node execution")
 
@@ -103,17 +105,17 @@ func (n *ModuleNode) Execute(ctx ExecutionContext) (AnyExecutionResult, error) {
 	}
 
 	result, err := ctx.ModuleExecutor.ExecuteModule(ModuleExecutionRequest{
-		FlowID:         n.Data.FlowID,
+		FlowID:         flowID,
 		FlowDefinition: resolvedFlow.FlowDefinition,
 		Inputs:         childInputs,
 	})
 	if err != nil {
-		return n.createErrorResult(ctx.Inputs, err, startTime, result), err
+		return n.createErrorResult(ctx.Inputs, flowID, err, startTime, result), err
 	}
 
 	exportedOutputs, err := n.exportOutputs(result)
 	if err != nil {
-		return n.createErrorResult(ctx.Inputs, err, startTime, result), err
+		return n.createErrorResult(ctx.Inputs, flowID, err, startTime, result), err
 	}
 
 	return &ModuleExecutionResult{
@@ -125,7 +127,7 @@ func (n *ModuleNode) Execute(ctx ExecutionContext) (AnyExecutionResult, error) {
 			Outputs:     exportedOutputs,
 			ExecutedAt:  time.Now(),
 		},
-		FlowID:            n.Data.FlowID,
+		FlowID:            flowID,
 		ChildFinalOutputs: cloneMap(result.FinalOutputs),
 		DurationMs:        time.Since(startTime).Milliseconds(),
 	}, nil
@@ -137,7 +139,7 @@ func (n *ModuleNode) resolveModuleInputs(parentInputs map[string]interface{}) (m
 	for key, value := range n.Data.InputBindings {
 		trimmedKey := strings.TrimSpace(key)
 		if trimmedKey == "" {
-			return nil, fmt.Errorf("module input binding key cannot be empty")
+			return nil, errors.New("module input binding key cannot be empty")
 		}
 		resolvedValue, err := resolver.Resolve(value)
 		if err != nil {
@@ -154,11 +156,15 @@ func (n *ModuleNode) exportOutputs(result *FlowExecutionResult) (map[string]inte
 		trimmedOutputName := strings.TrimSpace(outputName)
 		trimmedSourceRef := strings.TrimSpace(sourceRef)
 		if trimmedOutputName == "" || trimmedSourceRef == "" {
-			return nil, fmt.Errorf("module output bindings require non-empty names and references")
+			return nil, errors.New("module output bindings require non-empty names and references")
 		}
 		value, ok := result.FinalOutputs[trimmedSourceRef]
 		if !ok {
-			return nil, fmt.Errorf("module output %q references unavailable child output %q", trimmedOutputName, trimmedSourceRef)
+			return nil, fmt.Errorf(
+				"module output %q references unavailable child output %q",
+				trimmedOutputName,
+				trimmedSourceRef,
+			)
 		}
 		outputs[trimmedOutputName] = value
 	}
@@ -167,6 +173,7 @@ func (n *ModuleNode) exportOutputs(result *FlowExecutionResult) (map[string]inte
 
 func (n *ModuleNode) createErrorResult(
 	inputs map[string]interface{},
+	flowID string,
 	err error,
 	startedAt time.Time,
 	childResult *FlowExecutionResult,
@@ -190,7 +197,7 @@ func (n *ModuleNode) createErrorResult(
 			ErrorCode:   &errCode,
 			ExecutedAt:  time.Now(),
 		},
-		FlowID:            n.Data.FlowID,
+		FlowID:            flowID,
 		ChildFinalOutputs: childOutputs,
 		DurationMs:        time.Since(startedAt).Milliseconds(),
 	}

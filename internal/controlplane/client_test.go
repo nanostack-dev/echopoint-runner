@@ -1,9 +1,10 @@
-package controlplane
+package controlplane_test
 
 import (
 	"encoding/json"
 	"testing"
 
+	"github.com/nanostack-dev/echopoint-runner/internal/controlplane"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -24,10 +25,14 @@ func TestClaimedJob_UnmarshalReferencedFlows(t *testing.T) {
 		}
 	}`)
 
-	var claimedJob ClaimedJob
+	var claimedJob controlplane.ClaimedJob
 	err := json.Unmarshal(payload, &claimedJob)
 	require.NoError(t, err)
 	require.Contains(t, claimedJob.ReferencedFlows, "flow-charge")
-	assert.JSONEq(t, `{"name":"Child","version":"1.0","nodes":[],"edges":[]}`, string(claimedJob.ReferencedFlows["flow-charge"].FlowDefinition))
+	assert.JSONEq(
+		t,
+		`{"name":"Child","version":"1.0","nodes":[],"edges":[]}`,
+		string(claimedJob.ReferencedFlows["flow-charge"].FlowDefinition),
+	)
 	assert.Equal(t, "secret", claimedJob.ReferencedFlows["flow-charge"].Environment["TOKEN"])
 }
