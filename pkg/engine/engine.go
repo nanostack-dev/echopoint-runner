@@ -3,6 +3,7 @@ package engine
 import (
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -13,16 +14,50 @@ import (
 )
 
 type Options struct {
-	Observer ExecutionObserver
+	Observer        ExecutionObserver
+	ModuleResolver  node.ModuleResolver
+	ModuleCallStack []string
 }
 
 type FlowEngine struct {
-	flow           flow.Flow
-	nodeEdgeOutput map[node.AnyNode][]node.AnyNode
-	nodeEdgeSource map[node.AnyNode][]node.AnyNode
-	nodeEdgeInput  map[node.AnyNode]int
-	nodeMap        map[string]node.AnyNode
-	observer       ExecutionObserver
+	flow            flow.Flow
+	nodeEdgeOutput  map[node.AnyNode][]node.AnyNode
+	nodeEdgeSource  map[node.AnyNode][]node.AnyNode
+	nodeEdgeInput   map[node.AnyNode]int
+	nodeMap         map[string]node.AnyNode
+	observer        ExecutionObserver
+	moduleResolver  node.ModuleResolver
+	moduleCallStack []string
+}
+
+type moduleExecutor struct {
+	resolver  node.ModuleResolver
+	callStack []string
+}
+
+func (e moduleExecutor) ExecuteModule(request node.ModuleExecutionRequest) (*node.FlowExecutionResult, error) {
+	trimmedFlowID := strings.TrimSpace(request.FlowID)
+	if trimmedFlowID == "" {
+		return nil, fmt.Errorf("module flow_id is required")
+	}
+	for _, activeFlowID := range e.callStack {
+		if activeFlowID == trimmedFlowID {
+			cycle := append(append([]string{}, e.callStack...), trimmedFlowID)
+			return nil, fmt.Errorf("module cycle detected: %s", strings.Join(cycle, " -> "))
+		}
+	}
+
+	parsedFlow, err := flow.ParseFromJSONWithOptions(request.FlowDefinition, flow.ParseOptions{
+		AllowedInitialInputKeys: sortedInputKeys(request.Inputs),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("parse module flow: %w", err)
+	}
+
+	return ExecuteFlowDefinition(*parsedFlow, request.Inputs, &ExecuteOptions{
+		ModuleResolver:  e.resolver,
+		ModuleCallStack: append(append([]string{}, e.callStack...), trimmedFlowID),
+	})
 }
 
 func NewFlowEngine(flowInstance flow.Flow, options *Options) (*FlowEngine, error) {
@@ -114,19 +149,51 @@ func NewFlowEngine(flowInstance flow.Flow, options *Options) (*FlowEngine, error
 		nodeEdgeInput,
 		nodeMap,
 		observer,
+		nilIfNoModuleResolverFromOptions(options),
+		cloneStringSlice(moduleCallStackFromOptions(options)),
 	}, nil
 }
 
 func (engine *FlowEngine) Execute(initialInputs map[string]interface{}) (
 	*node.FlowExecutionResult, error,
 ) {
+	return ExecuteFlowDefinition(engine.flow, initialInputs, &ExecuteOptions{
+		Observer:        engine.observer,
+		ModuleResolver:  engine.moduleResolver,
+		ModuleCallStack: cloneStringSlice(engine.moduleCallStack),
+	})
+}
+
+type ExecuteOptions struct {
+	Observer        ExecutionObserver
+	ModuleResolver  node.ModuleResolver
+	ModuleCallStack []string
+}
+
+func ExecuteFlowDefinition(
+	flowInstance flow.Flow,
+	initialInputs map[string]interface{},
+	options *ExecuteOptions,
+) (*node.FlowExecutionResult, error) {
 	startTime := time.Now()
+	observer := ExecutionObserver(NoopObserver{})
+	if options != nil && options.Observer != nil {
+		observer = &synchronizedObserver{inner: options.Observer}
+	}
+	flowEngine, err := NewFlowEngine(flowInstance, &Options{
+		Observer:        observer,
+		ModuleResolver:  nilIfNoModuleResolver(options),
+		ModuleCallStack: moduleCallStack(options),
+	})
+	if err != nil {
+		return nil, err
+	}
 
 	log.Info().
-		Str("flowName", engine.flow.Name).
-		Str("flowVersion", engine.flow.Version).
-		Int("totalNodes", len(engine.flow.Nodes)).
-		Int("totalEdges", len(engine.flow.Edges)).
+		Str("flowName", flowEngine.flow.Name).
+		Str("flowVersion", flowEngine.flow.Version).
+		Int("totalNodes", len(flowEngine.flow.Nodes)).
+		Int("totalEdges", len(flowEngine.flow.Edges)).
 		Msg("Starting flow execution")
 
 	result := &node.FlowExecutionResult{
@@ -134,32 +201,32 @@ func (engine *FlowEngine) Execute(initialInputs map[string]interface{}) (
 		FinalOutputs:     make(map[string]interface{}),
 		Success:          false,
 	}
-	engine.observer.FlowStarted(FlowStartedEvent{
-		FlowName:  engine.flow.Name,
+	flowEngine.observer.FlowStarted(FlowStartedEvent{
+		FlowName:  flowEngine.flow.Name,
 		StartedAt: startTime,
 	})
 
-	if len(engine.nodeEdgeInput) == 0 {
+	if len(flowEngine.nodeEdgeInput) == 0 {
 		result.Error = errors.New("no nodes to execute")
 		result.DurationMS = time.Since(startTime).Milliseconds()
-		engine.observer.FlowFinished(FlowFinishedEvent{
-			FlowName:   engine.flow.Name,
+		flowEngine.observer.FlowFinished(FlowFinishedEvent{
+			FlowName:   flowEngine.flow.Name,
 			StartedAt:  startTime,
 			FinishedAt: time.Now(),
 			DurationMs: result.DurationMS,
 			Result:     result,
 		})
 		log.Error().
-			Str("flowName", engine.flow.Name).
+			Str("flowName", flowEngine.flow.Name).
 			Err(result.Error).
 			Int64("durationMS", result.DurationMS).
 			Msg("Flow execution failed: no nodes to execute")
 		return result, result.Error
 	}
 
-	if err := engine.executeNodes(initialInputs, result, startTime); err != nil {
-		engine.observer.FlowFinished(FlowFinishedEvent{
-			FlowName:   engine.flow.Name,
+	if err := flowEngine.executeNodes(initialInputs, result, startTime); err != nil {
+		flowEngine.observer.FlowFinished(FlowFinishedEvent{
+			FlowName:   flowEngine.flow.Name,
 			StartedAt:  startTime,
 			FinishedAt: time.Now(),
 			DurationMs: result.DurationMS,
@@ -167,8 +234,8 @@ func (engine *FlowEngine) Execute(initialInputs map[string]interface{}) (
 		})
 		return result, err
 	}
-	engine.observer.FlowFinished(FlowFinishedEvent{
-		FlowName:   engine.flow.Name,
+	flowEngine.observer.FlowFinished(FlowFinishedEvent{
+		FlowName:   flowEngine.flow.Name,
 		StartedAt:  startTime,
 		FinishedAt: time.Now(),
 		DurationMs: result.DurationMS,
@@ -176,6 +243,56 @@ func (engine *FlowEngine) Execute(initialInputs map[string]interface{}) (
 	})
 
 	return result, nil
+}
+
+func nilIfNoModuleResolver(options *ExecuteOptions) node.ModuleResolver {
+	if options == nil {
+		return nil
+	}
+	return options.ModuleResolver
+}
+
+func nilIfNoModuleResolverFromOptions(options *Options) node.ModuleResolver {
+	if options == nil {
+		return nil
+	}
+	return options.ModuleResolver
+}
+
+func moduleCallStack(options *ExecuteOptions) []string {
+	if options == nil {
+		return nil
+	}
+	return cloneStringSlice(options.ModuleCallStack)
+}
+
+func moduleCallStackFromOptions(options *Options) []string {
+	if options == nil {
+		return nil
+	}
+	return options.ModuleCallStack
+}
+
+func cloneStringSlice(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	cloned := make([]string, len(values))
+	copy(cloned, values)
+	return cloned
+}
+
+func sortedInputKeys(inputs map[string]interface{}) []string {
+	keys := make([]string, 0, len(inputs))
+	for key := range inputs {
+		trimmed := strings.TrimSpace(key)
+		if trimmed == "" {
+			continue
+		}
+		keys = append(keys, trimmed)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // validateInputs checks that all required inputs for a node are available in allOutputs.

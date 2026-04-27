@@ -1,10 +1,14 @@
 package engine_test
 
 import (
+	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
+	"github.com/nanostack-dev/echopoint-runner/internal/controlplane"
 	"github.com/nanostack-dev/echopoint-runner/internal/logger"
 	"github.com/nanostack-dev/echopoint-runner/pkg/edge"
 	"github.com/nanostack-dev/echopoint-runner/pkg/engine"
@@ -13,6 +17,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+type staticModuleResolver map[string]node.ResolvedModuleFlow
+
+func (r staticModuleResolver) ResolveFlow(flowID string) (node.ResolvedModuleFlow, bool) {
+	resolved, ok := r[flowID]
+	return resolved, ok
+}
 
 func init() {
 	// Enable debug logging with human-readable format for tests
@@ -830,4 +841,385 @@ func TestDataContract_ExecutionResults(t *testing.T) {
 	frame2 := result.ExecutionResults["step2"]
 	assert.Equal(t, "value1", frame2.GetInputs()["step1.output"])
 	assert.Equal(t, map[string]interface{}{"output": "value2"}, frame2.GetOutputs())
+}
+
+func TestFlowEngine_Execute_ModuleNodeExportsNestedOutputs(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/charge":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"chargeId":"ch_123","status":"authorized"}`))
+		case "/notify":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"notificationId":"notif_456"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	parentJSON := []byte(`{
+		"name": "Parent Flow",
+		"version": "1.0",
+		"nodes": [
+			{
+				"id": "charge-customer",
+				"display_name": "Charge Customer",
+				"type": "module",
+				"data": {
+					"flow_id": "flow-charge",
+					"input_bindings": {
+						"customerId": "{{customerId}}",
+						"currency": "{{currency}}"
+					},
+					"output_bindings": {
+						"chargeId": "create-charge.chargeId",
+						"status": "create-charge.status"
+					}
+				}
+			},
+			{
+				"id": "notify-customer",
+				"display_name": "Notify Customer",
+				"type": "module",
+				"data": {
+					"flow_id": "flow-notify",
+					"input_bindings": {
+						"chargeId": "{{charge-customer.chargeId}}",
+						"status": "{{charge-customer.status}}"
+					},
+					"output_bindings": {
+						"notificationId": "send-receipt.notificationId"
+					}
+				}
+			}
+		],
+		"edges": [
+			{"id": "e1", "source": "charge-customer", "target": "notify-customer", "type": "success"}
+		]
+	}`)
+
+	childChargeJSON := []byte(`{
+		"name": "Charge Flow",
+		"version": "1.0",
+		"nodes": [
+			{
+				"id": "create-charge",
+				"display_name": "Create Charge",
+				"type": "request",
+				"data": {
+					"method": "POST",
+					"url": "` + server.URL + `/charge",
+					"body": {
+						"customerId": "{{customerId}}",
+						"currency": "{{currency}}"
+					},
+					"timeout": 1000
+				},
+				"outputs": [
+					{"name": "chargeId", "extractor": {"type": "jsonPath", "path": "$.chargeId"}},
+					{"name": "status", "extractor": {"type": "jsonPath", "path": "$.status"}}
+				]
+			}
+		],
+		"edges": [],
+		"initialInputs": {
+			"customerId": "cust-default",
+			"currency": "usd"
+		}
+	}`)
+
+	childNotifyJSON := []byte(`{
+		"name": "Notify Flow",
+		"version": "1.0",
+		"nodes": [
+			{
+				"id": "send-receipt",
+				"display_name": "Send Receipt",
+				"type": "request",
+				"data": {
+					"method": "POST",
+					"url": "` + server.URL + `/notify",
+					"body": {
+						"chargeId": "{{chargeId}}",
+						"status": "{{status}}"
+					},
+					"timeout": 1000
+				},
+				"outputs": [
+					{"name": "notificationId", "extractor": {"type": "jsonPath", "path": "$.notificationId"}}
+				]
+			}
+		],
+		"edges": [],
+		"initialInputs": {
+			"chargeId": "fallback",
+			"status": "pending"
+		}
+	}`)
+
+	parentFlow, err := flow.ParseFromJSONWithOptions(parentJSON, flow.ParseOptions{
+		AllowedInitialInputKeys: []string{"customerId", "currency"},
+	})
+	require.NoError(t, err)
+
+	resolver := staticModuleResolver{
+		"flow-charge": {
+			FlowDefinition: childChargeJSON,
+			Environment: map[string]string{
+				"currency": "eur",
+			},
+		},
+		"flow-notify": {
+			FlowDefinition: childNotifyJSON,
+			Environment:    map[string]string{},
+		},
+	}
+
+	result, err := engine.ExecuteFlowDefinition(*parentFlow, map[string]interface{}{
+		"customerId": "cust-123",
+		"currency":   "gbp",
+	}, &engine.ExecuteOptions{
+		ModuleResolver: resolver,
+	})
+	require.NoError(t, err)
+	require.True(t, result.Success)
+
+	chargeResult := node.MustAsModuleExecutionResult(result.ExecutionResults["charge-customer"])
+	assert.Equal(t, "flow-charge", chargeResult.FlowID)
+	assert.Equal(t, "cust-123", chargeResult.GetInputs()["customerId"])
+	assert.Equal(t, "gbp", chargeResult.GetInputs()["currency"])
+	assert.Contains(t, chargeResult.ChildFinalOutputs, "create-charge.chargeId")
+
+	notifyResult := node.MustAsModuleExecutionResult(result.ExecutionResults["notify-customer"])
+	assert.Equal(t, chargeResult.GetOutputs()["chargeId"], notifyResult.GetInputs()["charge-customer.chargeId"])
+	assert.Equal(t, chargeResult.GetOutputs()["status"], notifyResult.GetInputs()["charge-customer.status"])
+
+	assert.Contains(t, result.FinalOutputs, "charge-customer.chargeId")
+	assert.Contains(t, result.FinalOutputs, "charge-customer.status")
+	assert.Contains(t, result.FinalOutputs, "notify-customer.notificationId")
+}
+
+func TestFlowEngine_Execute_ModuleNodeFailsWhenChildOutputBindingMissing(t *testing.T) {
+	parentJSON := []byte(`{
+		"name": "Parent Flow",
+		"version": "1.0",
+		"nodes": [
+			{
+				"id": "module-step",
+				"display_name": "Module Step",
+				"type": "module",
+				"data": {
+					"flow_id": "flow-child",
+					"output_bindings": {
+						"missing": "child-step.missing"
+					}
+				}
+			}
+		],
+		"edges": []
+	}`)
+
+	childJSON := []byte(`{
+		"name": "Child Flow",
+		"version": "1.0",
+		"nodes": [
+			{
+				"id": "child-step",
+				"display_name": "Child Step",
+				"type": "delay",
+				"data": {"duration": 1}
+			}
+		],
+		"edges": []
+	}`)
+
+	parentFlow, err := flow.ParseFromJSON(parentJSON)
+	require.NoError(t, err)
+
+	resolver := staticModuleResolver{
+		"flow-child": {
+			FlowDefinition: childJSON,
+		},
+	}
+
+	result, err := engine.ExecuteFlowDefinition(*parentFlow, map[string]interface{}{}, &engine.ExecuteOptions{
+		ModuleResolver: resolver,
+	})
+	require.Error(t, err)
+	require.False(t, result.Success)
+	assert.Contains(t, err.Error(), "module output \"missing\" references unavailable child output")
+
+	moduleResult := node.MustAsModuleExecutionResult(result.ExecutionResults["module-step"])
+	require.Error(t, moduleResult.GetError())
+	assert.Equal(t, "flow-child", moduleResult.FlowID)
+}
+
+func TestFlowExecutionResultToPayload_IncludesModuleExecutionResult(t *testing.T) {
+	result := &node.FlowExecutionResult{
+		ExecutionResults: map[string]node.AnyExecutionResult{
+			"charge-customer": &node.ModuleExecutionResult{
+				BaseExecutionResult: node.BaseExecutionResult{
+					NodeID:      "charge-customer",
+					DisplayName: "Charge Customer",
+					NodeType:    node.TypeModule,
+					Inputs: map[string]interface{}{
+						"customerId": "cust-123",
+					},
+					Outputs: map[string]interface{}{
+						"chargeId": "ch_123",
+					},
+					ExecutedAt: time.Now(),
+				},
+				FlowID: "flow-charge",
+				ChildFinalOutputs: map[string]interface{}{
+					"create-charge.chargeId": "ch_123",
+				},
+				DurationMs: 42,
+			},
+		},
+		FinalOutputs: map[string]interface{}{
+			"charge-customer.chargeId": "ch_123",
+		},
+		Success:    true,
+		DurationMS: 42,
+	}
+
+	payload, err := controlplane.FlowExecutionResultToPayload(result)
+	require.NoError(t, err)
+	require.Contains(t, payload, "execution_results")
+
+	executionResults, ok := payload["execution_results"].(map[string]interface{})
+	require.True(t, ok)
+	modulePayload, ok := executionResults["charge-customer"].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, string(node.TypeModule), modulePayload["node_type"])
+	assert.Equal(t, "flow-charge", modulePayload["flow_id"])
+	assert.Contains(t, modulePayload, "child_final_outputs")
+
+	_, marshalErr := json.Marshal(payload)
+	require.NoError(t, marshalErr)
+}
+
+func TestFlowEngine_Execute_ModuleNodeRejectsDirectCycle(t *testing.T) {
+	parentJSON := []byte(`{
+		"name": "Parent Flow",
+		"version": "1.0",
+		"nodes": [
+			{
+				"id": "module-step",
+				"display_name": "Module Step",
+				"type": "module",
+				"data": {
+					"flow_id": "flow-self"
+				}
+			}
+		],
+		"edges": []
+	}`)
+
+	childJSON := []byte(`{
+		"name": "Self Flow",
+		"version": "1.0",
+		"nodes": [
+			{
+				"id": "call-self",
+				"display_name": "Call Self",
+				"type": "module",
+				"data": {
+					"flow_id": "flow-self"
+				}
+			}
+		],
+		"edges": []
+	}`)
+
+	parentFlow, err := flow.ParseFromJSON(parentJSON)
+	require.NoError(t, err)
+
+	resolver := staticModuleResolver{
+		"flow-self": {
+			FlowDefinition: childJSON,
+		},
+	}
+
+	result, err := engine.ExecuteFlowDefinition(*parentFlow, map[string]interface{}{}, &engine.ExecuteOptions{
+		ModuleResolver: resolver,
+	})
+	require.Error(t, err)
+	require.False(t, result.Success)
+	assert.Contains(t, err.Error(), "module cycle detected: flow-self -> flow-self")
+
+	moduleResult := node.MustAsModuleExecutionResult(result.ExecutionResults["module-step"])
+	require.Error(t, moduleResult.GetError())
+	assert.Contains(t, moduleResult.GetError().Error(), "module cycle detected")
+}
+
+func TestFlowEngine_Execute_ModuleNodeRejectsIndirectCycle(t *testing.T) {
+	parentJSON := []byte(`{
+		"name": "Parent Flow",
+		"version": "1.0",
+		"nodes": [
+			{
+				"id": "start-module-a",
+				"display_name": "Start Module A",
+				"type": "module",
+				"data": {
+					"flow_id": "flow-a"
+				}
+			}
+		],
+		"edges": []
+	}`)
+
+	flowAJSON := []byte(`{
+		"name": "Flow A",
+		"version": "1.0",
+		"nodes": [
+			{
+				"id": "call-b",
+				"display_name": "Call B",
+				"type": "module",
+				"data": {
+					"flow_id": "flow-b"
+				}
+			}
+		],
+		"edges": []
+	}`)
+
+	flowBJSON := []byte(`{
+		"name": "Flow B",
+		"version": "1.0",
+		"nodes": [
+			{
+				"id": "call-a",
+				"display_name": "Call A",
+				"type": "module",
+				"data": {
+					"flow_id": "flow-a"
+				}
+			}
+		],
+		"edges": []
+	}`)
+
+	parentFlow, err := flow.ParseFromJSON(parentJSON)
+	require.NoError(t, err)
+
+	resolver := staticModuleResolver{
+		"flow-a": {FlowDefinition: flowAJSON},
+		"flow-b": {FlowDefinition: flowBJSON},
+	}
+
+	result, err := engine.ExecuteFlowDefinition(*parentFlow, map[string]interface{}{}, &engine.ExecuteOptions{
+		ModuleResolver: resolver,
+	})
+	require.Error(t, err)
+	require.False(t, result.Success)
+	assert.Contains(t, err.Error(), "module cycle detected: flow-a -> flow-b -> flow-a")
+
+	moduleResult := node.MustAsModuleExecutionResult(result.ExecutionResults["start-module-a"])
+	require.Error(t, moduleResult.GetError())
+	assert.Contains(t, moduleResult.GetError().Error(), "flow-a -> flow-b -> flow-a")
 }
