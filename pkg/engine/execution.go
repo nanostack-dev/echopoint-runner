@@ -243,8 +243,10 @@ func (engine *FlowEngine) runNode(
 	})
 
 	ctx := node.ExecutionContext{
-		Inputs:     inputs,
-		AllOutputs: outputView,
+		Inputs:         inputs,
+		AllOutputs:     outputView,
+		ModuleResolver: engine.moduleResolver,
+		ModuleExecutor: moduleExecutor{resolver: engine.moduleResolver, callStack: engine.moduleCallStack},
 	}
 
 	result, err := n.Execute(ctx)

@@ -33,6 +33,15 @@ func UnmarshalNode(data []byte) (AnyNode, error) {
 			node.RunWhen = RunWhenOnSuccess
 		}
 		return &node, nil
+	case TypeModule:
+		var node ModuleNode
+		if err := json.Unmarshal(data, &node); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal module node: %w", err)
+		}
+		if node.RunWhen == "" {
+			node.RunWhen = RunWhenOnSuccess
+		}
+		return &node, nil
 	default:
 		return nil, fmt.Errorf("unknown node type: %s", peek.Type)
 	}
