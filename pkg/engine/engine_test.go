@@ -967,13 +967,12 @@ func TestFlowEngine_Execute_ModuleNodeExportsNestedOutputs(t *testing.T) {
 	resolver := staticModuleResolver{
 		"flow-charge": {
 			FlowDefinition: childChargeJSON,
-			Environment: map[string]string{
+			InputOverrides: map[string]interface{}{
 				"currency": "eur",
 			},
 		},
 		"flow-notify": {
 			FlowDefinition: childNotifyJSON,
-			Environment:    map[string]string{},
 		},
 	}
 
@@ -999,6 +998,92 @@ func TestFlowEngine_Execute_ModuleNodeExportsNestedOutputs(t *testing.T) {
 	assert.Contains(t, result.FinalOutputs, "charge-customer.chargeId")
 	assert.Contains(t, result.FinalOutputs, "charge-customer.status")
 	assert.Contains(t, result.FinalOutputs, "notify-customer.notificationId")
+}
+
+func TestFlowEngine_Execute_ModuleNodeInheritsInputsAndAppliesOverrides(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer server.Close()
+
+	parentJSON := []byte(`{
+		"name": "Parent Flow",
+		"version": "1.0",
+		"nodes": [
+			{
+				"id": "run-module",
+				"display_name": "Run Module",
+				"type": "module",
+				"data": {
+					"flow_id": "flow-child",
+					"input_bindings": {
+						"requestId": "{{requestId}}",
+						"TOKEN": "{{tokenOverride}}"
+					}
+				}
+			}
+		],
+		"edges": []
+	}`)
+
+	childJSON := []byte(`{
+		"name": "Child Flow",
+		"version": "1.0",
+		"nodes": [
+			{
+				"id": "call-api",
+				"display_name": "Call API",
+				"type": "request",
+				"data": {
+					"method": "POST",
+					"url": "` + server.URL + `/child",
+					"headers": {
+						"X-Base-Url": "{{BASE_URL}}",
+						"X-Token": "{{TOKEN}}",
+						"X-Request-Id": "{{requestId}}",
+						"X-Retry": "{{retryCount}}"
+					},
+					"timeout": 1000
+				}
+			}
+		],
+		"edges": []
+	}`)
+
+	parentFlow, err := flow.ParseFromJSONWithOptions(parentJSON, flow.ParseOptions{
+		AllowedInitialInputKeys: []string{"requestId", "tokenOverride", "BASE_URL", "retryCount"},
+	})
+	require.NoError(t, err)
+
+	resolver := staticModuleResolver{
+		"flow-child": {
+			FlowDefinition: childJSON,
+			InputOverrides: map[string]interface{}{
+				"TOKEN":      "child-token",
+				"retryCount": 5,
+			},
+		},
+	}
+
+	result, err := engine.ExecuteFlowDefinition(*parentFlow, map[string]interface{}{
+		"BASE_URL":      "https://api.example.com",
+		"TOKEN":         "root-token",
+		"retryCount":    2,
+		"requestId":     "req-123",
+		"tokenOverride": "bound-token",
+	}, &engine.ExecuteOptions{
+		ModuleResolver: resolver,
+	})
+	require.NoError(t, err)
+	require.True(t, result.Success)
+
+	moduleResult := node.MustAsModuleExecutionResult(result.ExecutionResults["run-module"])
+
+	assert.Equal(t, "req-123", moduleResult.GetInputs()["requestId"])
+	assert.Equal(t, "bound-token", moduleResult.GetInputs()["tokenOverride"])
+	assert.Empty(t, moduleResult.GetOutputs())
+	assert.Empty(t, moduleResult.ChildFinalOutputs)
 }
 
 func TestFlowEngine_Execute_ModuleNodeFailsWhenChildOutputBindingMissing(t *testing.T) {

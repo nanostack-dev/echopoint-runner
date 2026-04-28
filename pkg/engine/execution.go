@@ -244,6 +244,7 @@ func (engine *FlowEngine) runNode(
 
 	ctx := node.ExecutionContext{
 		Inputs:         inputs,
+		FlowInputs:     outputView.Node(""),
 		AllOutputs:     outputView,
 		ModuleResolver: engine.moduleResolver,
 		ModuleExecutor: moduleExecutor{resolver: engine.moduleResolver, callStack: engine.moduleCallStack},

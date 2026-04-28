@@ -36,7 +36,7 @@ type AnyNode interface {
 
 type ResolvedModuleFlow struct {
 	FlowDefinition []byte
-	Environment    map[string]string
+	InputOverrides map[string]interface{}
 }
 
 type ModuleResolver interface {
@@ -78,6 +78,9 @@ type ExecutionContext struct {
 	// Inputs contains all the data this node declared it needs in InputSchema()
 	// Keys are in format "nodeId.outputKey" (e.g., "create-user.userId")
 	Inputs map[string]interface{}
+	// FlowInputs contains the full effective inputs for the current flow execution,
+	// including inherited inputs, static overrides, and any initial input values.
+	FlowInputs map[string]interface{}
 	// AllOutputs exposes a read-only snapshot of outputs from nodes that completed
 	// before the current scheduling batch started.
 	AllOutputs OutputView

@@ -52,8 +52,43 @@ type ClaimedJob struct {
 	FlowID          uuid.UUID                      `json:"flow_id"`
 	LeaseExpiresAt  time.Time                      `json:"lease_expires_at"`
 	FlowDefinition  json.RawMessage                `json:"flow_definition"`
-	Environment     map[string]string              `json:"environment"`
+	Inputs          map[string]interface{}         `json:"inputs"`
 	ReferencedFlows flowpkg.ReferencedFlowRegistry `json:"referenced_flows,omitempty"`
+}
+
+func (j *ClaimedJob) UnmarshalJSON(data []byte) error {
+	type claimedJobAlias struct {
+		JobID           uuid.UUID                      `json:"job_id"`
+		ExecutionID     uuid.UUID                      `json:"execution_id"`
+		FlowID          uuid.UUID                      `json:"flow_id"`
+		LeaseExpiresAt  time.Time                      `json:"lease_expires_at"`
+		FlowDefinition  json.RawMessage                `json:"flow_definition"`
+		Inputs          map[string]interface{}         `json:"inputs"`
+		Environment     map[string]string              `json:"environment"`
+		ReferencedFlows flowpkg.ReferencedFlowRegistry `json:"referenced_flows,omitempty"`
+	}
+
+	var raw claimedJobAlias
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return fmt.Errorf("decode claimed job: %w", err)
+	}
+
+	inputs := raw.Inputs
+	if len(inputs) == 0 && len(raw.Environment) > 0 {
+		inputs = make(map[string]interface{}, len(raw.Environment))
+		for key, value := range raw.Environment {
+			inputs[key] = value
+		}
+	}
+
+	j.JobID = raw.JobID
+	j.ExecutionID = raw.ExecutionID
+	j.FlowID = raw.FlowID
+	j.LeaseExpiresAt = raw.LeaseExpiresAt
+	j.FlowDefinition = raw.FlowDefinition
+	j.Inputs = inputs
+	j.ReferencedFlows = raw.ReferencedFlows
+	return nil
 }
 
 type CompleteJobRequest struct {
