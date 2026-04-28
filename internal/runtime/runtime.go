@@ -164,18 +164,18 @@ func (r *Runtime) executeClaimedJob(active *activeJob) {
 	defer reporter.Close()
 
 	flowDef, err := flowpkg.ParseFromJSONWithOptions(active.job.FlowDefinition, flowpkg.ParseOptions{
-		AllowedInitialInputKeys: sortedEnvironmentKeys(active.job.Environment),
+		AllowedInitialInputKeys: sortedInputKeys(active.job.Inputs),
 	})
 	if err != nil {
 		r.completeWithFailure(active, reporter, fmt.Sprintf("parse flow definition: %v", err), nil)
 		return
 	}
 
-	inputs := make(map[string]interface{}, len(active.job.Environment)+len(flowDef.InitialInputs))
+	inputs := make(map[string]interface{}, len(active.job.Inputs)+len(flowDef.InitialInputs))
 	for key, value := range flowDef.InitialInputs {
 		inputs[key] = value
 	}
-	for key, value := range active.job.Environment {
+	for key, value := range active.job.Inputs {
 		inputs[key] = value
 	}
 
@@ -250,15 +250,26 @@ func buildReferencedFlowResolver(job *controlplane.ClaimedJob) node.ModuleResolv
 	for flowID, referencedFlow := range job.ReferencedFlows {
 		resolved[flowID] = node.ResolvedModuleFlow{
 			FlowDefinition: referencedFlow.FlowDefinition,
-			Environment:    referencedFlow.Environment,
+			InputOverrides: cloneInputs(referencedFlow.InputOverrides),
 		}
 	}
 	return referencedFlowResolver{flows: resolved}
 }
 
-func sortedEnvironmentKeys(environment map[string]string) []string {
-	keys := make([]string, 0, len(environment))
-	for key := range environment {
+func cloneInputs(source map[string]interface{}) map[string]interface{} {
+	if len(source) == 0 {
+		return nil
+	}
+	cloned := make(map[string]interface{}, len(source))
+	for key, value := range source {
+		cloned[key] = value
+	}
+	return cloned
+}
+
+func sortedInputKeys(inputs map[string]interface{}) []string {
+	keys := make([]string, 0, len(inputs))
+	for key := range inputs {
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)

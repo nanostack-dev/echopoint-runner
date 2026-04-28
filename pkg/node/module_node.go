@@ -96,8 +96,11 @@ func (n *ModuleNode) Execute(ctx ExecutionContext) (AnyExecutionResult, error) {
 		Any("moduleInputs", moduleInputs).
 		Msg("Starting module node execution")
 
-	childInputs := make(map[string]interface{}, len(resolvedFlow.Environment)+len(moduleInputs))
-	for key, value := range resolvedFlow.Environment {
+	childInputs := make(map[string]interface{}, len(ctx.FlowInputs)+len(resolvedFlow.InputOverrides)+len(moduleInputs))
+	for key, value := range ctx.FlowInputs {
+		childInputs[key] = value
+	}
+	for key, value := range resolvedFlow.InputOverrides {
 		childInputs[key] = value
 	}
 	for key, value := range moduleInputs {
