@@ -1,0 +1,82 @@
+{
+  "name": "Create and Verify User Flow",
+  "description": "Demonstrates data passing between HTTP requests using data contracts",
+  "version": "1.0",
+  "initialInputs": {
+    "apiUrl": "http://localhost:8080",
+    "userName": "Alice Smith",
+    "userEmail": "alice@example.com"
+  },
+  "nodes": [
+    {
+      "id": "create-user",
+      "type": "request",
+      "assertions": [],
+      "outputs": [
+        {
+          "name": "statusCode",
+          "extractor": {
+            "type": "statusCode"
+          }
+        },
+        {
+          "name": "userId",
+          "extractor": {
+            "type": "jsonPath",
+            "path": "$.user.id"
+          }
+        },
+        {
+          "name": "createdUser",
+          "extractor": {
+            "type": "body"
+          }
+        }
+      ],
+      "data": {
+        "method": "POST",
+        "url": "{{apiUrl}}/users",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "name": "{{userName}}",
+          "email": "{{userEmail}}"
+        },
+        "timeout": 5000
+      }
+    },
+    {
+      "id": "verify-user",
+      "type": "request",
+      "assertions": [],
+      "outputs": [
+        {
+          "name": "verifyStatus",
+          "extractor": {
+            "type": "statusCode"
+          }
+        },
+        {
+          "name": "verifiedUser",
+          "extractor": {
+            "type": "body"
+          }
+        }
+      ],
+      "data": {
+        "method": "GET",
+        "url": "{{apiUrl}}/users/{{create-user.userId}}",
+        "timeout": 5000
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "create-to-verify",
+      "source": "create-user",
+      "target": "verify-user",
+      "type": "success"
+    }
+  ]
+}

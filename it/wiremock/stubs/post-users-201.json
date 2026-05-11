@@ -1,0 +1,24 @@
+{
+  "request": {
+    "method": "POST",
+    "urlPath": "/users",
+    "headers": {
+      "Content-Type": {
+        "equalTo": "application/json"
+      }
+    }
+  },
+  "response": {
+    "status": 201,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "jsonBody": {
+      "user": {
+        "id": "123",
+        "name": "{{jsonPath request.body '$.name'}}",
+        "email": "{{jsonPath request.body '$.email'}}"
+      }
+    }
+  }
+}

@@ -1,0 +1,71 @@
+{
+  "version": "1.0",
+  "name": "User API Test",
+  "description": "Test user endpoints with branching",
+  "nodes": [
+    {
+      "id": "req-1",
+      "type": "request",
+      "assertions": [
+        {
+          "extractor": {"type": "statusCode"},
+          "operator": {"type": "equals", "value": 201}
+        },
+        {
+          "extractor": {"type": "jsonPath", "path": "$.user.id"},
+          "operator": {"type": "notEmpty"}
+        }
+      ],
+      "outputs": [
+        {
+          "name": "userId",
+          "extractor": {"type": "jsonPath", "path": "$.user.id"}
+        },
+        {
+          "name": "statusCode",
+          "extractor": {"type": "statusCode"}
+        }
+      ],
+      "data": {
+        "method": "POST",
+        "url": "https://api.example.com/users",
+        "headers": {"Content-Type": "application/json"},
+        "queryParams": {},
+        "body": {"name": "John Doe", "email": "john@example.com"},
+        "timeout": 30000
+      }
+    },
+    {
+      "id": "req-success",
+      "type": "request",
+      "assertions": [
+        {"extractor": {"type": "statusCode"}, "operator": {"type": "equals", "value": 200}}
+      ],
+      "outputs": [
+        {
+          "name": "responseStatus",
+          "extractor": {"type": "statusCode"}
+        }
+      ],
+      "data": {
+        "method": "GET",
+        "url": "https://api.example.com/users"
+      }
+    },
+    {
+      "id": "req-error",
+      "type": "request",
+      "assertions": [],
+      "outputs": [],
+      "data": {
+        "method": "POST",
+        "url": "https://api.example.com/error-log",
+        "body": {"error": "User creation failed"}
+      }
+    }
+  ],
+  "edges": [
+    {"id": "e-success", "source": "req-1", "target": "req-success", "type": "success"},
+    {"id": "e-failure", "source": "req-1", "target": "req-error", "type": "failure"}
+  ]
+}
