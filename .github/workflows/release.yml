@@ -2,90 +2,89 @@ name: Release
 
 on:
   push:
-    branches: [ main ]
-    paths-ignore:
-      - 'README.md'
-      - '.gitignore'
-      - '**/*.go'
-      - '**/go.mod'
-      - '**/go.sum'
-      - 'Dockerfile'
-      - '.github/workflows/go.yml'
+    branches:
+      - main
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
-  release:
+  create-tag:
+    name: Create Version Tag
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
-
+    outputs:
+      new_tag: ${{ steps.tag.outputs.new_tag }}
     steps:
-    - uses: actions/checkout@v6
-      with:
-        fetch-depth: 0
-        token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Determine next version
-      id: version
-      run: |
-        # Get latest tag
-        LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
-        echo "Latest tag: $LATEST_TAG"
+      - name: Get latest tag
+        id: get_latest
+        run: |
+          # Highest semver tag regardless of reachability. The repository history
+          # was squashed, so `git describe --tags` cannot see pre-squash tags and
+          # would incorrectly fall back to v0.0.0.
+          latest_tag=$(git tag --sort=-v:refname | head -n1)
+          [ -z "$latest_tag" ] && latest_tag="v0.0.0"
+          echo "latest_tag=$latest_tag" >> "$GITHUB_OUTPUT"
+          echo "Latest tag: $latest_tag"
 
-        # Extract version numbers
-        VERSION=${LATEST_TAG#v}
-        IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
+      - name: Calculate new version
+        id: tag
+        run: |
+          latest_tag="${{ steps.get_latest.outputs.latest_tag }}"
 
-        # Check commit messages since last tag for version bump type
-        if [ "$LATEST_TAG" = "v0.0.0" ]; then
-          # No previous tags, get all commits
-          COMMITS=$(git log --oneline --no-merges)
-        else
-          # Get commits since last tag
-          COMMITS=$(git log ${LATEST_TAG}..HEAD --oneline --no-merges)
-        fi
-        echo "Commits since last tag:"
-        echo "$COMMITS"
+          if [[ $latest_tag =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+            major="${BASH_REMATCH[1]}"
+            minor="${BASH_REMATCH[2]}"
+            patch="${BASH_REMATCH[3]}"
+          else
+            major=0
+            minor=0
+            patch=0
+          fi
 
-        # Determine version bump based on commit messages
-        if echo "$COMMITS" | grep -qiE "(breaking|major)"; then
-          NEW_MAJOR=$((MAJOR + 1))
-          NEW_MINOR=0
-          NEW_PATCH=0
-        elif echo "$COMMITS" | grep -qiE "(fix|patch)"; then
-          NEW_MAJOR=$MAJOR
-          NEW_MINOR=$MINOR
-          NEW_PATCH=$((PATCH + 1))
-        else
-          # Default: increment minor version
-          NEW_MAJOR=$MAJOR
-          NEW_MINOR=$((MINOR + 1))
-          NEW_PATCH=0
-        fi
+          # Default: minor bump.
+          new_minor=$((minor + 1))
+          new_tag="v${major}.${new_minor}.0"
 
-        NEW_VERSION="v${NEW_MAJOR}.${NEW_MINOR}.${NEW_PATCH}"
-        echo "New version: $NEW_VERSION"
-        echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
-        echo "has_changes=$([ -n "$COMMITS" ] && echo "true" || echo "false")" >> $GITHUB_OUTPUT
+          # Guard against collision with an existing tag.
+          if git rev-parse "$new_tag" >/dev/null 2>&1; then
+            echo "::error::Computed tag $new_tag already exists; bump manually." >&2
+            exit 1
+          fi
 
-    - name: Create and push tag
-      if: steps.version.outputs.has_changes == 'true'
-      run: |
-        git config --local user.email "action@github.com"
-        git config --local user.name "GitHub Action"
-        git tag -a ${{ steps.version.outputs.version }} -m "Release ${{ steps.version.outputs.version }}"
-        git push origin ${{ steps.version.outputs.version }}
+          echo "new_tag=$new_tag" >> "$GITHUB_OUTPUT"
+          echo "New tag: $new_tag"
 
-    - name: Create GitHub Release
-      if: steps.version.outputs.has_changes == 'true'
-      run: |
-        gh release create ${{ steps.version.outputs.version }} \
-          --title "Release ${{ steps.version.outputs.version }}" \
-          --notes "## Changes in ${{ steps.version.outputs.version }}
+      - name: Create and push tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag ${{ steps.tag.outputs.new_tag }}
+          git push origin ${{ steps.tag.outputs.new_tag }}
 
-          This release includes all changes pushed to the main branch since the last release.
+  goreleaser:
+    name: Release
+    runs-on: ubuntu-latest
+    needs: create-tag
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-          **Full Changelog**: https://github.com/${{ github.repository }}/commits/${{ steps.version.outputs.version }}"
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.1'
+
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: '~> v2'
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
