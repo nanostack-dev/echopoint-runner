@@ -14,6 +14,10 @@ import (
 	"github.com/nanostack-dev/echopoint-runner/pkg/extractors"
 )
 
+// defaultRequestTimeoutMs is applied when a request node has no explicit timeout
+// (Timeout <= 0), avoiding an instant 0ms context deadline.
+const defaultRequestTimeoutMs = 30000
+
 type RequestData struct {
 	Method      string                 `json:"method"`
 	URL         string                 `json:"url"`
@@ -298,6 +302,11 @@ func (n *RequestNode) validate(
 func (n *RequestNode) makeRequestAndReadBody(
 	url, method string, headers map[string]string, body interface{}, timeout int,
 ) (*http.Response, []byte, error) {
+	// An unset/zero timeout means "no explicit timeout"; apply a sane default so the
+	// request isn't cancelled with an instant 0ms deadline.
+	if timeout <= 0 {
+		timeout = defaultRequestTimeoutMs
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Millisecond)
 	defer cancel()
 
@@ -310,9 +319,17 @@ func (n *RequestNode) makeRequestAndReadBody(
 	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
-		jsonBody, marshalErr := json.Marshal(body)
-		if marshalErr != nil {
-			return nil, nil, marshalErr
+		// A string body is already a serialized payload (e.g. a JSON object literal);
+		// send it as-is. Marshalling it would double-encode it into a quoted string.
+		var jsonBody []byte
+		if s, ok := body.(string); ok {
+			jsonBody = []byte(s)
+		} else {
+			marshalled, marshalErr := json.Marshal(body)
+			if marshalErr != nil {
+				return nil, nil, marshalErr
+			}
+			jsonBody = marshalled
 		}
 		req.Body = io.NopCloser(strings.NewReader(string(jsonBody)))
 		req.ContentLength = int64(len(jsonBody))
