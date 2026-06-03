@@ -1,11 +1,13 @@
-package node
+package node_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"testing"
 
 	"github.com/nanostack-dev/echopoint-runner/pkg/extractors"
+	"github.com/nanostack-dev/echopoint-runner/pkg/node"
 )
 
 // fakeCtx implements the ResponseContext capability interfaces used by the
@@ -26,23 +28,35 @@ func (c fakeCtx) GetDuration() interface{}   { return nil }
 
 var _ extractors.ResponseContext = fakeCtx{}
 
-func unmarshalAssertion(t *testing.T, raw string) CompositeAssertion {
+// mkAssertion builds a CompositeAssertion from the backend's snake_case wire
+// shape so tests exercise the real UnmarshalJSON path.
+func mkAssertion(t *testing.T, extractor, path, op, value string) node.CompositeAssertion {
 	t.Helper()
-	var ca CompositeAssertion
+	ed := "{}"
+	if path != "" {
+		ed = fmt.Sprintf(`{"path":%q}`, path)
+	}
+	od := "{}"
+	if value != "" {
+		od = fmt.Sprintf(`{"value":%q}`, value)
+	}
+	raw := fmt.Sprintf(
+		`{"extractor_type":%q,"extractor_data":%s,"operator_type":%q,"operator_data":%s}`,
+		extractor, ed, op, od,
+	)
+	var ca node.CompositeAssertion
 	if err := json.Unmarshal([]byte(raw), &ca); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
 	return ca
 }
 
-func TestEvaluate_SnakeCaseStatusCode(t *testing.T) {
-	ca := unmarshalAssertion(t, `{"operator_type":"equals","operator_data":{"value":"201"},"extractor_type":"statusCode","extractor_data":{}}`)
-	ok, err := ca.Evaluate(fakeCtx{status: 201})
-	if err != nil || !ok {
+func TestEvaluate_StatusCode(t *testing.T) {
+	ca := mkAssertion(t, "statusCode", "", "equals", "201")
+	if ok, err := ca.Evaluate(fakeCtx{status: 201}); err != nil || !ok {
 		t.Fatalf("expected pass, got ok=%v err=%v", ok, err)
 	}
-	bad, err := ca.Evaluate(fakeCtx{status: 400})
-	if err != nil || bad {
+	if bad, err := ca.Evaluate(fakeCtx{status: 400}); err != nil || bad {
 		t.Fatalf("expected fail on 400, got ok=%v err=%v", bad, err)
 	}
 }
@@ -50,31 +64,30 @@ func TestEvaluate_SnakeCaseStatusCode(t *testing.T) {
 func TestEvaluate_JSONPathOperators(t *testing.T) {
 	body := map[string]interface{}{"name": "eptest", "id": "prd_123", "empty": ""}
 	cases := []struct {
-		raw  string
-		want bool
+		extractor, path, op, value string
+		want                       bool
 	}{
-		{`{"operator_type":"equals","operator_data":{"value":"eptest"},"extractor_type":"jsonPath","extractor_data":{"path":"$.name"}}`, true},
-		{`{"operator_type":"equals","operator_data":{"value":"nope"},"extractor_type":"jsonPath","extractor_data":{"path":"$.name"}}`, false},
-		{`{"operator_type":"notEmpty","operator_data":{},"extractor_type":"jsonPath","extractor_data":{"path":"$.id"}}`, true},
-		{`{"operator_type":"empty","operator_data":{},"extractor_type":"jsonPath","extractor_data":{"path":"$.empty"}}`, true},
-		{`{"operator_type":"contains","operator_data":{"value":"test"},"extractor_type":"jsonPath","extractor_data":{"path":"$.name"}}`, true},
+		{"jsonPath", "$.name", "equals", "eptest", true},
+		{"jsonPath", "$.name", "equals", "nope", false},
+		{"jsonPath", "$.id", "notEmpty", "", true},
+		{"jsonPath", "$.empty", "empty", "", true},
+		{"jsonPath", "$.name", "contains", "test", true},
 	}
 	for i, c := range cases {
-		ca := unmarshalAssertion(t, c.raw)
+		ca := mkAssertion(t, c.extractor, c.path, c.op, c.value)
 		got, err := ca.Evaluate(fakeCtx{status: 200, parsed: body})
 		if err != nil {
 			t.Fatalf("case %d: err %v", i, err)
 		}
 		if got != c.want {
-			t.Fatalf("case %d: got %v want %v (%s)", i, got, c.want, c.raw)
+			t.Fatalf("case %d: got %v want %v", i, got, c.want)
 		}
 	}
 }
 
 func TestEvaluate_NumericCompare(t *testing.T) {
-	ca := unmarshalAssertion(t, `{"operator_type":"greaterThan","operator_data":{"value":"200"},"extractor_type":"statusCode","extractor_data":{}}`)
-	ok, err := ca.Evaluate(fakeCtx{status: 201})
-	if err != nil || !ok {
+	ca := mkAssertion(t, "statusCode", "", "greaterThan", "200")
+	if ok, err := ca.Evaluate(fakeCtx{status: 201}); err != nil || !ok {
 		t.Fatalf("expected 201>200 pass, got ok=%v err=%v", ok, err)
 	}
 }
