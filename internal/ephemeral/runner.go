@@ -29,6 +29,11 @@ func Run(pkg *Package) Result {
 		AllowedInitialInputKeys: inputKeys,
 	})
 	if err != nil {
+		log.Error().
+			Str("execution_id", pkg.ExecutionID).
+			Str("flow_id", pkg.FlowID).
+			Err(err).
+			Msg("failed to parse flow definition")
 		return failedResult(startedAt, fmt.Sprintf("parse flow definition: %v", err), nil)
 	}
 

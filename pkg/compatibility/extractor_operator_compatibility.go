@@ -5,6 +5,9 @@ import (
 	"github.com/nanostack-dev/echopoint-runner/pkg/operators"
 )
 
+// outputTypeAny is the output type for extractors that can yield any value type.
+const outputTypeAny = "any"
+
 // ExtractorOperatorCompatibility defines which operators are compatible with each extractor.
 type ExtractorOperatorCompatibility struct {
 	ExtractorType       extractors.ExtractorType
@@ -27,7 +30,7 @@ func GetExtractorOutputType(extractorType extractors.ExtractorType) string {
 	if compat, ok := compatibility[extractorType]; ok {
 		return compat.OutputType
 	}
-	return "any"
+	return outputTypeAny
 }
 
 // IsOperatorCompatible checks if an operator is compatible with an extractor.
@@ -48,7 +51,7 @@ func GetExtractorCompatibilityMap() map[extractors.ExtractorType]ExtractorOperat
 	return map[extractors.ExtractorType]ExtractorOperatorCompatibility{
 		extractors.ExtractorTypeJSONPath: {
 			ExtractorType: extractors.ExtractorTypeJSONPath,
-			OutputType:    "any", // Can extract any type from JSON
+			OutputType:    outputTypeAny, // Can extract any type from JSON
 			CompatibleOperators: []operators.OperatorType{
 				// String operators
 				operators.OperatorTypeEquals,
@@ -70,7 +73,7 @@ func GetExtractorCompatibilityMap() map[extractors.ExtractorType]ExtractorOperat
 		},
 		extractors.ExtractorTypeXMLPath: {
 			ExtractorType: extractors.ExtractorTypeXMLPath,
-			OutputType:    "any", // Can extract any type from XML
+			OutputType:    outputTypeAny, // Can extract any type from XML
 			CompatibleOperators: []operators.OperatorType{
 				// String operators
 				operators.OperatorTypeEquals,
@@ -122,7 +125,7 @@ func GetExtractorCompatibilityMap() map[extractors.ExtractorType]ExtractorOperat
 		},
 		extractors.ExtractorTypeBody: {
 			ExtractorType: extractors.ExtractorTypeBody,
-			OutputType:    "any", // Can be any type (parsed JSON, XML, string, etc.)
+			OutputType:    outputTypeAny, // Can be any type (parsed JSON, XML, string, etc.)
 			CompatibleOperators: []operators.OperatorType{
 				// Any/body operators - body is captured as-is
 				operators.OperatorTypeNotEmpty,
