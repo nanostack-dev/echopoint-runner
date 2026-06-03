@@ -14,6 +14,8 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+const fieldTimestamp = "timestamp"
+
 const (
 	reporterMaxBatchEvents = 16
 	reporterMaxBatchBytes  = 32 * 1024
@@ -104,7 +106,7 @@ func (r *jobEventReporter) FlowStarted(evt engine.FlowStartedEvent) {
 	if err := r.enqueue(string(executionevents.FlowStarted), map[string]interface{}{
 		"execution_id": r.executionID.String(),
 		"flowName":     evt.FlowName,
-		"timestamp":    evt.StartedAt.Format(time.RFC3339),
+		fieldTimestamp: evt.StartedAt.Format(time.RFC3339),
 	}); err != nil {
 		log.Warn().Err(err).Str("job_id", r.jobID.String()).Msg("failed to enqueue flow.started event")
 	}
@@ -112,10 +114,10 @@ func (r *jobEventReporter) FlowStarted(evt engine.FlowStartedEvent) {
 
 func (r *jobEventReporter) NodeStarted(evt engine.NodeStartedEvent) {
 	if err := r.enqueue(string(executionevents.NodeStarted), map[string]interface{}{
-		"nodeId":      evt.NodeID,
-		"displayName": evt.DisplayName,
-		"nodeType":    string(evt.NodeType),
-		"timestamp":   evt.StartedAt.Format(time.RFC3339),
+		"nodeId":       evt.NodeID,
+		"displayName":  evt.DisplayName,
+		"nodeType":     string(evt.NodeType),
+		fieldTimestamp: evt.StartedAt.Format(time.RFC3339),
 	}); err != nil {
 		log.Warn().
 			Err(err).
@@ -127,10 +129,10 @@ func (r *jobEventReporter) NodeStarted(evt engine.NodeStartedEvent) {
 
 func (r *jobEventReporter) NodeFinished(evt engine.NodeFinishedEvent) {
 	payload := map[string]interface{}{
-		"nodeId":      evt.NodeID,
-		"displayName": evt.DisplayName,
-		"duration":    evt.DurationMs,
-		"timestamp":   evt.FinishedAt.Format(time.RFC3339),
+		"nodeId":       evt.NodeID,
+		"displayName":  evt.DisplayName,
+		"duration":     evt.DurationMs,
+		fieldTimestamp: evt.FinishedAt.Format(time.RFC3339),
 	}
 
 	eventType := executionevents.NodeCompleted
