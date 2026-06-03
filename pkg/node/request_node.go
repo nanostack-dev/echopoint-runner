@@ -287,16 +287,6 @@ func (n *RequestNode) resolveTemplatesWithError(
 	return result, nil
 }
 
-func (n *RequestNode) validate(
-	_ CompositeAssertion, _ extractors.ResponseContext,
-) bool {
-	// TODO: Implement validation using extractor and operator factories
-	// This requires creating factory functions for extractors and operators
-	// For now, return true to allow basic flow execution
-	// The context now provides access to status, headers, body, parsed body via interfaces
-	return true
-}
-
 // makeRequestAndReadBody makes an HTTP request and reads the entire response body
 // within the timeout period. The timeout applies to the entire operation (request + body read).
 func (n *RequestNode) makeRequestAndReadBody(

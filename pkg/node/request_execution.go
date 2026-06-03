@@ -110,14 +110,32 @@ func (n *RequestNode) runAssertions(respCtx extractors.ResponseContext) error {
 		Int("assertionCount", len(n.GetAssertions())).
 		Msg("Running assertions")
 
-	for i, assertion := range n.GetAssertions() {
-		if !n.validate(assertion, respCtx) {
-			failedAssertionErr := fmt.Errorf("assertion failed: %v", assertion)
+	for i := range n.GetAssertions() {
+		assertion := n.GetAssertions()[i]
+		passed, evalErr := assertion.Evaluate(respCtx)
+		if evalErr != nil {
 			log.Error().
 				Str("nodeID", n.GetID()).
 				Int("assertionIndex", i).
+				Str("extractor", assertion.ExtractorType).
+				Str("operator", assertion.OperatorType).
+				Err(evalErr).
+				Msg("Assertion evaluation errored")
+			return fmt.Errorf("assertion %d (%s %s) evaluation error: %w",
+				i, assertion.ExtractorType, assertion.OperatorType, evalErr)
+		}
+		if !passed {
+			failedAssertionErr := fmt.Errorf(
+				"assertion %d failed: %s %s expected=%v",
+				i, assertion.ExtractorType, assertion.OperatorType, assertion.ExpectedValue)
+			log.Error().
+				Str("nodeID", n.GetID()).
+				Int("assertionIndex", i).
+				Str("extractor", assertion.ExtractorType).
+				Str("operator", assertion.OperatorType).
+				Any("expected", assertion.ExpectedValue).
 				Err(failedAssertionErr).
-				Msg("Assertion validation failed")
+				Msg("Assertion failed")
 			return failedAssertionErr
 		}
 	}
