@@ -31,8 +31,8 @@ Auto-generated from the generator registry (`pkg/dynamicvars`). Use any of these
 
 | Variable | Description | Example |
 |---|---|---|
-| `{{$email}}` | An email at the reserved @example.test domain (safe for tests). | `{{$email}}` |
-| `{{$phone}}` | An E.164 phone number, e.g. +14155550123. | `{{$phone}}` |
+| `{{$email}}` | An email address. | `{{$email}}` |
+| `{{$phone}}` | A phone number. | `{{$phone}}` |
 | `{{$phoneFormatted}}` | A locally-formatted phone number. | `{{$phoneFormatted}}` |
 
 ## finance
@@ -41,12 +41,10 @@ Auto-generated from the generator registry (`pkg/dynamicvars`). Use any of these
 |---|---|---|
 | `{{$achAccount}}` | An ACH account number. | `{{$achAccount}}` |
 | `{{$achRouting}}` | An ACH routing number. | `{{$achRouting}}` |
-| `{{$bic}}` | A valid-format BIC/SWIFT code (8 or 11 chars). | `{{$bic}}` |
 | `{{$bitcoinAddress}}` | A bitcoin address. | `{{$bitcoinAddress}}` |
 | `{{$creditCard}}` | A Luhn-valid card number. Arg: visa, mastercard, american-express, discover. | `{{$creditCard:visa}}` |
 | `{{$creditCardCvv}}` | A card CVV. | `{{$creditCardCvv}}` |
 | `{{$currency}}` | A 3-letter currency code (ISO 4217). | `{{$currency}}` |
-| `{{$iban}}` | A mod-97-valid IBAN. Arg: 2-letter country (FR, DE, GB, ES, IT, NL, BE, CH); default FR. | `{{$iban:DE}}` |
 | `{{$price}}` | A price. Args: min max (defaults 1 1000). | `{{$price:9.99:199.99}}` |
 
 ## identity

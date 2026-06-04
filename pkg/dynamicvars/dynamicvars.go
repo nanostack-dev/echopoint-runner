@@ -177,24 +177,10 @@ var registry = map[string]Entry{
 		gen: func(c *Context, _ []string) (string, error) { return c.faker.SSN(), nil }},
 
 	// ---- contact ----
-	"email": {
-		Category: catContact,
-		Desc:     "An email at the reserved @example.test domain (safe for tests).",
-		Example:  "{{$email}}",
-		gen: func(c *Context, _ []string) (string, error) {
-			return strings.ToLower(
-				c.faker.Username(),
-			) + "-" + c.faker.DigitN(
-				4,
-			) + "@example.test", nil
-		},
-	},
-	"phone": {
-		Category: catContact,
-		Desc:     "An E.164 phone number, e.g. +14155550123.",
-		Example:  "{{$phone}}",
-		gen:      func(c *Context, _ []string) (string, error) { return "+1" + c.faker.Numerify("##########"), nil },
-	},
+	"email": {Category: catContact, Desc: "An email address.", Example: "{{$email}}",
+		gen: func(c *Context, _ []string) (string, error) { return c.faker.Email(), nil }},
+	"phone": {Category: catContact, Desc: "A phone number.", Example: "{{$phone}}",
+		gen: func(c *Context, _ []string) (string, error) { return c.faker.Phone(), nil }},
 	"phoneFormatted": {
 		Category: catContact,
 		Desc:     "A locally-formatted phone number.",
@@ -232,25 +218,7 @@ var registry = map[string]Entry{
 	"timezone": {Category: catAddress, Desc: "A timezone.", Example: "{{$timezone}}",
 		gen: func(c *Context, _ []string) (string, error) { return c.faker.TimeZone(), nil }},
 
-	// ---- finance (validity matters) ----
-	"iban": {
-		Category: catFinance,
-		Desc:     "A mod-97-valid IBAN. Arg: 2-letter country (FR, DE, GB, ES, IT, NL, BE, CH); default FR.",
-		Example:  "{{$iban:DE}}",
-		gen: func(c *Context, args []string) (string, error) {
-			country := "FR"
-			if len(args) > 0 {
-				country = strings.ToUpper(args[0])
-			}
-			return genIBAN(c, country)
-		},
-	},
-	"bic": {
-		Category: catFinance,
-		Desc:     "A valid-format BIC/SWIFT code (8 or 11 chars).",
-		Example:  "{{$bic}}",
-		gen:      func(c *Context, _ []string) (string, error) { return genBIC(c), nil },
-	},
+	// ---- finance ----
 	"creditCard": {
 		Category: catFinance,
 		Desc:     "A Luhn-valid card number. Arg: visa, mastercard, american-express, discover.",
