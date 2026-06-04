@@ -75,36 +75,128 @@ execution differs** — determinism preserved, collisions avoided.
 > `{{$randomX}}` occurrence an index, rather than relying on wall-clock draw
 > order. This pre-assignment is the main implementation cost.
 
-## Generator catalogue (initial)
+## Build our own, or wrap a faker library?
 
-| Variable | Class | Result |
+Goal is a **ton of valid options** (IBAN, credit card, phone, address, …) with
+two hard constraints: **deterministic** (seedable from the execution id) and
+**no network**.
+
+Honest assessment of the options:
+
+- **Reimplement everything ourselves.** Full control, zero deps — but
+  reimplementing ~200 generators plus locale data plus getting *validity* right
+  (Luhn, IBAN mod-97, valid phone formats, real city/country tables) is a large,
+  ongoing maintenance burden. Not worth it for the long tail (names, words,
+  addresses, colours, user-agents).
+- **Wrap `brianvoe/gofakeit` (v7, MIT).** ~200+ generators, no network, and —
+  critically — a **seedable** faker: `gofakeit.New(seed)` gives an instance with
+  its own `*rand.Rand`, so output is deterministic per seed. Luhn-valid credit
+  cards, currencies, ACH, addresses, internet, company, etc. out of the box.
+  Downside: a third-party dep, and a few validity-critical generators (notably
+  **IBAN mod-97 / BIC**) may be missing or not checksum-valid — verify per type.
+
+**Recommendation: a generator registry that is *our* surface, backed by gofakeit
+for breadth and *our* code for the validity-critical financial ones.**
+
+```go
+// One small interface; the {{$...}} namespace is ours, the implementation is
+// pluggable. This is the "our own generator" the team wants — without
+// reimplementing 200 fakers.
+type Generator func(ctx *dynamicContext, args []string) (string, error)
+
+var registry = map[string]Generator{
+    "iban":       genIBAN,        // OUR code: country + mod-97 checksum
+    "bic":        genBIC,         // OUR code: valid BIC/SWIFT format
+    "creditCard": genCreditCard,  // gofakeit (already Luhn-valid) + network arg
+    "email":      genEmail,       // gofakeit
+    // ... ~150 thin wrappers + a handful of our validity-critical ones
+}
+```
+
+Every generator draws randomness only from `ctx` (the seeded PRNG / seeded
+gofakeit instance), so the determinism story above holds regardless of whether a
+given entry is hand-rolled or a gofakeit wrapper. If we ever want to drop the
+dep, we swap implementations behind the registry without touching the `{{$...}}`
+contract.
+
+## Validity guarantees (the part that actually matters)
+
+These must produce values that pass real validators, not just look right:
+
+| Generator | Validity rule | Source |
 |---|---|---|
-| `{{$runId}}` | stable | short id derived from execution id |
-| `{{$timestamp}}` | stable | unix seconds at execution start |
-| `{{$isoTimestamp}}` | stable | RFC3339 at execution start |
-| `{{$randomUuid}}` | per-occurrence | UUIDv4 (from seeded PRNG) |
-| `{{$randomInt}}` / `:min:max` | per-occurrence | integer, default [0,1000] |
-| `{{$randomString}}` / `:N` | per-occurrence | N-char alnum, default 16 |
-| `{{$randomEmail}}` | per-occurrence | `user-<rand>@example.test` |
-| `{{$randomFirstName}}` / `LastName` / `FullName` | per-occurrence | from a small built-in word list |
-| `{{$randomSlug}}` | per-occurrence | `kebab-three-words` |
+| `{{$creditCard}}` / `:visa\|mastercard\|amex\|…` | passes **Luhn**, correct IIN prefix + length per network | gofakeit |
+| `{{$creditCardCvv}}` | 3 digits (4 for amex) | gofakeit |
+| `{{$iban}}` / `:FR\|DE\|…` | ISO 13616: country + **mod-97 == 1**, correct length per country | **ours** |
+| `{{$bic}}` | 8 or 11 chars, valid bank/country/location structure | **ours** |
+| `{{$phone}}` / `:E164\|US\|…` | **E.164** by default (`+<cc><national>`) | ours over gofakeit |
+| `{{$uuid}}` | RFC 4122 v4 | seeded PRNG |
+| `{{$email}}` | RFC-5322-safe local + reserved test domain (`@example.test`) | gofakeit |
 
-Faker data is a small static word list compiled into the runner — no external
-dependency, no network.
+## Generator catalogue (target)
+
+Stable per execution: `{{$runId}}`, `{{$timestamp}}`, `{{$isoTimestamp}}`,
+`{{$today}}`. Everything else is fresh per occurrence (seeded PRNG, fixed draw
+order — see determinism section).
+
+**Identity & contact**
+`firstName lastName fullName username gender jobTitle ssn`
+`email phone:E164 phoneFormatted`
+
+**Address**
+`street city state stateAbbr country countryAbbr zip latitude longitude
+fullAddress timezone`
+
+**Finance** (validity-critical, see table)
+`creditCard:<network> creditCardCvv creditCardExp iban:<cc> bic
+currency:code currency:name price:<min>:<max> achRouting achAccount
+bitcoinAddress amount:<min>:<max>`
+
+**Internet & tech**
+`url domain ipv4 ipv6 mac userAgent httpMethod httpStatusCode emoji
+md5 sha256 base64:<n> jwt`
+
+**Commerce & company**
+`company companySuffix productName productCategory sku ean13 barcode`
+
+**Text & primitives**
+`word words:<n> sentence paragraph lorem:<n> color hexColor
+int:<min>:<max> float:<min>:<max> bool digit:<n> string:<n> slug
+uuid nanoid`
+
+**Date & time**
+`runId timestamp isoTimestamp today futureDate pastDate
+date:<layout> weekday month`
+
+(~80 listed; the registry can carry the full gofakeit surface — this is the
+curated, documented subset.)
+
+## Parameters
+
+Colon-separated after the name; each generator declares its own params:
+
+```
+{{$string:12}}              {{$int:1:100}}          {{$price:9.99:199.99}}
+{{$creditCard:visa}}        {{$iban:FR}}            {{$words:5}}
+{{$phone:E164}}             {{$date:2006-01-02}}    {{$currency:code}}
+```
+
+Unknown generator name or bad params → a clear resolution error naming the
+node and the offending `{{$...}}` (not a silent empty string).
 
 ## Open questions
 
-- Persisting the execution start time for true replay vs accepting "fresh each
-  run" (sufficient for the test-suite use case).
-- Whether to expose a `{{$env:NAME}}` escape hatch (probably no — env overlays
-  already cover that).
-- CLI discoverability: an `echopoint flows vars` listing, and `flows validate`
-  should treat `{{$...}}` as always-resolvable (never an "unknown reference").
+- Persist the execution start time for true replay vs "fresh each run"
+  (sufficient for the test-suite use case).
+- Locale: default `en`, optional `{{$city:fr}}`? gofakeit is mostly en — defer.
+- CLI discoverability: `echopoint flows vars [--category finance]` to list the
+  registry; `flows validate` must treat `{{$...}}` as always-resolvable.
 
 ## Why this shape
 
-- `$` prefix = zero collision risk, instantly recognisable to anyone who's used
-  Postman/Insomnia.
-- Seeding from the execution id keeps the runner's replay guarantee, which is
-  the whole reason `Date.now()`/random are banned today.
-- Static faker word list keeps the runner dependency-free and deterministic.
+- `$` prefix = zero collision risk, instantly recognisable (Postman/Insomnia).
+- Seeding from the execution id keeps the runner's replay guarantee — the whole
+  reason `Date.now()`/random are banned today.
+- A **registry behind our own `{{$...}}` namespace** gives us the team's "own
+  generator" control and a swap-out path, while gofakeit supplies the breadth so
+  we only hand-write the few generators where *validity* is the point.
