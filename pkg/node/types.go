@@ -89,6 +89,15 @@ type ExecutionContext struct {
 	ModuleResolver ModuleResolver
 	// ModuleExecutor runs nested flows for module nodes.
 	ModuleExecutor ModuleExecutor
+	// DynamicVars resolves {{$name}} template variables (fake-data generators).
+	// May be nil, in which case {{$...}} references are left untouched.
+	DynamicVars DynamicResolver
+}
+
+// DynamicResolver resolves a {{$name:args}} dynamic template variable to a
+// generated value. Implemented by pkg/dynamicvars.
+type DynamicResolver interface {
+	Resolve(name string, args []string) (string, error)
 }
 
 // AnyExecutionResult is the interface for all execution results (polymorphic).

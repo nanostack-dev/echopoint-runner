@@ -15,6 +15,7 @@ var stringVariablePattern = regexp.MustCompile(`\{\{([^}]+)\}\}`)
 // TemplateResolver handles resolution of {{variableName}} templates in strings and objects.
 type TemplateResolver struct {
 	variables map[string]interface{}
+	dynamic   DynamicResolver
 }
 
 // NewTemplateResolver creates a new template resolver with the given variables.
@@ -22,6 +23,32 @@ func NewTemplateResolver(variables map[string]interface{}) *TemplateResolver {
 	return &TemplateResolver{
 		variables: variables,
 	}
+}
+
+// NewTemplateResolverWithDynamics creates a resolver that also resolves
+// {{$name}} dynamic variables via the given resolver (may be nil).
+func NewTemplateResolverWithDynamics(
+	variables map[string]interface{}, dynamic DynamicResolver,
+) *TemplateResolver {
+	return &TemplateResolver{
+		variables: variables,
+		dynamic:   dynamic,
+	}
+}
+
+// resolveDynamic resolves a single "$name:arg1:arg2" reference. Returns the
+// generated value and true when handled; false when it is not a dynamic var.
+func (tr *TemplateResolver) resolveDynamic(varName string) (string, bool) {
+	if tr.dynamic == nil || !strings.HasPrefix(varName, "$") {
+		return "", false
+	}
+	parts := strings.Split(strings.TrimPrefix(varName, "$"), ":")
+	value, err := tr.dynamic.Resolve(parts[0], parts[1:])
+	if err != nil {
+		log.Error().Err(err).Str("variable", varName).Msg("failed to resolve dynamic variable")
+		return "", false
+	}
+	return value, true
 }
 
 // Resolve recursively resolves all {{variableName}} templates in the given value
@@ -72,7 +99,10 @@ func (tr *TemplateResolver) resolveString(s string) string {
 	result := stringVariablePattern.ReplaceAllStringFunc(
 		s, func(match string) string {
 			// Extract variable name from {{varName}}
-			varName := match[2 : len(match)-2]
+			varName := strings.TrimSpace(match[2 : len(match)-2])
+			if val, handled := tr.resolveDynamic(varName); handled {
+				return val
+			}
 			if val, exists := tr.variables[varName]; exists {
 				return fmt.Sprintf("%v", val)
 			}
@@ -90,6 +120,9 @@ func (tr *TemplateResolver) resolveRawVariable(value string) (interface{}, bool)
 	}
 
 	varName := strings.TrimSpace(match[1])
+	if val, handled := tr.resolveDynamic(varName); handled {
+		return val, true
+	}
 	resolved, exists := tr.variables[varName]
 	if !exists {
 		return value, true

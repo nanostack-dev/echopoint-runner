@@ -49,6 +49,11 @@ func (si *SchemaInference) extractVariablesFromString(s string, vars map[string]
 	for _, match := range matches {
 		if len(match) > 1 {
 			varName := strings.TrimSpace(match[1])
+			// {{$name}} dynamic variables are generated at runtime, not declared
+			// inputs or node-output references, so they are not part of the schema.
+			if strings.HasPrefix(varName, "$") {
+				continue
+			}
 			vars[varName] = true
 		}
 	}
