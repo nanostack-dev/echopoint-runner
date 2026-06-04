@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/nanostack-dev/echopoint-runner/internal/controlplane"
+	"github.com/nanostack-dev/echopoint-runner/pkg/dynamicvars"
 	"github.com/nanostack-dev/echopoint-runner/pkg/engine"
 	flowpkg "github.com/nanostack-dev/echopoint-runner/pkg/flow"
 	"github.com/nanostack-dev/echopoint-runner/pkg/node"
@@ -42,6 +43,7 @@ func Run(pkg *Package) Result {
 	execResult, execErr := engine.ExecuteFlowDefinition(*flowDef, inputs, &engine.ExecuteOptions{
 		Observer:       engine.NoopObserver{},
 		ModuleResolver: buildModuleResolver(pkg),
+		DynamicVars:    dynamicvars.New(pkg.ExecutionID),
 	})
 
 	completedAt := time.Now().UTC()

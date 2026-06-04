@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	configpkg "github.com/nanostack-dev/echopoint-runner/internal/config"
 	"github.com/nanostack-dev/echopoint-runner/internal/controlplane"
+	"github.com/nanostack-dev/echopoint-runner/pkg/dynamicvars"
 	"github.com/nanostack-dev/echopoint-runner/pkg/engine"
 	flowpkg "github.com/nanostack-dev/echopoint-runner/pkg/flow"
 	"github.com/nanostack-dev/echopoint-runner/pkg/node"
@@ -182,6 +183,7 @@ func (r *Runtime) executeClaimedJob(active *activeJob) {
 	result, execErr := engine.ExecuteFlowDefinition(*flowDef, inputs, &engine.ExecuteOptions{
 		Observer:       reporter,
 		ModuleResolver: buildReferencedFlowResolver(active.job),
+		DynamicVars:    dynamicvars.New(active.job.ExecutionID.String()),
 	})
 	if execErr != nil {
 		errorMsg := execErr.Error()

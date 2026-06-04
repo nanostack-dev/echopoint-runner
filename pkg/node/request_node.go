@@ -32,6 +32,9 @@ type RequestNode struct {
 	BaseNode
 
 	Data RequestData `json:"data"`
+
+	// dynamic resolves {{$name}} variables; set per execution, not serialized.
+	dynamic DynamicResolver
 }
 
 // AsRequestNode safely casts an AnyNode to a RequestNode
@@ -77,6 +80,7 @@ func (n *RequestNode) OutputSchema() []string {
 
 func (n *RequestNode) Execute(ctx ExecutionContext) (AnyExecutionResult, error) {
 	startTime := time.Now()
+	n.dynamic = ctx.DynamicVars
 
 	log.Debug().
 		Str("nodeID", n.GetID()).
@@ -263,7 +267,7 @@ func (n *RequestNode) createResponseBackedErrorResult(
 func (n *RequestNode) resolveTemplates(
 	value interface{}, inputs map[string]interface{},
 ) interface{} {
-	resolver := NewTemplateResolver(inputs)
+	resolver := NewTemplateResolverWithDynamics(inputs, n.dynamic)
 	resolved, err := resolver.Resolve(value)
 	if err != nil {
 		return value
@@ -275,7 +279,7 @@ func (n *RequestNode) resolveTemplates(
 func (n *RequestNode) resolveTemplatesWithError(
 	value interface{}, inputs map[string]interface{},
 ) (string, error) {
-	resolver := NewTemplateResolver(inputs)
+	resolver := NewTemplateResolverWithDynamics(inputs, n.dynamic)
 	resolved, err := resolver.Resolve(value)
 	if err != nil {
 		return "", err

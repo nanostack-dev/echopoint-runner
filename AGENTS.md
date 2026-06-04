@@ -1,29 +1,24 @@
-# Agent Guide: Echopoint Runner
+# Echopoint Runner Agent Guide
 
-Engine for processing webhook events and logical flows.
+Scope: Go execution engine for webhook events and logical flows consumed by `../echopoint`.
 
-## Key Responsibilities
-- Event evaluation and transformation.
-- Flow logic execution via JSONPath.
+## Focus Areas
 
-## Tech Stack
-- **Language**: Go
-- **Libraries**: zerolog, jsonpath
+- Event evaluation, transformations, flow execution, JSONPath handling.
+- Exported progress/execution events may require matching `echopoint/cmd/http/openapi.yaml` updates.
 
-## Best Practices
-- Optimize JSONPath queries for performance.
-- Ensure thorough unit testing for complex flow logic.
-- Maintain idempotency in event processing.
+## Invariants
 
-## Tools & MCP
-- When working with external libraries, **use the Context7 MCP** for accurate usage and API details.
+- Keep event processing idempotent.
+- Optimize JSONPath paths only with tests or measured need.
+- Avoid app/control-plane policy here; `echopoint` owns accepted API/SSE contracts.
 
-## Git Conventions
-- **Commit Messages**: Follow [Conventional Commits](https://www.conventionalcommits.org/):
-  - `feat: add new flow node type`
-  - `fix: resolve JSONPath evaluation bug`
-  - `perf: optimize flow execution path`
-- **Branch Naming**: When working on tracked tasks, include ticket number:
-  - Format: `<type>/<TICKET-ID>-<description>`
-  - Examples: `feat/ENG-10-add-delay-node`, `fix/ENG-20-jsonpath-bug`
-  - For untracked work: `<type>/<description>` (e.g., `refactor/simplify-engine`)
+## Verification
+
+- Run narrow Go tests for changed packages.
+- For event shape changes, check the consuming `echopoint` contract in the same work session.
+
+## Git
+
+- Conventional Commits.
+- Branches: tracked `<type>/<TICKET-ID>-<description>`, untracked `<type>/<description>`.
