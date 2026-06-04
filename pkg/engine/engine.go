@@ -17,6 +17,7 @@ type Options struct {
 	Observer        ExecutionObserver
 	ModuleResolver  node.ModuleResolver
 	ModuleCallStack []string
+	DynamicVars     node.DynamicResolver
 }
 
 type FlowEngine struct {
@@ -28,6 +29,7 @@ type FlowEngine struct {
 	observer        ExecutionObserver
 	moduleResolver  node.ModuleResolver
 	moduleCallStack []string
+	dynamicVars     node.DynamicResolver
 }
 
 type moduleExecutor struct {
@@ -149,7 +151,25 @@ func NewFlowEngine(flowInstance flow.Flow, options *Options) (*FlowEngine, error
 		observer,
 		nilIfNoModuleResolverFromOptions(options),
 		cloneStringSlice(moduleCallStackFromOptions(options)),
+		dynamicVarsFromOptions(options),
 	}, nil
+}
+
+// dynamicVarsFromOptions returns the dynamic-variable resolver from engine
+// options, or nil.
+func dynamicVarsFromOptions(options *Options) node.DynamicResolver {
+	if options == nil {
+		return nil
+	}
+	return options.DynamicVars
+}
+
+// dynamicVarsFromExecuteOptions returns the resolver from execute options, or nil.
+func dynamicVarsFromExecuteOptions(options *ExecuteOptions) node.DynamicResolver {
+	if options == nil {
+		return nil
+	}
+	return options.DynamicVars
 }
 
 func (engine *FlowEngine) Execute(initialInputs map[string]interface{}) (
@@ -159,6 +179,7 @@ func (engine *FlowEngine) Execute(initialInputs map[string]interface{}) (
 		Observer:        engine.observer,
 		ModuleResolver:  engine.moduleResolver,
 		ModuleCallStack: cloneStringSlice(engine.moduleCallStack),
+		DynamicVars:     engine.dynamicVars,
 	})
 }
 
@@ -166,6 +187,7 @@ type ExecuteOptions struct {
 	Observer        ExecutionObserver
 	ModuleResolver  node.ModuleResolver
 	ModuleCallStack []string
+	DynamicVars     node.DynamicResolver
 }
 
 func ExecuteFlowDefinition(
@@ -202,6 +224,7 @@ func ExecuteFlowDefinition(
 		Observer:        observer,
 		ModuleResolver:  nilIfNoModuleResolver(options),
 		ModuleCallStack: moduleCallStack(options),
+		DynamicVars:     dynamicVarsFromExecuteOptions(options),
 	})
 	if err != nil {
 		return nil, err

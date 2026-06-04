@@ -1,0 +1,10 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Echopoint Runner" type="GoApplicationRunConfiguration" factoryName="Go Application">
+    <module name="echopoint-runner" />
+    <working_directory value="$PROJECT_DIR$/echopoint-runner" />
+    <kind value="PACKAGE" />
+    <package value="github.com/nanostack-dev/echopoint-runner/cmd/runner" />
+    <filePath value="$PROJECT_DIR$/echopoint-runner/cmd/runner/main.go" />
+    <method v="2" />
+  </configuration>
+</component>

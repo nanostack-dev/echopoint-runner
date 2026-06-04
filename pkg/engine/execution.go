@@ -248,6 +248,7 @@ func (engine *FlowEngine) runNode(
 		AllOutputs:     outputView,
 		ModuleResolver: engine.moduleResolver,
 		ModuleExecutor: moduleExecutor{resolver: engine.moduleResolver, callStack: engine.moduleCallStack},
+		DynamicVars:    engine.dynamicVars,
 	}
 
 	result, err := n.Execute(ctx)
