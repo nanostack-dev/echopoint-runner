@@ -290,7 +290,7 @@ func executionResultToEventPayload(result node.AnyExecutionResult) map[string]in
 		"outputs":      result.GetOutputs(),
 	}
 
-	if requestResult, ok := node.AsRequestExecutionResult(result); ok {
+	if requestResult, ok := node.As[*node.RequestExecutionResult](result); ok {
 		payload["request"] = map[string]interface{}{
 			"method":  requestResult.RequestMethod,
 			"url":     requestResult.RequestURL,
@@ -304,7 +304,7 @@ func executionResultToEventPayload(result node.AnyExecutionResult) map[string]in
 			payload["assertion_results"] = requestResult.AssertionResults
 		}
 		payload["duration_ms"] = requestResult.DurationMs
-	} else if delayResult, isDelayResult := node.AsDelayExecutionResult(result); isDelayResult {
+	} else if delayResult, isDelayResult := node.As[*node.DelayExecutionResult](result); isDelayResult {
 		payload["delay_ms"] = delayResult.DelayMs
 	}
 

@@ -985,13 +985,13 @@ func TestFlowEngine_Execute_ModuleNodeExportsNestedOutputs(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, result.Success)
 
-	chargeResult := node.MustAsModuleExecutionResult(result.ExecutionResults["charge-customer"])
+	chargeResult := node.MustAs[*node.ModuleExecutionResult](result.ExecutionResults["charge-customer"])
 	assert.Equal(t, "flow-charge", chargeResult.FlowID)
 	assert.Equal(t, "cust-123", chargeResult.GetInputs()["customerId"])
 	assert.Equal(t, "gbp", chargeResult.GetInputs()["currency"])
 	assert.Contains(t, chargeResult.ChildFinalOutputs, "create-charge.chargeId")
 
-	notifyResult := node.MustAsModuleExecutionResult(result.ExecutionResults["notify-customer"])
+	notifyResult := node.MustAs[*node.ModuleExecutionResult](result.ExecutionResults["notify-customer"])
 	assert.Equal(t, chargeResult.GetOutputs()["chargeId"], notifyResult.GetInputs()["charge-customer.chargeId"])
 	assert.Equal(t, chargeResult.GetOutputs()["status"], notifyResult.GetInputs()["charge-customer.status"])
 
@@ -1078,7 +1078,7 @@ func TestFlowEngine_Execute_ModuleNodeInheritsInputsAndAppliesOverrides(t *testi
 	require.NoError(t, err)
 	require.True(t, result.Success)
 
-	moduleResult := node.MustAsModuleExecutionResult(result.ExecutionResults["run-module"])
+	moduleResult := node.MustAs[*node.ModuleExecutionResult](result.ExecutionResults["run-module"])
 
 	assert.Equal(t, "req-123", moduleResult.GetInputs()["requestId"])
 	assert.Equal(t, "bound-token", moduleResult.GetInputs()["tokenOverride"])
@@ -1136,7 +1136,7 @@ func TestFlowEngine_Execute_ModuleNodeFailsWhenChildOutputBindingMissing(t *test
 	require.False(t, result.Success)
 	assert.Contains(t, err.Error(), "module output \"missing\" references unavailable child output")
 
-	moduleResult := node.MustAsModuleExecutionResult(result.ExecutionResults["module-step"])
+	moduleResult := node.MustAs[*node.ModuleExecutionResult](result.ExecutionResults["module-step"])
 	require.Error(t, moduleResult.GetError())
 	assert.Equal(t, "flow-child", moduleResult.FlowID)
 }
@@ -1187,7 +1187,7 @@ func TestFlowEngine_Execute_ModuleNodeTrimsFlowID(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, result.Success)
 
-	moduleResult := node.MustAsModuleExecutionResult(result.ExecutionResults["module-step"])
+	moduleResult := node.MustAs[*node.ModuleExecutionResult](result.ExecutionResults["module-step"])
 	assert.Equal(t, "flow-child", moduleResult.FlowID)
 	assert.Empty(t, moduleResult.GetOutputs())
 	assert.Empty(t, moduleResult.ChildFinalOutputs)
