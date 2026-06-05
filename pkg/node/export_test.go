@@ -3,7 +3,17 @@ package node
 import (
 	"net/http"
 	"time"
+
+	"github.com/nanostack-dev/echopoint-runner/pkg/extractors"
 )
+
+// RunAssertionsForTest exposes the unexported runAssertions so tests can verify
+// that every assertion outcome is recorded.
+func RunAssertionsForTest(
+	n *RequestNode, ctx extractors.ResponseContext,
+) ([]AssertionResult, error) {
+	return n.runAssertions(ctx)
+}
 
 func PrepareRequestForTest(
 	n *RequestNode,
@@ -24,5 +34,7 @@ func CreateResponseBackedErrorResultForTest(
 	err error,
 	duration time.Duration,
 ) AnyExecutionResult {
-	return n.createResponseBackedErrorResult(inputs, url, headers, body, resp, respBody, parsedBody, err, duration)
+	return n.createResponseBackedErrorResult(
+		inputs, url, headers, body, resp, respBody, parsedBody, nil, err, duration,
+	)
 }

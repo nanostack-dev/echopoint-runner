@@ -111,17 +111,14 @@ func (n *RequestNode) Execute(ctx ExecutionContext) (AnyExecutionResult, error) 
 	log.Debug().
 		Str("nodeID", n.GetID()).
 		Int("statusCode", resp.StatusCode).
-		Msg("HTTP response received")
-
-	log.Debug().
-		Str("nodeID", n.GetID()).
 		Int("bodySize", len(respBody)).
-		Msg("Response body read")
+		Msg("HTTP response received")
 
 	parsedBody := n.parseResponseBody(resp.Header.Get("Content-Type"), respBody)
 	respCtx := extractors.NewResponseContext(resp, respBody, parsedBody)
 
-	if assertErr := n.runAssertions(respCtx); assertErr != nil {
+	assertionResults, assertErr := n.runAssertions(respCtx)
+	if assertErr != nil {
 		return n.createResponseBackedErrorResult(
 			ctx.Inputs,
 			url,
@@ -130,6 +127,7 @@ func (n *RequestNode) Execute(ctx ExecutionContext) (AnyExecutionResult, error) 
 			resp,
 			respBody,
 			parsedBody,
+			assertionResults,
 			assertErr,
 			time.Since(startTime),
 		), assertErr
@@ -145,6 +143,7 @@ func (n *RequestNode) Execute(ctx ExecutionContext) (AnyExecutionResult, error) 
 			resp,
 			respBody,
 			parsedBody,
+			assertionResults,
 			err,
 			time.Since(startTime),
 		), err
@@ -159,12 +158,15 @@ func (n *RequestNode) Execute(ctx ExecutionContext) (AnyExecutionResult, error) 
 			resp,
 			respBody,
 			parsedBody,
+			assertionResults,
 			validateErr,
 			time.Since(startTime),
 		), validateErr
 	}
 
-	result := n.createSuccessResult(ctx.Inputs, outputs, url, headers, body, resp, respBody, parsedBody, startTime)
+	result := n.createSuccessResult(
+		ctx.Inputs, outputs, url, headers, body, resp, respBody, parsedBody, assertionResults, startTime,
+	)
 
 	log.Info().
 		Str("nodeID", n.GetID()).
@@ -185,6 +187,7 @@ func (n *RequestNode) createSuccessResult(
 	resp *http.Response,
 	respBody []byte,
 	parsedBody interface{},
+	assertionResults []AssertionResult,
 	startTime time.Time,
 ) *RequestExecutionResult {
 	return &RequestExecutionResult{
@@ -204,6 +207,7 @@ func (n *RequestNode) createSuccessResult(
 		ResponseHeaders:    resp.Header,
 		ResponseBody:       respBody,
 		ResponseBodyParsed: parsedBody,
+		AssertionResults:   assertionResults,
 		DurationMs:         time.Since(startTime).Milliseconds(),
 	}
 }
@@ -241,6 +245,7 @@ func (n *RequestNode) createResponseBackedErrorResult(
 	resp *http.Response,
 	respBody []byte,
 	parsedBody interface{},
+	assertionResults []AssertionResult,
 	err error,
 	duration time.Duration,
 ) AnyExecutionResult {
@@ -260,6 +265,7 @@ func (n *RequestNode) createResponseBackedErrorResult(
 	}
 	reqResult.ResponseBody = respBody
 	reqResult.ResponseBodyParsed = parsedBody
+	reqResult.AssertionResults = assertionResults
 
 	return reqResult
 }

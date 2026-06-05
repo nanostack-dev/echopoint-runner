@@ -102,17 +102,36 @@ func synthesizeExtractorJSON(extractorType string, extractorData json.RawMessage
 	return out, nil
 }
 
-// Evaluate extracts the actual value from the response and applies the operator
-// against the expected value. Returns true when the assertion holds.
-func (ca *CompositeAssertion) Evaluate(ctx extractors.ResponseContext) (bool, error) {
+// Evaluate runs the assertion against the response and returns a full result
+// record. Index is left zero for the caller to assign. Passed is true only when
+// the extractor succeeds and the operator holds; Error is set (and Passed false,
+// Actual possibly nil) when the extractor or operator errors. This is the single
+// evaluation entry point — it both decides pass/fail and captures what was
+// compared, so callers never re-derive the outcome.
+func (ca *CompositeAssertion) Evaluate(ctx extractors.ResponseContext) AssertionResult {
+	res := AssertionResult{
+		Extractor: ca.ExtractorType,
+		Operator:  ca.OperatorType,
+		Expected:  ca.ExpectedValue,
+	}
 	if ca.Extractor == nil {
-		return false, fmt.Errorf("assertion has no extractor (type %q)", ca.ExtractorType)
+		res.Error = fmt.Sprintf("assertion has no extractor (type %q)", ca.ExtractorType)
+		return res
 	}
 	actual, err := ca.Extractor.Extract(ctx)
 	if err != nil {
-		return false, fmt.Errorf("extractor %q failed: %w", ca.ExtractorType, err)
+		res.Error = fmt.Sprintf("extractor %q failed: %v", ca.ExtractorType, err)
+		return res
 	}
-	return applyOperator(ca.OperatorType, actual, ca.ExpectedValue)
+	res.Actual = actual
+
+	passed, err := applyOperator(ca.OperatorType, actual, ca.ExpectedValue)
+	if err != nil {
+		res.Error = err.Error()
+		return res
+	}
+	res.Passed = passed
+	return res
 }
 
 func applyOperator(operator string, actual, expected interface{}) (bool, error) {

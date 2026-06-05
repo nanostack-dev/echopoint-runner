@@ -300,6 +300,9 @@ func executionResultToEventPayload(result node.AnyExecutionResult) map[string]in
 			"status_code": requestResult.ResponseStatusCode,
 			"headers":     requestResult.ResponseHeaders,
 		}
+		if len(requestResult.AssertionResults) > 0 {
+			payload["assertion_results"] = requestResult.AssertionResults
+		}
 		payload["duration_ms"] = requestResult.DurationMs
 	} else if delayResult, isDelayResult := node.AsDelayExecutionResult(result); isDelayResult {
 		payload["delay_ms"] = delayResult.DelayMs
