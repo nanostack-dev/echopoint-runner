@@ -85,12 +85,12 @@ func Test_CreateUserFlow(t *testing.T) {
 	require.NotNil(t, createdUserData, "createdUser should be extracted")
 
 	// Parse the response to verify template substitution worked
-	var createdUserMap map[string]interface{}
+	var createdUserMap map[string]any
 	createdUserBytes, _ := json.Marshal(createdUserData)
 	err = json.Unmarshal(createdUserBytes, &createdUserMap)
 	require.NoError(t, err, "failed to unmarshal created user response")
 
-	userField := createdUserMap["user"].(map[string]interface{})
+	userField := createdUserMap["user"].(map[string]any)
 	assert.Equal(t, "Alice Smith", userField["name"], "name should match sent data")
 	assert.Equal(t, "alice@example.com", userField["email"], "email should match sent data")
 

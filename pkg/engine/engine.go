@@ -172,7 +172,7 @@ func dynamicVarsFromExecuteOptions(options *ExecuteOptions) node.DynamicResolver
 	return options.DynamicVars
 }
 
-func (engine *FlowEngine) Execute(initialInputs map[string]interface{}) (
+func (engine *FlowEngine) Execute(initialInputs map[string]any) (
 	*node.FlowExecutionResult, error,
 ) {
 	return ExecuteFlowDefinition(engine.flow, initialInputs, &ExecuteOptions{
@@ -192,13 +192,13 @@ type ExecuteOptions struct {
 
 func ExecuteFlowDefinition(
 	flowInstance flow.Flow,
-	initialInputs map[string]interface{},
+	initialInputs map[string]any,
 	options *ExecuteOptions,
 ) (*node.FlowExecutionResult, error) {
 	startTime := time.Now()
 	result := &node.FlowExecutionResult{
 		ExecutionResults: make(map[string]node.AnyExecutionResult),
-		FinalOutputs:     make(map[string]interface{}),
+		FinalOutputs:     make(map[string]any),
 		Success:          false,
 	}
 
@@ -319,7 +319,7 @@ func cloneStringSlice(values []string) []string {
 	return cloned
 }
 
-func sortedInputKeys(inputs map[string]interface{}) []string {
+func sortedInputKeys(inputs map[string]any) []string {
 	keys := make([]string, 0, len(inputs))
 	for key := range inputs {
 		trimmed := strings.TrimSpace(key)
@@ -383,8 +383,8 @@ func (engine *FlowEngine) validateInputs(
 // assembleInputs gathers inputs for a node from previous outputs.
 func (engine *FlowEngine) assembleInputs(
 	nodeToExecute node.AnyNode, allOutputs node.OutputView,
-) map[string]interface{} {
-	inputs := make(map[string]interface{})
+) map[string]any {
+	inputs := make(map[string]any)
 
 	for _, inputKey := range nodeToExecute.InputSchema() {
 		sourceNodeID, outputKey, _ := parseDataRef(inputKey)

@@ -172,7 +172,7 @@ func (r *Runtime) executeClaimedJob(active *activeJob) {
 		return
 	}
 
-	inputs := make(map[string]interface{}, len(active.job.Inputs)+len(flowDef.InitialInputs))
+	inputs := make(map[string]any, len(active.job.Inputs)+len(flowDef.InitialInputs))
 	for key, value := range flowDef.InitialInputs {
 		inputs[key] = value
 	}
@@ -258,18 +258,18 @@ func buildReferencedFlowResolver(job *controlplane.ClaimedJob) node.ModuleResolv
 	return referencedFlowResolver{flows: resolved}
 }
 
-func cloneInputs(source map[string]interface{}) map[string]interface{} {
+func cloneInputs(source map[string]any) map[string]any {
 	if len(source) == 0 {
 		return nil
 	}
-	cloned := make(map[string]interface{}, len(source))
+	cloned := make(map[string]any, len(source))
 	for key, value := range source {
 		cloned[key] = value
 	}
 	return cloned
 }
 
-func sortedInputKeys(inputs map[string]interface{}) []string {
+func sortedInputKeys(inputs map[string]any) []string {
 	keys := make([]string, 0, len(inputs))
 	for key := range inputs {
 		keys = append(keys, key)

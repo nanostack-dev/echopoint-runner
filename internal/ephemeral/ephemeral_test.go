@@ -62,9 +62,9 @@ func failingFlowJSON() []byte {
 }
 
 // buildPackage is a test helper for constructing a Package with required fields.
-func buildPackage(executionID, flowID string, flowDef []byte, inputs map[string]interface{}) *ephemeral.Package {
+func buildPackage(executionID, flowID string, flowDef []byte, inputs map[string]any) *ephemeral.Package {
 	if inputs == nil {
-		inputs = map[string]interface{}{}
+		inputs = map[string]any{}
 	}
 	return &ephemeral.Package{
 		ExecutionID:    executionID,
@@ -220,7 +220,7 @@ func TestRun_ReferencedModuleFlows_Work(t *testing.T) {
 		ExecutionID:    "exec-module",
 		FlowID:         "parent-flow-id",
 		FlowDefinition: parentFlowDef,
-		Inputs:         map[string]interface{}{},
+		Inputs:         map[string]any{},
 		ReferencedFlows: flowpkg.ReferencedFlowRegistry{
 			"child-flow-id": flowpkg.ReferencedFlow{
 				FlowDefinition: childFlowDef,
@@ -233,7 +233,7 @@ func TestRun_ReferencedModuleFlows_Work(t *testing.T) {
 	assert.Equal(t, "completed", result.Status, "expected completed but got error: %v", result.ErrorMessage)
 	require.NotNil(t, result.Result)
 	payload := *result.Result
-	executionResults, ok := payload["execution_results"].(map[string]interface{})
+	executionResults, ok := payload["execution_results"].(map[string]any)
 	require.True(t, ok)
 	assert.Contains(t, executionResults, "run-child")
 }
@@ -271,7 +271,7 @@ func TestRun_DoesNotLogInputValues(t *testing.T) {
 	defer server.Close()
 
 	secretValue := "super-secret-token-xyzzy-42"
-	pkg := buildPackage("exec-secret", "flow-secret", minimalFlowJSON(server.URL), map[string]interface{}{
+	pkg := buildPackage("exec-secret", "flow-secret", minimalFlowJSON(server.URL), map[string]any{
 		"API_TOKEN": secretValue,
 	})
 
@@ -349,7 +349,7 @@ func TestRun_ResultTimestampsAreValid(t *testing.T) {
 	encoded, err := json.Marshal(result)
 	require.NoError(t, err)
 
-	var raw map[string]interface{}
+	var raw map[string]any
 	require.NoError(t, json.Unmarshal(encoded, &raw))
 
 	_, ok := raw["started_at"].(string)

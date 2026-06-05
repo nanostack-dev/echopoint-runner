@@ -19,12 +19,12 @@ import (
 const defaultRequestTimeoutMs = 30000
 
 type RequestData struct {
-	Method      string                 `json:"method"`
-	URL         string                 `json:"url"`
-	Headers     map[string]string      `json:"headers"`
-	QueryParams map[string]interface{} `json:"queryParams"`
-	Body        interface{}            `json:"body"`
-	Timeout     int                    `json:"timeout"`
+	Method      string            `json:"method"`
+	URL         string            `json:"url"`
+	Headers     map[string]string `json:"headers"`
+	QueryParams map[string]any    `json:"queryParams"`
+	Body        any               `json:"body"`
+	Timeout     int               `json:"timeout"`
 }
 
 // RequestNode is a typed node for HTTP requests.
@@ -114,58 +114,45 @@ func (n *RequestNode) Execute(ctx ExecutionContext) (AnyExecutionResult, error) 
 		Int("bodySize", len(respBody)).
 		Msg("HTTP response received")
 
+	return n.processResponse(ctx.Inputs, url, headers, body, resp, respBody, startTime)
+}
+
+// processResponse runs assertions, extracts and validates outputs, and builds the
+// final result for a completed HTTP exchange. Any of the three failure points
+// produces a response-backed error result carrying the assertions evaluated so far.
+func (n *RequestNode) processResponse(
+	inputs map[string]any,
+	url string,
+	headers map[string]string,
+	body any,
+	resp *http.Response,
+	respBody []byte,
+	startTime time.Time,
+) (AnyExecutionResult, error) {
 	parsedBody := n.parseResponseBody(resp.Header.Get("Content-Type"), respBody)
 	respCtx := extractors.NewResponseContext(resp, respBody, parsedBody)
 
 	assertionResults, assertErr := n.runAssertions(respCtx)
-	if assertErr != nil {
+	errResult := func(err error) (AnyExecutionResult, error) {
 		return n.createResponseBackedErrorResult(
-			ctx.Inputs,
-			url,
-			headers,
-			body,
-			resp,
-			respBody,
-			parsedBody,
-			assertionResults,
-			assertErr,
-			time.Since(startTime),
-		), assertErr
+			inputs, url, headers, body, resp, respBody, parsedBody, assertionResults, err, time.Since(startTime),
+		), err
+	}
+	if assertErr != nil {
+		return errResult(assertErr)
 	}
 
 	outputs, err := n.extractOutputs(respCtx)
 	if err != nil {
-		return n.createResponseBackedErrorResult(
-			ctx.Inputs,
-			url,
-			headers,
-			body,
-			resp,
-			respBody,
-			parsedBody,
-			assertionResults,
-			err,
-			time.Since(startTime),
-		), err
+		return errResult(err)
 	}
 
 	if validateErr := n.validateOutput(outputs); validateErr != nil {
-		return n.createResponseBackedErrorResult(
-			ctx.Inputs,
-			url,
-			headers,
-			body,
-			resp,
-			respBody,
-			parsedBody,
-			assertionResults,
-			validateErr,
-			time.Since(startTime),
-		), validateErr
+		return errResult(validateErr)
 	}
 
 	result := n.createSuccessResult(
-		ctx.Inputs, outputs, url, headers, body, resp, respBody, parsedBody, assertionResults, startTime,
+		inputs, outputs, url, headers, body, resp, respBody, parsedBody, assertionResults, startTime,
 	)
 
 	log.Info().
@@ -179,14 +166,14 @@ func (n *RequestNode) Execute(ctx ExecutionContext) (AnyExecutionResult, error) 
 }
 
 func (n *RequestNode) createSuccessResult(
-	inputs map[string]interface{},
-	outputs map[string]interface{},
+	inputs map[string]any,
+	outputs map[string]any,
 	url string,
 	headers map[string]string,
-	body interface{},
+	body any,
 	resp *http.Response,
 	respBody []byte,
-	parsedBody interface{},
+	parsedBody any,
 	assertionResults []AssertionResult,
 	startTime time.Time,
 ) *RequestExecutionResult {
@@ -214,7 +201,7 @@ func (n *RequestNode) createSuccessResult(
 
 // createErrorResult creates a RequestExecutionResult for error cases.
 func (n *RequestNode) createErrorResult(
-	inputs map[string]interface{},
+	inputs map[string]any,
 	err error,
 	duration time.Duration,
 ) AnyExecutionResult {
@@ -238,13 +225,13 @@ func (n *RequestNode) createErrorResult(
 }
 
 func (n *RequestNode) createResponseBackedErrorResult(
-	inputs map[string]interface{},
+	inputs map[string]any,
 	url string,
 	headers map[string]string,
-	body interface{},
+	body any,
 	resp *http.Response,
 	respBody []byte,
-	parsedBody interface{},
+	parsedBody any,
 	assertionResults []AssertionResult,
 	err error,
 	duration time.Duration,
@@ -271,8 +258,8 @@ func (n *RequestNode) createResponseBackedErrorResult(
 }
 
 func (n *RequestNode) resolveTemplates(
-	value interface{}, inputs map[string]interface{},
-) interface{} {
+	value any, inputs map[string]any,
+) any {
 	resolver := NewTemplateResolverWithDynamics(inputs, n.dynamic)
 	resolved, err := resolver.Resolve(value)
 	if err != nil {
@@ -283,7 +270,7 @@ func (n *RequestNode) resolveTemplates(
 
 // resolveTemplatesWithError is like resolveTemplates but returns errors.
 func (n *RequestNode) resolveTemplatesWithError(
-	value interface{}, inputs map[string]interface{},
+	value any, inputs map[string]any,
 ) (string, error) {
 	resolver := NewTemplateResolverWithDynamics(inputs, n.dynamic)
 	resolved, err := resolver.Resolve(value)
@@ -300,7 +287,7 @@ func (n *RequestNode) resolveTemplatesWithError(
 // makeRequestAndReadBody makes an HTTP request and reads the entire response body
 // within the timeout period. The timeout applies to the entire operation (request + body read).
 func (n *RequestNode) makeRequestAndReadBody(
-	url, method string, headers map[string]string, body interface{}, timeout int,
+	url, method string, headers map[string]string, body any, timeout int,
 ) (*http.Response, []byte, error) {
 	// An unset/zero timeout means "no explicit timeout"; apply a sane default so the
 	// request isn't cancelled with an instant 0ms deadline.
