@@ -105,9 +105,11 @@ type CompleteJobRequest struct {
 }
 
 type RunnerProgressEvent struct {
-	Sequence int64                  `json:"sequence"`
-	Type     executionevents.Type   `json:"type"`
-	Payload  map[string]interface{} `json:"payload"`
+	Sequence int64                `json:"sequence"`
+	Type     executionevents.Type `json:"type"`
+	// Payload is the event-type-specific body, marshalled as a JSON object.
+	// It is a typed struct at the call site (see internal/runtime payloads).
+	Payload any `json:"payload"`
 }
 
 type SendJobEventsRequest struct {
