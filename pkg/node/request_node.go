@@ -114,58 +114,45 @@ func (n *RequestNode) Execute(ctx ExecutionContext) (AnyExecutionResult, error) 
 		Int("bodySize", len(respBody)).
 		Msg("HTTP response received")
 
+	return n.processResponse(ctx.Inputs, url, headers, body, resp, respBody, startTime)
+}
+
+// processResponse runs assertions, extracts and validates outputs, and builds the
+// final result for a completed HTTP exchange. Any of the three failure points
+// produces a response-backed error result carrying the assertions evaluated so far.
+func (n *RequestNode) processResponse(
+	inputs map[string]interface{},
+	url string,
+	headers map[string]string,
+	body interface{},
+	resp *http.Response,
+	respBody []byte,
+	startTime time.Time,
+) (AnyExecutionResult, error) {
 	parsedBody := n.parseResponseBody(resp.Header.Get("Content-Type"), respBody)
 	respCtx := extractors.NewResponseContext(resp, respBody, parsedBody)
 
 	assertionResults, assertErr := n.runAssertions(respCtx)
-	if assertErr != nil {
+	errResult := func(err error) (AnyExecutionResult, error) {
 		return n.createResponseBackedErrorResult(
-			ctx.Inputs,
-			url,
-			headers,
-			body,
-			resp,
-			respBody,
-			parsedBody,
-			assertionResults,
-			assertErr,
-			time.Since(startTime),
-		), assertErr
+			inputs, url, headers, body, resp, respBody, parsedBody, assertionResults, err, time.Since(startTime),
+		), err
+	}
+	if assertErr != nil {
+		return errResult(assertErr)
 	}
 
 	outputs, err := n.extractOutputs(respCtx)
 	if err != nil {
-		return n.createResponseBackedErrorResult(
-			ctx.Inputs,
-			url,
-			headers,
-			body,
-			resp,
-			respBody,
-			parsedBody,
-			assertionResults,
-			err,
-			time.Since(startTime),
-		), err
+		return errResult(err)
 	}
 
 	if validateErr := n.validateOutput(outputs); validateErr != nil {
-		return n.createResponseBackedErrorResult(
-			ctx.Inputs,
-			url,
-			headers,
-			body,
-			resp,
-			respBody,
-			parsedBody,
-			assertionResults,
-			validateErr,
-			time.Since(startTime),
-		), validateErr
+		return errResult(validateErr)
 	}
 
 	result := n.createSuccessResult(
-		ctx.Inputs, outputs, url, headers, body, resp, respBody, parsedBody, assertionResults, startTime,
+		inputs, outputs, url, headers, body, resp, respBody, parsedBody, assertionResults, startTime,
 	)
 
 	log.Info().

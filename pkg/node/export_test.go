@@ -15,6 +15,21 @@ func RunAssertionsForTest(
 	return n.runAssertions(ctx)
 }
 
+// ProcessResponseForTest exposes the unexported processResponse so tests can
+// exercise the assert -> extract -> validate -> build path without HTTP.
+func ProcessResponseForTest(
+	n *RequestNode,
+	inputs map[string]interface{},
+	url string,
+	headers map[string]string,
+	body interface{},
+	resp *http.Response,
+	respBody []byte,
+	startTime time.Time,
+) (AnyExecutionResult, error) {
+	return n.processResponse(inputs, url, headers, body, resp, respBody, startTime)
+}
+
 func PrepareRequestForTest(
 	n *RequestNode,
 	inputs map[string]interface{},
