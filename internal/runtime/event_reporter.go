@@ -14,8 +14,6 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-const fieldTimestamp = "timestamp"
-
 const (
 	reporterMaxBatchEvents = 16
 	reporterMaxBatchBytes  = 32 * 1024
@@ -103,21 +101,21 @@ func (r *jobEventReporter) LastSequencePtr() *int64 {
 
 func (r *jobEventReporter) FlowStarted(evt engine.FlowStartedEvent) {
 	r.flowName = evt.FlowName
-	if err := r.enqueue(string(executionevents.FlowStarted), map[string]interface{}{
-		"execution_id": r.executionID.String(),
-		"flowName":     evt.FlowName,
-		fieldTimestamp: evt.StartedAt.Format(time.RFC3339),
+	if err := r.enqueue(string(executionevents.FlowStarted), flowStartedPayload{
+		ExecutionID: r.executionID.String(),
+		FlowName:    evt.FlowName,
+		Timestamp:   evt.StartedAt.Format(time.RFC3339),
 	}); err != nil {
 		log.Warn().Err(err).Str("job_id", r.jobID.String()).Msg("failed to enqueue flow.started event")
 	}
 }
 
 func (r *jobEventReporter) NodeStarted(evt engine.NodeStartedEvent) {
-	if err := r.enqueue(string(executionevents.NodeStarted), map[string]interface{}{
-		"nodeId":       evt.NodeID,
-		"displayName":  evt.DisplayName,
-		"nodeType":     string(evt.NodeType),
-		fieldTimestamp: evt.StartedAt.Format(time.RFC3339),
+	if err := r.enqueue(string(executionevents.NodeStarted), nodeStartedPayload{
+		NodeID:      evt.NodeID,
+		DisplayName: evt.DisplayName,
+		NodeType:    string(evt.NodeType),
+		Timestamp:   evt.StartedAt.Format(time.RFC3339),
 	}); err != nil {
 		log.Warn().
 			Err(err).
@@ -128,23 +126,24 @@ func (r *jobEventReporter) NodeStarted(evt engine.NodeStartedEvent) {
 }
 
 func (r *jobEventReporter) NodeFinished(evt engine.NodeFinishedEvent) {
-	payload := map[string]interface{}{
-		"nodeId":       evt.NodeID,
-		"displayName":  evt.DisplayName,
-		"duration":     evt.DurationMs,
-		fieldTimestamp: evt.FinishedAt.Format(time.RFC3339),
+	payload := nodeFinishedPayload{
+		NodeID:      evt.NodeID,
+		DisplayName: evt.DisplayName,
+		Duration:    evt.DurationMs,
+		Timestamp:   evt.FinishedAt.Format(time.RFC3339),
 	}
 
 	eventType := executionevents.NodeCompleted
 	if evt.Result != nil && evt.Result.GetError() == nil {
-		payload["success"] = true
-		payload["result"] = executionResultToEventPayload(evt.Result)
+		succeeded := true
+		payload.Success = &succeeded
+		payload.Result = executionResultToEventPayload(evt.Result)
 	} else {
 		eventType = executionevents.NodeFailed
 		if evt.Result != nil && evt.Result.GetError() != nil {
-			payload["error"] = evt.Result.GetError().Error()
+			payload.Error = evt.Result.GetError().Error()
 		} else {
-			payload["error"] = "node execution failed"
+			payload.Error = "node execution failed"
 		}
 	}
 
@@ -221,7 +220,7 @@ func (r *jobEventReporter) Flush(ctx context.Context) error {
 	return nil
 }
 
-func (r *jobEventReporter) enqueue(eventType string, payload map[string]interface{}) error {
+func (r *jobEventReporter) enqueue(eventType string, payload any) error {
 	r.mu.Lock()
 	r.nextSequence++
 	event := controlplane.RunnerProgressEvent{
@@ -278,34 +277,34 @@ func eventSize(event controlplane.RunnerProgressEvent) int {
 	return len(encoded)
 }
 
-func executionResultToEventPayload(result node.AnyExecutionResult) map[string]interface{} {
+func executionResultToEventPayload(result node.AnyExecutionResult) *nodeResultPayload {
 	if result == nil {
 		return nil
 	}
 
-	payload := map[string]interface{}{
-		"node_id":      result.GetNodeID(),
-		"display_name": result.GetDisplayName(),
-		"node_type":    string(result.GetNodeType()),
-		"outputs":      result.GetOutputs(),
+	payload := &nodeResultPayload{
+		NodeID:      result.GetNodeID(),
+		DisplayName: result.GetDisplayName(),
+		NodeType:    string(result.GetNodeType()),
+		Outputs:     result.GetOutputs(),
 	}
 
-	if requestResult, ok := node.AsRequestExecutionResult(result); ok {
-		payload["request"] = map[string]interface{}{
-			"method":  requestResult.RequestMethod,
-			"url":     requestResult.RequestURL,
-			"headers": requestResult.RequestHeaders,
+	if requestResult, ok := node.As[*node.RequestExecutionResult](result); ok {
+		payload.Request = &requestInfo{
+			Method:  requestResult.RequestMethod,
+			URL:     requestResult.RequestURL,
+			Headers: requestResult.RequestHeaders,
 		}
-		payload["response"] = map[string]interface{}{
-			"status_code": requestResult.ResponseStatusCode,
-			"headers":     requestResult.ResponseHeaders,
+		payload.Response = &responseInfo{
+			StatusCode:       requestResult.ResponseStatusCode,
+			Headers:          requestResult.ResponseHeaders,
+			AssertionResults: requestResult.AssertionResults,
 		}
-		if len(requestResult.AssertionResults) > 0 {
-			payload["assertion_results"] = requestResult.AssertionResults
-		}
-		payload["duration_ms"] = requestResult.DurationMs
-	} else if delayResult, isDelayResult := node.AsDelayExecutionResult(result); isDelayResult {
-		payload["delay_ms"] = delayResult.DelayMs
+		durationMs := requestResult.DurationMs
+		payload.DurationMs = &durationMs
+	} else if delayResult, isDelayResult := node.As[*node.DelayExecutionResult](result); isDelayResult {
+		delayMs := delayResult.DelayMs
+		payload.DelayMs = &delayMs
 	}
 
 	return payload

@@ -9,14 +9,14 @@ import (
 type concreteResponseContext struct {
 	resp        *http.Response
 	rawBody     []byte
-	parsedBody  interface{}
+	parsedBody  any
 	bodyReader  io.Reader
 	contentType string
 }
 
 // NewResponseContext creates a new ResponseContext from an HTTP response.
 func NewResponseContext(
-	resp *http.Response, rawBody []byte, parsedBody interface{},
+	resp *http.Response, rawBody []byte, parsedBody any,
 ) ResponseContext {
 	return &concreteResponseContext{
 		resp:        resp,
@@ -72,14 +72,14 @@ func (rc *concreteResponseContext) GetBody() io.Reader {
 	// Return a reader over the raw body (already consumed from response)
 	return io.NopCloser(io.NopCloser(io.Reader(nil)))
 }
-func (rc *concreteResponseContext) GetParsedBody() interface{} {
+func (rc *concreteResponseContext) GetParsedBody() any {
 	return rc.parsedBody
 }
 
 func (rc *concreteResponseContext) GetRawBody() []byte {
 	return rc.rawBody
 }
-func (rc *concreteResponseContext) GetDuration() interface{} {
+func (rc *concreteResponseContext) GetDuration() any {
 	// Placeholder for future timing information
 	return nil
 }

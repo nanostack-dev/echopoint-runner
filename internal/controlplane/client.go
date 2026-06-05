@@ -52,7 +52,7 @@ type ClaimedJob struct {
 	FlowID          uuid.UUID                      `json:"flow_id"`
 	LeaseExpiresAt  time.Time                      `json:"lease_expires_at"`
 	FlowDefinition  json.RawMessage                `json:"flow_definition"`
-	Inputs          map[string]interface{}         `json:"inputs"`
+	Inputs          map[string]any                 `json:"inputs"`
 	ReferencedFlows flowpkg.ReferencedFlowRegistry `json:"referenced_flows,omitempty"`
 }
 
@@ -63,7 +63,7 @@ func (j *ClaimedJob) UnmarshalJSON(data []byte) error {
 		FlowID          uuid.UUID                      `json:"flow_id"`
 		LeaseExpiresAt  time.Time                      `json:"lease_expires_at"`
 		FlowDefinition  json.RawMessage                `json:"flow_definition"`
-		Inputs          map[string]interface{}         `json:"inputs"`
+		Inputs          map[string]any                 `json:"inputs"`
 		Environment     map[string]string              `json:"environment"`
 		ReferencedFlows flowpkg.ReferencedFlowRegistry `json:"referenced_flows,omitempty"`
 	}
@@ -75,7 +75,7 @@ func (j *ClaimedJob) UnmarshalJSON(data []byte) error {
 
 	inputs := raw.Inputs
 	if len(inputs) == 0 && len(raw.Environment) > 0 {
-		inputs = make(map[string]interface{}, len(raw.Environment))
+		inputs = make(map[string]any, len(raw.Environment))
 		for key, value := range raw.Environment {
 			inputs[key] = value
 		}
@@ -92,22 +92,24 @@ func (j *ClaimedJob) UnmarshalJSON(data []byte) error {
 }
 
 type CompleteJobRequest struct {
-	RunnerID          string                  `json:"runner_id"`
-	BootID            uuid.UUID               `json:"boot_id"`
-	Status            string                  `json:"status"`
-	StartedAt         time.Time               `json:"started_at"`
-	CompletedAt       time.Time               `json:"completed_at"`
-	DurationMs        int64                   `json:"duration_ms"`
-	Result            *map[string]interface{} `json:"result,omitempty"`
-	ErrorMessage      *string                 `json:"error_message,omitempty"`
-	ErrorCode         *string                 `json:"error_code,omitempty"`
-	LastEventSequence *int64                  `json:"last_event_sequence,omitempty"`
+	RunnerID          string          `json:"runner_id"`
+	BootID            uuid.UUID       `json:"boot_id"`
+	Status            string          `json:"status"`
+	StartedAt         time.Time       `json:"started_at"`
+	CompletedAt       time.Time       `json:"completed_at"`
+	DurationMs        int64           `json:"duration_ms"`
+	Result            *map[string]any `json:"result,omitempty"`
+	ErrorMessage      *string         `json:"error_message,omitempty"`
+	ErrorCode         *string         `json:"error_code,omitempty"`
+	LastEventSequence *int64          `json:"last_event_sequence,omitempty"`
 }
 
 type RunnerProgressEvent struct {
-	Sequence int64                  `json:"sequence"`
-	Type     executionevents.Type   `json:"type"`
-	Payload  map[string]interface{} `json:"payload"`
+	Sequence int64                `json:"sequence"`
+	Type     executionevents.Type `json:"type"`
+	// Payload is the event-type-specific body, marshalled as a JSON object.
+	// It is a typed struct at the call site (see internal/runtime payloads).
+	Payload any `json:"payload"`
 }
 
 type SendJobEventsRequest struct {
@@ -237,9 +239,9 @@ func (c *Client) Heartbeat(ctx context.Context, request HeartbeatRequest) ([]Hea
 	return results, nil
 }
 
-func FlowExecutionResultToPayload(result *node.FlowExecutionResult) (map[string]interface{}, error) {
+func FlowExecutionResultToPayload(result *node.FlowExecutionResult) (map[string]any, error) {
 	if result == nil {
-		return map[string]interface{}{}, nil
+		return map[string]any{}, nil
 	}
 
 	encoded, err := json.Marshal(result)
@@ -247,21 +249,21 @@ func FlowExecutionResultToPayload(result *node.FlowExecutionResult) (map[string]
 		return nil, fmt.Errorf("encode flow execution result: %w", err)
 	}
 
-	var payload map[string]interface{}
+	var payload map[string]any
 	if decodeErr := json.Unmarshal(encoded, &payload); decodeErr != nil {
 		return nil, fmt.Errorf("decode flow execution result payload: %w", decodeErr)
 	}
 	if payload["execution_results"] == nil {
-		payload["execution_results"] = map[string]interface{}{}
+		payload["execution_results"] = map[string]any{}
 	}
 	if payload["final_outputs"] == nil {
-		payload["final_outputs"] = map[string]interface{}{}
+		payload["final_outputs"] = map[string]any{}
 	}
 
 	return payload, nil
 }
 
-func (c *Client) postJSON(ctx context.Context, path string, payload interface{}) (int, []byte, error) {
+func (c *Client) postJSON(ctx context.Context, path string, payload any) (int, []byte, error) {
 	bodyBytes, err := json.Marshal(payload)
 	if err != nil {
 		return 0, nil, fmt.Errorf("marshal request body: %w", err)

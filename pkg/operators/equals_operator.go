@@ -4,10 +4,10 @@ import "fmt"
 
 // EqualsOperator checks if the actual value equals the expected value.
 type EqualsOperator struct {
-	Expected interface{} `json:"expected"`
+	Expected any `json:"expected"`
 }
 
-func (o EqualsOperator) Validate(actual interface{}) (bool, error) {
+func (o EqualsOperator) Validate(actual any) (bool, error) {
 	// Handle string comparison
 	if expectedStr, ok := o.Expected.(string); ok {
 		actualStr, stringOk := actual.(string)
@@ -43,7 +43,7 @@ func (o EqualsOperator) GetType() OperatorType {
 }
 
 // toFloat64 converts various numeric types to float64.
-func toFloat64(val interface{}) (float64, bool) {
+func toFloat64(val any) (float64, bool) {
 	switch v := val.(type) {
 	case float64:
 		return v, true

@@ -3,7 +3,7 @@ package operators
 // Operator defines the interface for all validation operators.
 type Operator interface {
 	// Validate checks if the actual value passes the operator's validation logic
-	Validate(actual interface{}) (bool, error)
+	Validate(actual any) (bool, error)
 
 	// GetType returns the operator type identifier
 	GetType() OperatorType

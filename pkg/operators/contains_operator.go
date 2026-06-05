@@ -10,7 +10,7 @@ type ContainsOperator struct {
 	Substring string `json:"substring"`
 }
 
-func (o ContainsOperator) Validate(actual interface{}) (bool, error) {
+func (o ContainsOperator) Validate(actual any) (bool, error) {
 	actualStr, ok := actual.(string)
 	if !ok {
 		return false, fmt.Errorf("contains operator requires string, got %T", actual)

@@ -14,7 +14,7 @@ type JSONPathExtractor struct {
 	Path string `json:"path"`
 }
 
-func (e JSONPathExtractor) Extract(ctx ResponseContext) (interface{}, error) {
+func (e JSONPathExtractor) Extract(ctx ResponseContext) (any, error) {
 	log.Debug().
 		Str("extractorType", string(ExtractorTypeJSONPath)).
 		Str("path", e.Path).
@@ -32,7 +32,7 @@ func (e JSONPathExtractor) Extract(ctx ResponseContext) (interface{}, error) {
 	}
 
 	// Get parsed body from context using ParsedBodyReader interface
-	var jsonData interface{}
+	var jsonData any
 
 	// Try to get parsed body from context
 	pbr, ok := ctx.(ParsedBodyReader)
@@ -87,7 +87,7 @@ func (e JSONPathExtractor) Extract(ctx ResponseContext) (interface{}, error) {
 	}
 
 	// If multiple results, return as slice
-	results := make([]interface{}, len(nodes))
+	results := make([]any, len(nodes))
 	copy(results, nodes)
 	log.Debug().
 		Str("path", e.Path).

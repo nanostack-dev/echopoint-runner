@@ -11,9 +11,9 @@ import (
 )
 
 type ModuleData struct {
-	FlowID         string                 `json:"flow_id"`
-	InputBindings  map[string]interface{} `json:"input_bindings,omitempty"`
-	OutputBindings map[string]string      `json:"output_bindings,omitempty"`
+	FlowID         string            `json:"flow_id"`
+	InputBindings  map[string]any    `json:"input_bindings,omitempty"`
+	OutputBindings map[string]string `json:"output_bindings,omitempty"`
 }
 
 // ModuleNode executes another flow as a reusable nested module.
@@ -96,7 +96,7 @@ func (n *ModuleNode) Execute(ctx ExecutionContext) (AnyExecutionResult, error) {
 		Any("moduleInputs", moduleInputs).
 		Msg("Starting module node execution")
 
-	childInputs := make(map[string]interface{}, len(ctx.FlowInputs)+len(resolvedFlow.InputOverrides)+len(moduleInputs))
+	childInputs := make(map[string]any, len(ctx.FlowInputs)+len(resolvedFlow.InputOverrides)+len(moduleInputs))
 	for key, value := range ctx.FlowInputs {
 		childInputs[key] = value
 	}
@@ -136,9 +136,9 @@ func (n *ModuleNode) Execute(ctx ExecutionContext) (AnyExecutionResult, error) {
 	}, nil
 }
 
-func (n *ModuleNode) resolveModuleInputs(parentInputs map[string]interface{}) (map[string]interface{}, error) {
+func (n *ModuleNode) resolveModuleInputs(parentInputs map[string]any) (map[string]any, error) {
 	resolver := NewTemplateResolver(parentInputs)
-	resolved := make(map[string]interface{}, len(n.Data.InputBindings))
+	resolved := make(map[string]any, len(n.Data.InputBindings))
 	for key, value := range n.Data.InputBindings {
 		trimmedKey := strings.TrimSpace(key)
 		if trimmedKey == "" {
@@ -153,8 +153,8 @@ func (n *ModuleNode) resolveModuleInputs(parentInputs map[string]interface{}) (m
 	return resolved, nil
 }
 
-func (n *ModuleNode) exportOutputs(result *FlowExecutionResult) (map[string]interface{}, error) {
-	outputs := make(map[string]interface{}, len(n.Data.OutputBindings))
+func (n *ModuleNode) exportOutputs(result *FlowExecutionResult) (map[string]any, error) {
+	outputs := make(map[string]any, len(n.Data.OutputBindings))
 	for outputName, sourceRef := range n.Data.OutputBindings {
 		trimmedOutputName := strings.TrimSpace(outputName)
 		trimmedSourceRef := strings.TrimSpace(sourceRef)
@@ -175,7 +175,7 @@ func (n *ModuleNode) exportOutputs(result *FlowExecutionResult) (map[string]inte
 }
 
 func (n *ModuleNode) createErrorResult(
-	inputs map[string]interface{},
+	inputs map[string]any,
 	flowID string,
 	err error,
 	startedAt time.Time,
@@ -183,7 +183,7 @@ func (n *ModuleNode) createErrorResult(
 ) AnyExecutionResult {
 	errMsg := err.Error()
 	errCode := "MODULE_FAILED"
-	childOutputs := map[string]interface{}{}
+	childOutputs := map[string]any{}
 	if childResult != nil {
 		childOutputs = cloneMap(childResult.FinalOutputs)
 	}
@@ -206,11 +206,11 @@ func (n *ModuleNode) createErrorResult(
 	}
 }
 
-func cloneMap(source map[string]interface{}) map[string]interface{} {
+func cloneMap(source map[string]any) map[string]any {
 	if len(source) == 0 {
-		return map[string]interface{}{}
+		return map[string]any{}
 	}
-	cloned := make(map[string]interface{}, len(source))
+	cloned := make(map[string]any, len(source))
 	for key, value := range source {
 		cloned[key] = value
 	}
