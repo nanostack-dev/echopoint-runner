@@ -3,11 +3,13 @@ package node
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 
 	"github.com/nanostack-dev/echopoint-runner/pkg/extractors"
 	_ "github.com/nanostack-dev/echopoint-runner/pkg/extractors/http" // Register HTTP extractors in init()
+	"github.com/nanostack-dev/echopoint-runner/pkg/operators"
 )
 
 // CompositeAssertion combines an extractor with an operator for validation.
@@ -134,27 +136,87 @@ func (ca *CompositeAssertion) Evaluate(ctx extractors.ResponseContext) Assertion
 	return res
 }
 
+// comparator applies an operator to the extracted actual and the expected value.
+type comparator func(actual, expected interface{}) (bool, error)
+
+// comparators is the single dispatch table for assertion operators, keyed by the
+// shared operators.OperatorType constants so the supported set is checked against
+// pkg/operators rather than duplicated string literals. Comparisons are lenient
+// (stringify/coerce) because the wire delivers expected values as strings while
+// extracted actuals are typed (e.g. an int statusCode vs the string "200").
+//
+//nolint:gochecknoglobals // immutable operator dispatch table, built once
+var comparators = map[operators.OperatorType]comparator{
+	operators.OperatorTypeEquals: func(a, e interface{}) (bool, error) {
+		return toString(a) == toString(e), nil
+	},
+	operators.OperatorTypeNotEquals: func(a, e interface{}) (bool, error) {
+		return toString(a) != toString(e), nil
+	},
+	operators.OperatorTypeContains: func(a, e interface{}) (bool, error) {
+		return strings.Contains(toString(a), toString(e)), nil
+	},
+	operators.OperatorTypeNotContains: func(a, e interface{}) (bool, error) {
+		return !strings.Contains(toString(a), toString(e)), nil
+	},
+	operators.OperatorTypeStartsWith: func(a, e interface{}) (bool, error) {
+		return strings.HasPrefix(toString(a), toString(e)), nil
+	},
+	operators.OperatorTypeEndsWith: func(a, e interface{}) (bool, error) {
+		return strings.HasSuffix(toString(a), toString(e)), nil
+	},
+	operators.OperatorTypeRegex: func(a, e interface{}) (bool, error) {
+		return regexp.MatchString(toString(e), toString(a))
+	},
+	operators.OperatorTypeGreaterThan: func(a, e interface{}) (bool, error) {
+		return compareNumeric(a, e, func(x, y float64) bool { return x > y })
+	},
+	operators.OperatorTypeLessThan: func(a, e interface{}) (bool, error) {
+		return compareNumeric(a, e, func(x, y float64) bool { return x < y })
+	},
+	operators.OperatorTypeGreaterThanOrEqual: func(a, e interface{}) (bool, error) {
+		return compareNumeric(a, e, func(x, y float64) bool { return x >= y })
+	},
+	operators.OperatorTypeLessThanOrEqual: func(a, e interface{}) (bool, error) {
+		return compareNumeric(a, e, func(x, y float64) bool { return x <= y })
+	},
+	operators.OperatorTypeBetween: between,
+	operators.OperatorTypeEmpty: func(a, _ interface{}) (bool, error) {
+		return isEmpty(a), nil
+	},
+	operators.OperatorTypeNotEmpty: func(a, _ interface{}) (bool, error) {
+		return !isEmpty(a), nil
+	},
+}
+
 func applyOperator(operator string, actual, expected interface{}) (bool, error) {
-	switch operator {
-	case "equals":
-		return toString(actual) == toString(expected), nil
-	case "notEquals":
-		return toString(actual) != toString(expected), nil
-	case "contains":
-		return strings.Contains(toString(actual), toString(expected)), nil
-	case "notContains":
-		return !strings.Contains(toString(actual), toString(expected)), nil
-	case "greaterThan":
-		return compareNumeric(actual, expected, func(a, b float64) bool { return a > b })
-	case "lessThan":
-		return compareNumeric(actual, expected, func(a, b float64) bool { return a < b })
-	case "empty":
-		return isEmpty(actual), nil
-	case "notEmpty":
-		return !isEmpty(actual), nil
-	default:
+	cmp, ok := comparators[operators.OperatorType(operator)]
+	if !ok {
 		return false, fmt.Errorf("unknown assertion operator %q", operator)
 	}
+	return cmp(actual, expected)
+}
+
+// between reports whether actual lies within an inclusive [min, max] range. The
+// expected value must be a two-element list (as decoded from operator_data.value).
+func between(actual, expected interface{}) (bool, error) {
+	bounds, ok := expected.([]interface{})
+	if !ok || len(bounds) != 2 {
+		return false, fmt.Errorf("between requires a [min, max] pair, got %v", expected)
+	}
+	value, err := toFloat(actual)
+	if err != nil {
+		return false, fmt.Errorf("actual value %v is not numeric: %w", actual, err)
+	}
+	low, err := toFloat(bounds[0])
+	if err != nil {
+		return false, fmt.Errorf("lower bound %v is not numeric: %w", bounds[0], err)
+	}
+	high, err := toFloat(bounds[1])
+	if err != nil {
+		return false, fmt.Errorf("upper bound %v is not numeric: %w", bounds[1], err)
+	}
+	return value >= low && value <= high, nil
 }
 
 func compareNumeric(actual, expected interface{}, cmp func(a, b float64) bool) (bool, error) {

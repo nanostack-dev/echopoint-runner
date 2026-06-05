@@ -93,6 +93,63 @@ func TestEvaluate_NumericCompare(t *testing.T) {
 	}
 }
 
+// TestEvaluate_ExpandedOperators covers the operators the compatibility matrix
+// declares but the evaluator previously did not implement (startsWith, endsWith,
+// regex, greaterThanOrEqual, lessThanOrEqual).
+func TestEvaluate_ExpandedOperators(t *testing.T) {
+	body := map[string]interface{}{"name": "eptest"}
+	cases := []struct {
+		name                       string
+		extractor, path, op, value string
+		status                     int
+		want                       bool
+	}{
+		{"gte pass", "statusCode", "", "greaterThanOrEqual", "200", 200, true},
+		{"gte fail", "statusCode", "", "greaterThanOrEqual", "201", 200, false},
+		{"lte pass", "statusCode", "", "lessThanOrEqual", "299", 200, true},
+		{"lte fail", "statusCode", "", "lessThanOrEqual", "199", 200, false},
+		{"startsWith pass", "jsonPath", "$.name", "startsWith", "ep", 200, true},
+		{"startsWith fail", "jsonPath", "$.name", "startsWith", "zz", 200, false},
+		{"endsWith pass", "jsonPath", "$.name", "endsWith", "test", 200, true},
+		{"regex pass", "jsonPath", "$.name", "regex", "^ep.*t$", 200, true},
+		{"regex fail", "jsonPath", "$.name", "regex", "^x", 200, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			ca := mkAssertion(t, c.extractor, c.path, c.op, c.value)
+			r := ca.Evaluate(fakeCtx{status: c.status, parsed: body})
+			if r.Error != "" {
+				t.Fatalf("unexpected error: %s", r.Error)
+			}
+			if r.Passed != c.want {
+				t.Fatalf("got passed=%v want %v", r.Passed, c.want)
+			}
+		})
+	}
+}
+
+func TestEvaluate_Between(t *testing.T) {
+	// between needs operator_data.value to be a [min, max] array.
+	raw := `{"extractor_type":"statusCode","extractor_data":{},"operator_type":"between","operator_data":{"value":[200,299]}}`
+	var ca node.CompositeAssertion
+	if err := json.Unmarshal([]byte(raw), &ca); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if r := ca.Evaluate(fakeCtx{status: 250}); r.Error != "" || !r.Passed {
+		t.Fatalf("expected 250 in [200,299], got %+v", r)
+	}
+	if r := ca.Evaluate(fakeCtx{status: 500}); r.Error != "" || r.Passed {
+		t.Fatalf("expected 500 outside [200,299], got %+v", r)
+	}
+}
+
+func TestEvaluate_UnknownOperator(t *testing.T) {
+	ca := mkAssertion(t, "statusCode", "", "definitelyNotAnOperator", "1")
+	if r := ca.Evaluate(fakeCtx{status: 200}); r.Error == "" {
+		t.Fatalf("expected an error for an unknown operator, got %+v", r)
+	}
+}
+
 func TestEvaluate_CapturesActualAndMetadata(t *testing.T) {
 	ca := mkAssertion(t, "statusCode", "", "equals", "201")
 
