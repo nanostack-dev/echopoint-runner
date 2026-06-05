@@ -105,14 +105,25 @@ func synthesizeExtractorJSON(extractorType string, extractorData json.RawMessage
 // Evaluate extracts the actual value from the response and applies the operator
 // against the expected value. Returns true when the assertion holds.
 func (ca *CompositeAssertion) Evaluate(ctx extractors.ResponseContext) (bool, error) {
+	_, passed, err := ca.EvaluateDetailed(ctx)
+	return passed, err
+}
+
+// EvaluateDetailed is like Evaluate but also returns the extracted actual value,
+// so callers can record what was compared (pass or fail). On extractor failure the
+// actual is nil and the error is non-nil.
+func (ca *CompositeAssertion) EvaluateDetailed(
+	ctx extractors.ResponseContext,
+) (interface{}, bool, error) {
 	if ca.Extractor == nil {
-		return false, fmt.Errorf("assertion has no extractor (type %q)", ca.ExtractorType)
+		return nil, false, fmt.Errorf("assertion has no extractor (type %q)", ca.ExtractorType)
 	}
 	actual, err := ca.Extractor.Extract(ctx)
 	if err != nil {
-		return false, fmt.Errorf("extractor %q failed: %w", ca.ExtractorType, err)
+		return nil, false, fmt.Errorf("extractor %q failed: %w", ca.ExtractorType, err)
 	}
-	return applyOperator(ca.OperatorType, actual, ca.ExpectedValue)
+	passed, err := applyOperator(ca.OperatorType, actual, ca.ExpectedValue)
+	return actual, passed, err
 }
 
 func applyOperator(operator string, actual, expected interface{}) (bool, error) {
