@@ -104,16 +104,36 @@ func (n *RequestNode) parseResponseBody(contentType string, respBody []byte) int
 	return string(respBody)
 }
 
-func (n *RequestNode) runAssertions(respCtx extractors.ResponseContext) error {
+// runAssertions evaluates every assertion on the node, recording the outcome of
+// each (pass or fail) into the returned slice. Evaluation stops at the first
+// failing or erroring assertion — that one IS recorded — and the corresponding
+// error is returned so the node fails. The slice therefore holds results for all
+// assertions up to and including the first failure (or all of them on success).
+func (n *RequestNode) runAssertions(
+	respCtx extractors.ResponseContext,
+) ([]AssertionResult, error) {
+	assertions := n.GetAssertions()
 	log.Debug().
 		Str("nodeID", n.GetID()).
-		Int("assertionCount", len(n.GetAssertions())).
+		Int("assertionCount", len(assertions)).
 		Msg("Running assertions")
 
-	for i := range n.GetAssertions() {
-		assertion := n.GetAssertions()[i]
-		passed, evalErr := assertion.Evaluate(respCtx)
+	results := make([]AssertionResult, 0, len(assertions))
+	for i := range assertions {
+		assertion := assertions[i]
+		actual, passed, evalErr := assertion.EvaluateDetailed(respCtx)
+		res := AssertionResult{
+			Index:     i,
+			Extractor: assertion.ExtractorType,
+			Operator:  assertion.OperatorType,
+			Expected:  assertion.ExpectedValue,
+			Actual:    actual,
+			Passed:    passed && evalErr == nil,
+		}
+
 		if evalErr != nil {
+			res.Error = evalErr.Error()
+			results = append(results, res)
 			log.Error().
 				Str("nodeID", n.GetID()).
 				Int("assertionIndex", i).
@@ -121,22 +141,25 @@ func (n *RequestNode) runAssertions(respCtx extractors.ResponseContext) error {
 				Str("operator", assertion.OperatorType).
 				Err(evalErr).
 				Msg("Assertion evaluation errored")
-			return fmt.Errorf("assertion %d (%s %s) evaluation error: %w",
+			return results, fmt.Errorf("assertion %d (%s %s) evaluation error: %w",
 				i, assertion.ExtractorType, assertion.OperatorType, evalErr)
 		}
+
+		results = append(results, res)
 		if !passed {
 			failedAssertionErr := fmt.Errorf(
-				"assertion %d failed: %s %s expected=%v",
-				i, assertion.ExtractorType, assertion.OperatorType, assertion.ExpectedValue)
+				"assertion %d failed: %s %s expected=%v actual=%v",
+				i, assertion.ExtractorType, assertion.OperatorType, assertion.ExpectedValue, actual)
 			log.Error().
 				Str("nodeID", n.GetID()).
 				Int("assertionIndex", i).
 				Str("extractor", assertion.ExtractorType).
 				Str("operator", assertion.OperatorType).
 				Any("expected", assertion.ExpectedValue).
+				Any("actual", actual).
 				Err(failedAssertionErr).
 				Msg("Assertion failed")
-			return failedAssertionErr
+			return results, failedAssertionErr
 		}
 	}
 
@@ -144,7 +167,7 @@ func (n *RequestNode) runAssertions(respCtx extractors.ResponseContext) error {
 		Str("nodeID", n.GetID()).
 		Msg("All assertions passed")
 
-	return nil
+	return results, nil
 }
 
 func (n *RequestNode) extractOutputs(respCtx extractors.ResponseContext) (map[string]interface{}, error) {
