@@ -1,6 +1,9 @@
 package node
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 type OutputView interface {
 	HasNode(nodeID string) bool
@@ -205,49 +208,23 @@ type ModuleExecutionResult struct {
 	DurationMs        int64                  `json:"duration_ms"`
 }
 
-// AsRequestExecutionResult safely casts an AnyExecutionResult to a RequestExecutionResult.
-func AsRequestExecutionResult(result AnyExecutionResult) (*RequestExecutionResult, bool) {
-	reqResult, ok := result.(*RequestExecutionResult)
-	return reqResult, ok
+// As safely casts an AnyExecutionResult to a concrete result type T
+// (e.g. As[*RequestExecutionResult](result)). It reports false instead of
+// panicking when the dynamic type does not match.
+func As[T AnyExecutionResult](result AnyExecutionResult) (T, bool) {
+	concrete, ok := result.(T)
+	return concrete, ok
 }
 
-// MustAsRequestExecutionResult casts an AnyExecutionResult to a RequestExecutionResult, panicking if it fails.
-func MustAsRequestExecutionResult(result AnyExecutionResult) *RequestExecutionResult {
-	reqResult, ok := AsRequestExecutionResult(result)
+// MustAs casts an AnyExecutionResult to a concrete result type T, panicking when
+// the dynamic type does not match. Use only where the type is an invariant.
+func MustAs[T AnyExecutionResult](result AnyExecutionResult) T {
+	concrete, ok := As[T](result)
 	if !ok {
-		panic("expected RequestExecutionResult but got different type")
+		var want T
+		panic(fmt.Sprintf("expected execution result of type %T but got %T", want, result))
 	}
-	return reqResult
-}
-
-// AsDelayExecutionResult safely casts an AnyExecutionResult to a DelayExecutionResult.
-func AsDelayExecutionResult(result AnyExecutionResult) (*DelayExecutionResult, bool) {
-	delayResult, ok := result.(*DelayExecutionResult)
-	return delayResult, ok
-}
-
-// MustAsDelayExecutionResult casts an AnyExecutionResult to a DelayExecutionResult, panicking if it fails.
-func MustAsDelayExecutionResult(result AnyExecutionResult) *DelayExecutionResult {
-	delayResult, ok := AsDelayExecutionResult(result)
-	if !ok {
-		panic("expected DelayExecutionResult but got different type")
-	}
-	return delayResult
-}
-
-// AsModuleExecutionResult safely casts an AnyExecutionResult to a ModuleExecutionResult.
-func AsModuleExecutionResult(result AnyExecutionResult) (*ModuleExecutionResult, bool) {
-	moduleResult, ok := result.(*ModuleExecutionResult)
-	return moduleResult, ok
-}
-
-// MustAsModuleExecutionResult casts an AnyExecutionResult to a ModuleExecutionResult, panicking if it fails.
-func MustAsModuleExecutionResult(result AnyExecutionResult) *ModuleExecutionResult {
-	moduleResult, ok := AsModuleExecutionResult(result)
-	if !ok {
-		panic("expected ModuleExecutionResult but got different type")
-	}
-	return moduleResult
+	return concrete
 }
 
 // FlowExecutionResult contains the complete trace of a flow execution.
