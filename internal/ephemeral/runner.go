@@ -113,7 +113,7 @@ func failedResult(startedAt time.Time, errorMsg string, errorCode *string) Resul
 	}
 }
 
-func toPayload(result *node.FlowExecutionResult) (*map[string]interface{}, error) {
+func toPayload(result *node.FlowExecutionResult) (*map[string]any, error) {
 	payload, err := controlplane.FlowExecutionResultToPayload(result)
 	if err != nil {
 		return nil, err
@@ -144,19 +144,19 @@ func buildModuleResolver(pkg *Package) node.ModuleResolver {
 	return referencedFlowResolver{flows: resolved}
 }
 
-func cloneInputs(src map[string]interface{}) map[string]interface{} {
+func cloneInputs(src map[string]any) map[string]any {
 	if len(src) == 0 {
 		return nil
 	}
-	cloned := make(map[string]interface{}, len(src))
+	cloned := make(map[string]any, len(src))
 	for k, v := range src {
 		cloned[k] = v
 	}
 	return cloned
 }
 
-func mergeInputs(base, override map[string]interface{}) map[string]interface{} {
-	merged := make(map[string]interface{}, len(base)+len(override))
+func mergeInputs(base, override map[string]any) map[string]any {
+	merged := make(map[string]any, len(base)+len(override))
 	for k, v := range base {
 		merged[k] = v
 	}
@@ -166,7 +166,7 @@ func mergeInputs(base, override map[string]interface{}) map[string]interface{} {
 	return merged
 }
 
-func sortedKeys(m map[string]interface{}) []string {
+func sortedKeys(m map[string]any) []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)

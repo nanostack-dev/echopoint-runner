@@ -11,7 +11,7 @@ type StartsWithOperator struct {
 	Prefix string `json:"prefix"`
 }
 
-func (o StartsWithOperator) Validate(actual interface{}) (bool, error) {
+func (o StartsWithOperator) Validate(actual any) (bool, error) {
 	actualStr, ok := actual.(string)
 	if !ok {
 		return false, fmt.Errorf("startsWith operator requires string, got %T", actual)
@@ -29,7 +29,7 @@ type EndsWithOperator struct {
 	Suffix string `json:"suffix"`
 }
 
-func (o EndsWithOperator) Validate(actual interface{}) (bool, error) {
+func (o EndsWithOperator) Validate(actual any) (bool, error) {
 	actualStr, ok := actual.(string)
 	if !ok {
 		return false, fmt.Errorf("endsWith operator requires string, got %T", actual)
@@ -47,7 +47,7 @@ type RegexOperator struct {
 	Pattern string `json:"pattern"`
 }
 
-func (o RegexOperator) Validate(actual interface{}) (bool, error) {
+func (o RegexOperator) Validate(actual any) (bool, error) {
 	actualStr, ok := actual.(string)
 	if !ok {
 		return false, fmt.Errorf("regex operator requires string, got %T", actual)
@@ -68,7 +68,7 @@ func (o RegexOperator) GetType() OperatorType {
 // EmptyOperator checks if the actual string is empty.
 type EmptyOperator struct{}
 
-func (o EmptyOperator) Validate(actual interface{}) (bool, error) {
+func (o EmptyOperator) Validate(actual any) (bool, error) {
 	actualStr, ok := actual.(string)
 	if !ok {
 		return false, fmt.Errorf("empty operator requires string, got %T", actual)
@@ -84,7 +84,7 @@ func (o EmptyOperator) GetType() OperatorType {
 // NotEmptyOperator checks if the actual string is not empty.
 type NotEmptyOperator struct{}
 
-func (o NotEmptyOperator) Validate(actual interface{}) (bool, error) {
+func (o NotEmptyOperator) Validate(actual any) (bool, error) {
 	actualStr, ok := actual.(string)
 	if !ok {
 		return false, fmt.Errorf("notEmpty operator requires string, got %T", actual)
@@ -99,10 +99,10 @@ func (o NotEmptyOperator) GetType() OperatorType {
 
 // NotEqualsOperator checks if the actual value does not equal the expected value.
 type NotEqualsOperator struct {
-	Expected interface{} `json:"expected"`
+	Expected any `json:"expected"`
 }
 
-func (o NotEqualsOperator) Validate(actual interface{}) (bool, error) {
+func (o NotEqualsOperator) Validate(actual any) (bool, error) {
 	equals := EqualsOperator(o)
 	result, err := equals.Validate(actual)
 	if err != nil {
@@ -120,7 +120,7 @@ type NotContainsOperator struct {
 	Substring string `json:"substring"`
 }
 
-func (o NotContainsOperator) Validate(actual interface{}) (bool, error) {
+func (o NotContainsOperator) Validate(actual any) (bool, error) {
 	contains := ContainsOperator(o)
 	result, err := contains.Validate(actual)
 	if err != nil {

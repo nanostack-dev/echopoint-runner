@@ -10,7 +10,7 @@ type BodyExtractor struct {
 	// No additional fields needed for extracting the full body
 }
 
-func (e BodyExtractor) Extract(ctx ResponseContext) (interface{}, error) {
+func (e BodyExtractor) Extract(ctx ResponseContext) (any, error) {
 	log.Debug().
 		Str("extractorType", string(ExtractorTypeBody)).
 		Msg("Starting body extraction")

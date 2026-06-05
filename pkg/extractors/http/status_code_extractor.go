@@ -11,7 +11,7 @@ import (
 // StatusCodeExtractor extracts the HTTP status code from a response.
 type StatusCodeExtractor struct{}
 
-func (e StatusCodeExtractor) Extract(ctx extractors.ResponseContext) (interface{}, error) {
+func (e StatusCodeExtractor) Extract(ctx extractors.ResponseContext) (any, error) {
 	log.Debug().
 		Str("extractorType", string(extractors.ExtractorTypeStatusCode)).
 		Msg("Starting status code extraction")

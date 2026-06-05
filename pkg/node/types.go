@@ -7,9 +7,9 @@ import (
 
 type OutputView interface {
 	HasNode(nodeID string) bool
-	Get(nodeID, outputKey string) (interface{}, bool)
+	Get(nodeID, outputKey string) (any, bool)
 	// Node returns a defensive copy of the requested node outputs.
-	Node(nodeID string) map[string]interface{}
+	Node(nodeID string) map[string]any
 }
 
 type AnyNode interface {
@@ -39,7 +39,7 @@ type AnyNode interface {
 
 type ResolvedModuleFlow struct {
 	FlowDefinition []byte
-	InputOverrides map[string]interface{}
+	InputOverrides map[string]any
 }
 
 type ModuleResolver interface {
@@ -49,7 +49,7 @@ type ModuleResolver interface {
 type ModuleExecutionRequest struct {
 	FlowID         string
 	FlowDefinition []byte
-	Inputs         map[string]interface{}
+	Inputs         map[string]any
 }
 
 type ModuleExecutor interface {
@@ -80,10 +80,10 @@ const (
 type ExecutionContext struct {
 	// Inputs contains all the data this node declared it needs in InputSchema()
 	// Keys are in format "nodeId.outputKey" (e.g., "create-user.userId")
-	Inputs map[string]interface{}
+	Inputs map[string]any
 	// FlowInputs contains the full effective inputs for the current flow execution,
 	// including inherited inputs, static overrides, and any initial input values.
-	FlowInputs map[string]interface{}
+	FlowInputs map[string]any
 	// AllOutputs exposes a read-only snapshot of outputs from nodes that completed
 	// before the current scheduling batch started.
 	AllOutputs OutputView
@@ -108,8 +108,8 @@ type AnyExecutionResult interface {
 	GetNodeID() string
 	GetDisplayName() string
 	GetNodeType() Type
-	GetInputs() map[string]interface{}
-	GetOutputs() map[string]interface{}
+	GetInputs() map[string]any
+	GetOutputs() map[string]any
 	GetError() error
 	GetExecutedAt() time.Time
 
@@ -119,18 +119,18 @@ type AnyExecutionResult interface {
 
 // BaseExecutionResult provides common fields for all execution results.
 type BaseExecutionResult struct {
-	NodeID        string                 `json:"node_id"`
-	DisplayName   string                 `json:"display_name"`
-	NodeType      Type                   `json:"node_type"`
-	RunWhen       RunWhen                `json:"run_when,omitempty"`
-	Inputs        map[string]interface{} `json:"inputs"`
-	Outputs       map[string]interface{} `json:"outputs"`
-	Error         error                  `json:"-"` // Don't serialize Go error
-	ErrorCode     *string                `json:"error_code,omitempty"`
-	ErrorMsg      *string                `json:"error_message,omitempty"`
-	SkipReason    *string                `json:"skip_reason,omitempty"`
-	MissingInputs []string               `json:"missing_inputs,omitempty"`
-	ExecutedAt    time.Time              `json:"executed_at"`
+	NodeID        string         `json:"node_id"`
+	DisplayName   string         `json:"display_name"`
+	NodeType      Type           `json:"node_type"`
+	RunWhen       RunWhen        `json:"run_when,omitempty"`
+	Inputs        map[string]any `json:"inputs"`
+	Outputs       map[string]any `json:"outputs"`
+	Error         error          `json:"-"` // Don't serialize Go error
+	ErrorCode     *string        `json:"error_code,omitempty"`
+	ErrorMsg      *string        `json:"error_message,omitempty"`
+	SkipReason    *string        `json:"skip_reason,omitempty"`
+	MissingInputs []string       `json:"missing_inputs,omitempty"`
+	ExecutedAt    time.Time      `json:"executed_at"`
 }
 
 // GetNodeID returns the node ID.
@@ -143,10 +143,10 @@ func (b *BaseExecutionResult) GetDisplayName() string { return b.DisplayName }
 func (b *BaseExecutionResult) GetNodeType() Type { return b.NodeType }
 
 // GetInputs returns the inputs map.
-func (b *BaseExecutionResult) GetInputs() map[string]interface{} { return b.Inputs }
+func (b *BaseExecutionResult) GetInputs() map[string]any { return b.Inputs }
 
 // GetOutputs returns the outputs map.
-func (b *BaseExecutionResult) GetOutputs() map[string]interface{} { return b.Outputs }
+func (b *BaseExecutionResult) GetOutputs() map[string]any { return b.Outputs }
 
 // GetError returns the error if any.
 func (b *BaseExecutionResult) GetError() error { return b.Error }
@@ -159,13 +159,13 @@ func (b *BaseExecutionResult) isExecutionResult() {}
 // AssertionResult records the outcome of evaluating a single node assertion,
 // captured whether it passed or failed so the full result can be reported.
 type AssertionResult struct {
-	Index     int         `json:"index"`
-	Extractor string      `json:"extractor"`
-	Operator  string      `json:"operator"`
-	Expected  interface{} `json:"expected"`
-	Actual    interface{} `json:"actual"`
-	Passed    bool        `json:"passed"`
-	Error     string      `json:"error,omitempty"`
+	Index     int    `json:"index"`
+	Extractor string `json:"extractor"`
+	Operator  string `json:"operator"`
+	Expected  any    `json:"expected"`
+	Actual    any    `json:"actual"`
+	Passed    bool   `json:"passed"`
+	Error     string `json:"error,omitempty"`
 }
 
 // RequestExecutionResult stores HTTP request node execution data.
@@ -176,13 +176,13 @@ type RequestExecutionResult struct {
 	RequestMethod  string            `json:"request_method"`
 	RequestURL     string            `json:"request_url"`
 	RequestHeaders map[string]string `json:"request_headers"`
-	RequestBody    interface{}       `json:"request_body,omitempty"`
+	RequestBody    any               `json:"request_body,omitempty"`
 
 	// HTTP Response fields
 	ResponseStatusCode int                 `json:"response_status_code"`
 	ResponseHeaders    map[string][]string `json:"response_headers"`
 	ResponseBody       []byte              `json:"response_body,omitempty"`
-	ResponseBodyParsed interface{}         `json:"response_body_parsed,omitempty"`
+	ResponseBodyParsed any                 `json:"response_body_parsed,omitempty"`
 
 	// AssertionResults records every assertion evaluated on this node (pass or fail).
 	AssertionResults []AssertionResult `json:"assertion_results,omitempty"`
@@ -203,9 +203,9 @@ type DelayExecutionResult struct {
 type ModuleExecutionResult struct {
 	BaseExecutionResult
 
-	FlowID            string                 `json:"flow_id"`
-	ChildFinalOutputs map[string]interface{} `json:"child_final_outputs,omitempty"`
-	DurationMs        int64                  `json:"duration_ms"`
+	FlowID            string         `json:"flow_id"`
+	ChildFinalOutputs map[string]any `json:"child_final_outputs,omitempty"`
+	DurationMs        int64          `json:"duration_ms"`
 }
 
 // As safely casts an AnyExecutionResult to a concrete result type T
@@ -230,7 +230,7 @@ func MustAs[T AnyExecutionResult](result AnyExecutionResult) T {
 // FlowExecutionResult contains the complete trace of a flow execution.
 type FlowExecutionResult struct {
 	ExecutionResults map[string]AnyExecutionResult `json:"execution_results"` // Polymorphic results!
-	FinalOutputs     map[string]interface{}        `json:"final_outputs"`     // All outputs flattened for convenience (format: "nodeId.outputKey": value)
+	FinalOutputs     map[string]any                `json:"final_outputs"`     // All outputs flattened for convenience (format: "nodeId.outputKey": value)
 	Success          bool                          `json:"success"`
 	Error            error                         `json:"-"`
 	ErrorCode        *string                       `json:"error_code,omitempty"`

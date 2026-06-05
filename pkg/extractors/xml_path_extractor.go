@@ -9,7 +9,7 @@ type XMLPathExtractor struct {
 	Path string `json:"path"`
 }
 
-func (e XMLPathExtractor) Extract(_ ResponseContext) (interface{}, error) {
+func (e XMLPathExtractor) Extract(_ ResponseContext) (any, error) {
 	log.Debug().
 		Str("extractorType", string(ExtractorTypeXMLPath)).
 		Str("path", e.Path).

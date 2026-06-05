@@ -8,12 +8,12 @@ import (
 )
 
 type Flow struct {
-	Name          string                 `json:"name"`
-	Description   string                 `json:"description"`
-	Version       string                 `json:"version"`
-	Nodes         []node.AnyNode         `json:"-"`
-	Edges         []edge.Edge            `json:"edges"`
-	InitialInputs map[string]interface{} `json:"initialInputs"`
+	Name          string         `json:"name"`
+	Description   string         `json:"description"`
+	Version       string         `json:"version"`
+	Nodes         []node.AnyNode `json:"-"`
+	Edges         []edge.Edge    `json:"edges"`
+	InitialInputs map[string]any `json:"initialInputs"`
 }
 
 type ParseOptions struct {
@@ -21,7 +21,7 @@ type ParseOptions struct {
 	AllowUnknownInitialInputs bool
 }
 
-func ParseFromMap(data map[string]interface{}) (*Flow, error) {
+func ParseFromMap(data map[string]any) (*Flow, error) {
 	jsonData, err := json.Marshal(data)
 	if err != nil {
 		return nil, err
@@ -35,12 +35,12 @@ func ParseFromJSON(data []byte) (*Flow, error) {
 
 func ParseFromJSONWithOptions(data []byte, options ParseOptions) (*Flow, error) {
 	var raw struct {
-		Name          string                 `json:"name"`
-		Description   string                 `json:"description"`
-		Version       string                 `json:"version"`
-		Nodes         []json.RawMessage      `json:"nodes"`
-		Edges         []edge.Edge            `json:"edges"`
-		InitialInputs map[string]interface{} `json:"initialInputs"`
+		Name          string            `json:"name"`
+		Description   string            `json:"description"`
+		Version       string            `json:"version"`
+		Nodes         []json.RawMessage `json:"nodes"`
+		Edges         []edge.Edge       `json:"edges"`
+		InitialInputs map[string]any    `json:"initialInputs"`
 	}
 
 	if err := json.Unmarshal(data, &raw); err != nil {
@@ -59,7 +59,7 @@ func ParseFromJSONWithOptions(data []byte, options ParseOptions) (*Flow, error) 
 
 	// Ensure InitialInputs is initialized
 	if raw.InitialInputs == nil {
-		raw.InitialInputs = make(map[string]interface{})
+		raw.InitialInputs = make(map[string]any)
 	}
 
 	parsedFlow := &Flow{

@@ -24,7 +24,7 @@ func TestProcessResponse_SuccessRecordsAssertions(t *testing.T) {
 	resp, respBody := jsonResponse(200, `{"id":"prd_1"}`)
 
 	result, err := node.ProcessResponseForTest(
-		n, map[string]interface{}{}, "https://x.test", nil, nil, resp, respBody, time.Now(),
+		n, map[string]any{}, "https://x.test", nil, nil, resp, respBody, time.Now(),
 	)
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
@@ -46,7 +46,7 @@ func TestProcessResponse_AssertionFailureIsResponseBacked(t *testing.T) {
 	resp, respBody := jsonResponse(200, `{}`)
 
 	result, err := node.ProcessResponseForTest(
-		n, map[string]interface{}{}, "https://x.test", nil, nil, resp, respBody, time.Now(),
+		n, map[string]any{}, "https://x.test", nil, nil, resp, respBody, time.Now(),
 	)
 	if err == nil {
 		t.Fatal("expected the failing assertion to fail the node")

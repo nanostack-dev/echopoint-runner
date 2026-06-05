@@ -77,7 +77,7 @@ func (n *DelayNode) Execute(ctx ExecutionContext) (AnyExecutionResult, error) {
 	time.Sleep(time.Duration(delayMs) * time.Millisecond)
 
 	// DelayNode typically doesn't produce outputs, but may pass through declared outputs
-	outputs := make(map[string]interface{})
+	outputs := make(map[string]any)
 	for _, outputKey := range n.OutputSchema() {
 		if val, exists := ctx.Inputs[outputKey]; exists {
 			outputs[outputKey] = val

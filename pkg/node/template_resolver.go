@@ -14,12 +14,12 @@ var stringVariablePattern = regexp.MustCompile(`\{\{([^}]+)\}\}`)
 
 // TemplateResolver handles resolution of {{variableName}} templates in strings and objects.
 type TemplateResolver struct {
-	variables map[string]interface{}
+	variables map[string]any
 	dynamic   DynamicResolver
 }
 
 // NewTemplateResolver creates a new template resolver with the given variables.
-func NewTemplateResolver(variables map[string]interface{}) *TemplateResolver {
+func NewTemplateResolver(variables map[string]any) *TemplateResolver {
 	return &TemplateResolver{
 		variables: variables,
 	}
@@ -28,7 +28,7 @@ func NewTemplateResolver(variables map[string]interface{}) *TemplateResolver {
 // NewTemplateResolverWithDynamics creates a resolver that also resolves
 // {{$name}} dynamic variables via the given resolver (may be nil).
 func NewTemplateResolverWithDynamics(
-	variables map[string]interface{}, dynamic DynamicResolver,
+	variables map[string]any, dynamic DynamicResolver,
 ) *TemplateResolver {
 	return &TemplateResolver{
 		variables: variables,
@@ -53,7 +53,7 @@ func (tr *TemplateResolver) resolveDynamic(varName string) (string, bool) {
 
 // Resolve recursively resolves all {{variableName}} templates in the given value
 // Supports strings, maps, slices, and nested structures.
-func (tr *TemplateResolver) Resolve(value interface{}) (interface{}, error) {
+func (tr *TemplateResolver) Resolve(value any) (any, error) {
 	log.Debug().
 		Any("value", value).
 		Msg("Resolving template")
@@ -73,15 +73,15 @@ func (tr *TemplateResolver) Resolve(value interface{}) (interface{}, error) {
 			Str("resolved", resolved).
 			Msg("String template resolved")
 		return resolved, nil
-	case map[string]interface{}:
+	case map[string]any:
 		return tr.resolveMap(v)
-	case []interface{}:
+	case []any:
 		return tr.resolveSlice(v)
 	case json.RawMessage:
 		// Handle JSON raw messages
 		log.Debug().
 			Msg("Resolving JSON raw message")
-		var unmarshalled interface{}
+		var unmarshalled any
 		if err := json.Unmarshal(v, &unmarshalled); err != nil {
 			log.Error().
 				Err(err).
@@ -113,7 +113,7 @@ func (tr *TemplateResolver) resolveString(s string) string {
 	return result
 }
 
-func (tr *TemplateResolver) resolveRawVariable(value string) (interface{}, bool) {
+func (tr *TemplateResolver) resolveRawVariable(value string) (any, bool) {
 	match := rawVariablePattern.FindStringSubmatch(strings.TrimSpace(value))
 	if len(match) != 1+1 {
 		return nil, false
@@ -132,12 +132,12 @@ func (tr *TemplateResolver) resolveRawVariable(value string) (interface{}, bool)
 }
 
 // resolveMap recursively resolves templates in all map values.
-func (tr *TemplateResolver) resolveMap(m map[string]interface{}) (map[string]interface{}, error) {
+func (tr *TemplateResolver) resolveMap(m map[string]any) (map[string]any, error) {
 	log.Debug().
 		Int("mapSize", len(m)).
 		Msg("Resolving map templates")
 
-	resolved := make(map[string]interface{})
+	resolved := make(map[string]any)
 
 	for key, val := range m {
 		resolvedVal, err := tr.Resolve(val)
@@ -160,12 +160,12 @@ func (tr *TemplateResolver) resolveMap(m map[string]interface{}) (map[string]int
 }
 
 // resolveSlice recursively resolves templates in all slice elements.
-func (tr *TemplateResolver) resolveSlice(s []interface{}) ([]interface{}, error) {
+func (tr *TemplateResolver) resolveSlice(s []any) ([]any, error) {
 	log.Debug().
 		Int("sliceSize", len(s)).
 		Msg("Resolving slice templates")
 
-	resolved := make([]interface{}, len(s))
+	resolved := make([]any, len(s))
 
 	for i, val := range s {
 		resolvedVal, err := tr.Resolve(val)
@@ -189,8 +189,8 @@ func (tr *TemplateResolver) resolveSlice(s []interface{}) ([]interface{}, error)
 
 // ResolveTemplatesInRequest is a convenience function for RequestNode to resolve templates.
 func ResolveTemplatesInRequest(
-	url string, headers map[string]string, body interface{}, inputs map[string]interface{},
-) (string, map[string]string, interface{}, error) {
+	url string, headers map[string]string, body any, inputs map[string]any,
+) (string, map[string]string, any, error) {
 	resolver := NewTemplateResolver(inputs)
 
 	// Resolve URL

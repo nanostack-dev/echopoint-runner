@@ -2,11 +2,11 @@ package assertions
 
 type HeaderAssertion struct {
 	Operator string
-	Expected interface{}
+	Expected any
 	Path     string
 }
 
-func (a HeaderAssertion) Validate(_ interface{}) bool {
+func (a HeaderAssertion) Validate(_ any) bool {
 	return true
 }
 
