@@ -153,6 +153,18 @@ func (b *BaseExecutionResult) GetExecutedAt() time.Time { return b.ExecutedAt }
 
 func (b *BaseExecutionResult) isExecutionResult() {}
 
+// AssertionResult records the outcome of evaluating a single node assertion,
+// captured whether it passed or failed so the full result can be reported.
+type AssertionResult struct {
+	Index     int         `json:"index"`
+	Extractor string      `json:"extractor"`
+	Operator  string      `json:"operator"`
+	Expected  interface{} `json:"expected"`
+	Actual    interface{} `json:"actual"`
+	Passed    bool        `json:"passed"`
+	Error     string      `json:"error,omitempty"`
+}
+
 // RequestExecutionResult stores HTTP request node execution data.
 type RequestExecutionResult struct {
 	BaseExecutionResult
@@ -168,6 +180,9 @@ type RequestExecutionResult struct {
 	ResponseHeaders    map[string][]string `json:"response_headers"`
 	ResponseBody       []byte              `json:"response_body,omitempty"`
 	ResponseBodyParsed interface{}         `json:"response_body_parsed,omitempty"`
+
+	// AssertionResults records every assertion evaluated on this node (pass or fail).
+	AssertionResults []AssertionResult `json:"assertion_results,omitempty"`
 
 	// Timing
 	DurationMs int64 `json:"duration_ms"`
