@@ -120,43 +120,33 @@ func (n *RequestNode) runAssertions(
 
 	results := make([]AssertionResult, 0, len(assertions))
 	for i := range assertions {
-		assertion := assertions[i]
-		actual, passed, evalErr := assertion.EvaluateDetailed(respCtx)
-		res := AssertionResult{
-			Index:     i,
-			Extractor: assertion.ExtractorType,
-			Operator:  assertion.OperatorType,
-			Expected:  assertion.ExpectedValue,
-			Actual:    actual,
-			Passed:    passed && evalErr == nil,
-		}
+		res := assertions[i].Evaluate(respCtx)
+		res.Index = i
+		results = append(results, res)
 
-		if evalErr != nil {
-			res.Error = evalErr.Error()
-			results = append(results, res)
+		if res.Error != "" {
 			log.Error().
 				Str("nodeID", n.GetID()).
 				Int("assertionIndex", i).
-				Str("extractor", assertion.ExtractorType).
-				Str("operator", assertion.OperatorType).
-				Err(evalErr).
+				Str("extractor", res.Extractor).
+				Str("operator", res.Operator).
+				Str("error", res.Error).
 				Msg("Assertion evaluation errored")
-			return results, fmt.Errorf("assertion %d (%s %s) evaluation error: %w",
-				i, assertion.ExtractorType, assertion.OperatorType, evalErr)
+			return results, fmt.Errorf("assertion %d (%s %s) evaluation error: %s",
+				i, res.Extractor, res.Operator, res.Error)
 		}
 
-		results = append(results, res)
-		if !passed {
+		if !res.Passed {
 			failedAssertionErr := fmt.Errorf(
 				"assertion %d failed: %s %s expected=%v actual=%v",
-				i, assertion.ExtractorType, assertion.OperatorType, assertion.ExpectedValue, actual)
+				i, res.Extractor, res.Operator, res.Expected, res.Actual)
 			log.Error().
 				Str("nodeID", n.GetID()).
 				Int("assertionIndex", i).
-				Str("extractor", assertion.ExtractorType).
-				Str("operator", assertion.OperatorType).
-				Any("expected", assertion.ExpectedValue).
-				Any("actual", actual).
+				Str("extractor", res.Extractor).
+				Str("operator", res.Operator).
+				Any("expected", res.Expected).
+				Any("actual", res.Actual).
 				Err(failedAssertionErr).
 				Msg("Assertion failed")
 			return results, failedAssertionErr

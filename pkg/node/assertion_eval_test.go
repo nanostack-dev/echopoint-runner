@@ -54,11 +54,11 @@ func mkAssertion(t *testing.T, extractor, path, op, value string) node.Composite
 
 func TestEvaluate_StatusCode(t *testing.T) {
 	ca := mkAssertion(t, "statusCode", "", "equals", "201")
-	if ok, err := ca.Evaluate(fakeCtx{status: 201}); err != nil || !ok {
-		t.Fatalf("expected pass, got ok=%v err=%v", ok, err)
+	if r := ca.Evaluate(fakeCtx{status: 201}); r.Error != "" || !r.Passed {
+		t.Fatalf("expected pass, got %+v", r)
 	}
-	if bad, err := ca.Evaluate(fakeCtx{status: 400}); err != nil || bad {
-		t.Fatalf("expected fail on 400, got ok=%v err=%v", bad, err)
+	if r := ca.Evaluate(fakeCtx{status: 400}); r.Error != "" || r.Passed {
+		t.Fatalf("expected clean fail on 400, got %+v", r)
 	}
 }
 
@@ -76,39 +76,37 @@ func TestEvaluate_JSONPathOperators(t *testing.T) {
 	}
 	for i, c := range cases {
 		ca := mkAssertion(t, c.extractor, c.path, c.op, c.value)
-		got, err := ca.Evaluate(fakeCtx{status: 200, parsed: body})
-		if err != nil {
-			t.Fatalf("case %d: err %v", i, err)
+		r := ca.Evaluate(fakeCtx{status: 200, parsed: body})
+		if r.Error != "" {
+			t.Fatalf("case %d: unexpected error %q", i, r.Error)
 		}
-		if got != c.want {
-			t.Fatalf("case %d: got %v want %v", i, got, c.want)
+		if r.Passed != c.want {
+			t.Fatalf("case %d: got %v want %v", i, r.Passed, c.want)
 		}
 	}
 }
 
 func TestEvaluate_NumericCompare(t *testing.T) {
 	ca := mkAssertion(t, "statusCode", "", "greaterThan", "200")
-	if ok, err := ca.Evaluate(fakeCtx{status: 201}); err != nil || !ok {
-		t.Fatalf("expected 201>200 pass, got ok=%v err=%v", ok, err)
+	if r := ca.Evaluate(fakeCtx{status: 201}); r.Error != "" || !r.Passed {
+		t.Fatalf("expected 201>200 pass, got %+v", r)
 	}
 }
 
-func TestEvaluateDetailed_ReturnsActual(t *testing.T) {
+func TestEvaluate_CapturesActualAndMetadata(t *testing.T) {
 	ca := mkAssertion(t, "statusCode", "", "equals", "201")
-	actual, passed, err := ca.EvaluateDetailed(fakeCtx{status: 201})
-	if err != nil || !passed {
-		t.Fatalf("expected pass, got passed=%v err=%v", passed, err)
+
+	pass := ca.Evaluate(fakeCtx{status: 201})
+	if !pass.Passed || fmt.Sprint(pass.Actual) != "201" {
+		t.Fatalf("expected pass with actual=201, got %+v", pass)
 	}
-	if fmt.Sprint(actual) != "201" {
-		t.Fatalf("expected actual=201, got %v", actual)
+	if pass.Extractor != "statusCode" || pass.Operator != "equals" || fmt.Sprint(pass.Expected) != "201" {
+		t.Fatalf("expected metadata copied onto result, got %+v", pass)
 	}
 
-	actual, passed, err = ca.EvaluateDetailed(fakeCtx{status: 400})
-	if err != nil || passed {
-		t.Fatalf("expected fail without error, got passed=%v err=%v", passed, err)
-	}
-	if fmt.Sprint(actual) != "400" {
-		t.Fatalf("expected actual=400 on failure, got %v", actual)
+	fail := ca.Evaluate(fakeCtx{status: 400})
+	if fail.Passed || fail.Error != "" || fmt.Sprint(fail.Actual) != "400" {
+		t.Fatalf("expected clean fail capturing actual=400, got %+v", fail)
 	}
 }
 
