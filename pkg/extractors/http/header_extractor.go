@@ -14,7 +14,7 @@ type HeaderExtractor struct {
 	HeaderName string `json:"headerName"`
 }
 
-func (e HeaderExtractor) Extract(ctx extractors.ResponseContext) (interface{}, error) {
+func (e HeaderExtractor) Extract(ctx extractors.ResponseContext) (any, error) {
 	log.Debug().
 		Str("extractorType", string(extractors.ExtractorTypeHeader)).
 		Str("headerName", e.HeaderName).

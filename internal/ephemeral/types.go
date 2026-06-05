@@ -15,7 +15,7 @@ type Package struct {
 	ExecutionID     string                         `json:"execution_id"`
 	FlowID          string                         `json:"flow_id"`
 	FlowDefinition  json.RawMessage                `json:"flow_definition"`
-	Inputs          map[string]interface{}         `json:"inputs"`
+	Inputs          map[string]any                 `json:"inputs"`
 	ReferencedFlows flowpkg.ReferencedFlowRegistry `json:"referenced_flows,omitempty"`
 }
 
@@ -23,11 +23,11 @@ type Package struct {
 // file, and the CLI POSTs as the ephemeral-result publication body.  It
 // matches the server's ephemeral result endpoint request shape exactly.
 type Result struct {
-	Status       string                  `json:"status"`
-	StartedAt    time.Time               `json:"started_at"`
-	CompletedAt  time.Time               `json:"completed_at"`
-	DurationMs   int64                   `json:"duration_ms"`
-	Result       *map[string]interface{} `json:"result"`
-	ErrorMessage *string                 `json:"error_message,omitempty"`
-	ErrorCode    *string                 `json:"error_code,omitempty"`
+	Status       string          `json:"status"`
+	StartedAt    time.Time       `json:"started_at"`
+	CompletedAt  time.Time       `json:"completed_at"`
+	DurationMs   int64           `json:"duration_ms"`
+	Result       *map[string]any `json:"result"`
+	ErrorMessage *string         `json:"error_message,omitempty"`
+	ErrorCode    *string         `json:"error_code,omitempty"`
 }

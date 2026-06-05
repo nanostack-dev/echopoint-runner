@@ -72,7 +72,7 @@ func TestBooleanAssertion_Validate_ConvertTypes(t *testing.T) {
 	testCases := []struct {
 		name     string
 		expected bool
-		actual   interface{}
+		actual   any
 		want     bool
 	}{
 		{"string true", true, "true", true},
@@ -106,10 +106,10 @@ func TestBooleanAssertion_Validate_InvalidType(t *testing.T) {
 
 	testCases := []struct {
 		name   string
-		actual interface{}
+		actual any
 	}{
 		{"nil value", nil},
-		{"complex type", map[string]interface{}{"key": "value"}},
+		{"complex type", map[string]any{"key": "value"}},
 		{"array", []string{"a", "b"}},
 	}
 

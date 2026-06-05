@@ -9,6 +9,6 @@ const (
 )
 
 type Assertion interface {
-	Validate(response interface{}) bool
+	Validate(response any) bool
 	GetType() AssertionType
 }

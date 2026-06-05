@@ -5,7 +5,7 @@ import "github.com/nanostack-dev/echopoint-runner/pkg/node"
 // The structs below are the typed shapes of the progress-event payloads emitted
 // to the control plane. Their JSON tags are the wire contract — they must match
 // the keys the control plane consumes exactly. They replace hand-built
-// map[string]interface{} literals so field names are checked at compile time.
+// map[string]any literals so field names are checked at compile time.
 
 type flowStartedPayload struct {
 	ExecutionID string `json:"execution_id"`

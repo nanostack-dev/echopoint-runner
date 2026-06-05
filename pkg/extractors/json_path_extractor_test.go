@@ -23,8 +23,8 @@ func TestJSONPathExtractor_GetType(t *testing.T) {
 
 func TestJSONPathExtractor_Extract_SimpleField(t *testing.T) {
 	extractor := extractors.JSONPathExtractor{Path: "$.user.name"}
-	data := map[string]interface{}{
-		"user": map[string]interface{}{
+	data := map[string]any{
+		"user": map[string]any{
 			"name": "John Doe",
 			"age":  30,
 		},
@@ -40,10 +40,10 @@ func TestJSONPathExtractor_Extract_SimpleField(t *testing.T) {
 
 func TestJSONPathExtractor_Extract_NestedField(t *testing.T) {
 	extractor := extractors.JSONPathExtractor{Path: "$.user.address.city"}
-	data := map[string]interface{}{
-		"user": map[string]interface{}{
+	data := map[string]any{
+		"user": map[string]any{
 			"name": "John Doe",
-			"address": map[string]interface{}{
+			"address": map[string]any{
 				"city":    "New York",
 				"country": "USA",
 			},
@@ -60,10 +60,10 @@ func TestJSONPathExtractor_Extract_NestedField(t *testing.T) {
 
 func TestJSONPathExtractor_Extract_ArrayElement(t *testing.T) {
 	extractor := extractors.JSONPathExtractor{Path: "$.orders[0].id"}
-	data := map[string]interface{}{
-		"orders": []interface{}{
-			map[string]interface{}{"id": "order-123", "total": 100},
-			map[string]interface{}{"id": "order-456", "total": 200},
+	data := map[string]any{
+		"orders": []any{
+			map[string]any{"id": "order-123", "total": 100},
+			map[string]any{"id": "order-456", "total": 200},
 		},
 	}
 	jsonBytes, _ := json.Marshal(data)
@@ -77,8 +77,8 @@ func TestJSONPathExtractor_Extract_ArrayElement(t *testing.T) {
 
 func TestJSONPathExtractor_Extract_NonexistentPath(t *testing.T) {
 	extractor := extractors.JSONPathExtractor{Path: "$.nonexistent.field"}
-	data := map[string]interface{}{
-		"user": map[string]interface{}{
+	data := map[string]any{
+		"user": map[string]any{
 			"name": "John Doe",
 		},
 	}
@@ -94,11 +94,11 @@ func TestJSONPathExtractor_Extract_NonexistentPath(t *testing.T) {
 
 func TestJSONPathExtractor_Extract_ArrayFilter(t *testing.T) {
 	extractor := extractors.JSONPathExtractor{Path: "$.orders[?@.status=='active'].id"}
-	data := map[string]interface{}{
-		"orders": []interface{}{
-			map[string]interface{}{"id": "order-123", "status": "active"},
-			map[string]interface{}{"id": "order-456", "status": "completed"},
-			map[string]interface{}{"id": "order-789", "status": "active"},
+	data := map[string]any{
+		"orders": []any{
+			map[string]any{"id": "order-123", "status": "active"},
+			map[string]any{"id": "order-456", "status": "completed"},
+			map[string]any{"id": "order-789", "status": "active"},
 		},
 	}
 	jsonBytes, _ := json.Marshal(data)
@@ -108,7 +108,7 @@ func TestJSONPathExtractor_Extract_ArrayFilter(t *testing.T) {
 
 	require.NoError(t, err)
 	// Should return array of matching ids
-	resultSlice, ok := result.([]interface{})
+	resultSlice, ok := result.([]any)
 	assert.True(t, ok, "result should be a slice")
 	assert.Len(t, resultSlice, 2)
 	assert.Contains(t, resultSlice, "order-123")
@@ -117,7 +117,7 @@ func TestJSONPathExtractor_Extract_ArrayFilter(t *testing.T) {
 
 func TestJSONPathExtractor_Extract_InvalidPath(t *testing.T) {
 	extractor := extractors.JSONPathExtractor{Path: "$[invalid"}
-	data := map[string]interface{}{"key": "value"}
+	data := map[string]any{"key": "value"}
 	jsonBytes, _ := json.Marshal(data)
 	ctx := extractors.NewResponseContext(&http.Response{}, jsonBytes, data)
 
@@ -141,11 +141,11 @@ func TestJSONPathExtractor_Extract_MissingParsedBody(t *testing.T) {
 
 func TestJSONPathExtractor_Extract_MultipleResults(t *testing.T) {
 	extractor := extractors.JSONPathExtractor{Path: "$.items[*].id"}
-	data := map[string]interface{}{
-		"items": []interface{}{
-			map[string]interface{}{"id": "item-1"},
-			map[string]interface{}{"id": "item-2"},
-			map[string]interface{}{"id": "item-3"},
+	data := map[string]any{
+		"items": []any{
+			map[string]any{"id": "item-1"},
+			map[string]any{"id": "item-2"},
+			map[string]any{"id": "item-3"},
 		},
 	}
 	jsonBytes, _ := json.Marshal(data)
@@ -154,7 +154,7 @@ func TestJSONPathExtractor_Extract_MultipleResults(t *testing.T) {
 	result, err := extractor.Extract(ctx)
 
 	require.NoError(t, err)
-	resultSlice, ok := result.([]interface{})
+	resultSlice, ok := result.([]any)
 	require.True(t, ok, "result should be a slice")
 	assert.Len(t, resultSlice, 3)
 }

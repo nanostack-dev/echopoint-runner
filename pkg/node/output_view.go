@@ -1,18 +1,18 @@
 package node
 
 type outputSnapshot struct {
-	outputs map[string]map[string]interface{}
+	outputs map[string]map[string]any
 }
 
-func NewOutputView(outputs map[string]map[string]interface{}) OutputView {
-	snapshot := make(map[string]map[string]interface{}, len(outputs))
+func NewOutputView(outputs map[string]map[string]any) OutputView {
+	snapshot := make(map[string]map[string]any, len(outputs))
 	for nodeID, nodeOutputs := range outputs {
 		if nodeOutputs == nil {
 			snapshot[nodeID] = nil
 			continue
 		}
 
-		copied := make(map[string]interface{}, len(nodeOutputs))
+		copied := make(map[string]any, len(nodeOutputs))
 		for key, value := range nodeOutputs {
 			copied[key] = value
 		}
@@ -27,7 +27,7 @@ func (o outputSnapshot) HasNode(nodeID string) bool {
 	return exists
 }
 
-func (o outputSnapshot) Get(nodeID, outputKey string) (interface{}, bool) {
+func (o outputSnapshot) Get(nodeID, outputKey string) (any, bool) {
 	nodeOutputs, exists := o.outputs[nodeID]
 	if !exists {
 		return nil, false
@@ -37,13 +37,13 @@ func (o outputSnapshot) Get(nodeID, outputKey string) (interface{}, bool) {
 	return value, exists
 }
 
-func (o outputSnapshot) Node(nodeID string) map[string]interface{} {
+func (o outputSnapshot) Node(nodeID string) map[string]any {
 	nodeOutputs, exists := o.outputs[nodeID]
 	if !exists || nodeOutputs == nil {
 		return nil
 	}
 
-	copyNodeOutputs := make(map[string]interface{}, len(nodeOutputs))
+	copyNodeOutputs := make(map[string]any, len(nodeOutputs))
 	for key, value := range nodeOutputs {
 		copyNodeOutputs[key] = value
 	}

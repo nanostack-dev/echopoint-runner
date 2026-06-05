@@ -227,7 +227,7 @@ func TestNumberAssertion_Validate_ConvertTypes(t *testing.T) {
 	testCases := []struct {
 		name     string
 		expected float64
-		actual   interface{}
+		actual   any
 		want     bool
 	}{
 		{"int to float64", 200, 200, true},

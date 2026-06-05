@@ -101,8 +101,8 @@ func TestNewInterfaceDesignPattern(t *testing.T) {
 				w.Header().Set("X-Custom-Header", "test-value")
 				w.WriteHeader(http.StatusCreated)
 				json.NewEncoder(w).Encode(
-					map[string]interface{}{
-						"user": map[string]interface{}{
+					map[string]any{
+						"user": map[string]any{
 							"id":   123,
 							"name": "John Doe",
 						},
@@ -127,7 +127,7 @@ func TestNewInterfaceDesignPattern(t *testing.T) {
 	}
 
 	// Parse response
-	var parsedBody interface{}
+	var parsedBody any
 	if parseErr := json.Unmarshal(respBody, &parsedBody); parseErr != nil {
 		t.Fatalf("Failed to parse JSON: %v", parseErr)
 	}
@@ -171,7 +171,7 @@ func BenchmarkNewDesign(b *testing.B) {
 				w.Header().Set("X-Custom-Header", "benchmark-value")
 				w.WriteHeader(http.StatusOK)
 				json.NewEncoder(w).Encode(
-					map[string]interface{}{
+					map[string]any{
 						"data": "test",
 					},
 				)
@@ -190,7 +190,7 @@ func BenchmarkNewDesign(b *testing.B) {
 	if err != nil {
 		b.Fatalf("Failed to read response: %v", err)
 	}
-	var parsedBody interface{}
+	var parsedBody any
 	json.Unmarshal(respBody, &parsedBody)
 
 	ctx := extractors.NewResponseContext(resp, respBody, parsedBody)

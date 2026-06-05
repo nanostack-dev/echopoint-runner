@@ -11,7 +11,7 @@ import (
 )
 
 type executionState struct {
-	allOutputs      map[string]map[string]interface{}
+	allOutputs      map[string]map[string]any
 	remainingInputs map[node.AnyNode]int
 	executedCount   int
 	result          *node.FlowExecutionResult
@@ -26,12 +26,12 @@ type nodeRunResult struct {
 }
 
 func (engine *FlowEngine) executeNodes(
-	initialInputs map[string]interface{},
+	initialInputs map[string]any,
 	result *node.FlowExecutionResult,
 	startTime time.Time,
 ) error {
 	state := &executionState{
-		allOutputs:      make(map[string]map[string]interface{}),
+		allOutputs:      make(map[string]map[string]any),
 		remainingInputs: make(map[node.AnyNode]int),
 		executedCount:   0,
 		result:          result,
@@ -295,7 +295,7 @@ func (engine *FlowEngine) propagateNodeOutputs(
 	outputs := result.GetOutputs()
 	nodeID := n.GetID()
 	nodeType := n.GetType()
-	copiedOutputs := make(map[string]interface{}, len(outputs))
+	copiedOutputs := make(map[string]any, len(outputs))
 	for key, value := range outputs {
 		copiedOutputs[key] = value
 	}

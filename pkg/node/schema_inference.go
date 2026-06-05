@@ -11,7 +11,7 @@ var templateVariablePattern = regexp.MustCompile(`\{\{\{?\s*([^}]+?)\s*\}\}\}?`)
 type SchemaInference struct{}
 
 // ExtractTemplateVariables extracts all {{variable}} references from a string or nested structure.
-func (si *SchemaInference) ExtractTemplateVariables(data interface{}) []string {
+func (si *SchemaInference) ExtractTemplateVariables(data any) []string {
 	vars := make(map[string]bool)
 	si.extractVariablesRecursive(data, vars)
 
@@ -24,11 +24,11 @@ func (si *SchemaInference) ExtractTemplateVariables(data interface{}) []string {
 }
 
 // extractVariablesRecursive recursively extracts variables from nested structures.
-func (si *SchemaInference) extractVariablesRecursive(data interface{}, vars map[string]bool) {
+func (si *SchemaInference) extractVariablesRecursive(data any, vars map[string]bool) {
 	switch v := data.(type) {
 	case string:
 		si.extractVariablesFromString(v, vars)
-	case map[string]interface{}:
+	case map[string]any:
 		for _, val := range v {
 			si.extractVariablesRecursive(val, vars)
 		}
@@ -36,7 +36,7 @@ func (si *SchemaInference) extractVariablesRecursive(data interface{}, vars map[
 		for _, val := range v {
 			si.extractVariablesRecursive(val, vars)
 		}
-	case []interface{}:
+	case []any:
 		for _, val := range v {
 			si.extractVariablesRecursive(val, vars)
 		}

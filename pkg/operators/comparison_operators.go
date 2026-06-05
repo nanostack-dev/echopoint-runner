@@ -7,7 +7,7 @@ type GreaterThanOperator struct {
 	Expected float64 `json:"expected"`
 }
 
-func (o GreaterThanOperator) Validate(actual interface{}) (bool, error) {
+func (o GreaterThanOperator) Validate(actual any) (bool, error) {
 	actualNum, ok := toFloat64(actual)
 	if !ok {
 		return false, fmt.Errorf("greaterThan operator requires numeric value, got %T", actual)
@@ -25,7 +25,7 @@ type LessThanOperator struct {
 	Expected float64 `json:"expected"`
 }
 
-func (o LessThanOperator) Validate(actual interface{}) (bool, error) {
+func (o LessThanOperator) Validate(actual any) (bool, error) {
 	actualNum, ok := toFloat64(actual)
 	if !ok {
 		return false, fmt.Errorf("lessThan operator requires numeric value, got %T", actual)
@@ -43,7 +43,7 @@ type GreaterThanOrEqualOperator struct {
 	Expected float64 `json:"expected"`
 }
 
-func (o GreaterThanOrEqualOperator) Validate(actual interface{}) (bool, error) {
+func (o GreaterThanOrEqualOperator) Validate(actual any) (bool, error) {
 	actualNum, ok := toFloat64(actual)
 	if !ok {
 		return false, fmt.Errorf("greaterThanOrEqual operator requires numeric value, got %T", actual)
@@ -61,7 +61,7 @@ type LessThanOrEqualOperator struct {
 	Expected float64 `json:"expected"`
 }
 
-func (o LessThanOrEqualOperator) Validate(actual interface{}) (bool, error) {
+func (o LessThanOrEqualOperator) Validate(actual any) (bool, error) {
 	actualNum, ok := toFloat64(actual)
 	if !ok {
 		return false, fmt.Errorf("lessThanOrEqual operator requires numeric value, got %T", actual)
@@ -80,7 +80,7 @@ type BetweenOperator struct {
 	Max float64 `json:"max"`
 }
 
-func (o BetweenOperator) Validate(actual interface{}) (bool, error) {
+func (o BetweenOperator) Validate(actual any) (bool, error) {
 	actualNum, ok := toFloat64(actual)
 	if !ok {
 		return false, fmt.Errorf("between operator requires numeric value, got %T", actual)

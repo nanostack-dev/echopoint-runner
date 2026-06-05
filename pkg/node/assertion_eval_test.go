@@ -15,17 +15,17 @@ import (
 // statusCode and jsonPath extractors.
 type fakeCtx struct {
 	status int
-	parsed interface{}
+	parsed any
 	raw    []byte
 }
 
-func (c fakeCtx) HasCapability(string) bool  { return true }
-func (c fakeCtx) GetStatus() int             { return c.status }
-func (c fakeCtx) GetHeader(string) string    { return "" }
-func (c fakeCtx) Headers() http.Header       { return http.Header{} }
-func (c fakeCtx) GetParsedBody() interface{} { return c.parsed }
-func (c fakeCtx) GetRawBody() []byte         { return c.raw }
-func (c fakeCtx) GetDuration() interface{}   { return nil }
+func (c fakeCtx) HasCapability(string) bool { return true }
+func (c fakeCtx) GetStatus() int            { return c.status }
+func (c fakeCtx) GetHeader(string) string   { return "" }
+func (c fakeCtx) Headers() http.Header      { return http.Header{} }
+func (c fakeCtx) GetParsedBody() any        { return c.parsed }
+func (c fakeCtx) GetRawBody() []byte        { return c.raw }
+func (c fakeCtx) GetDuration() any          { return nil }
 
 var _ extractors.ResponseContext = fakeCtx{}
 
@@ -63,7 +63,7 @@ func TestEvaluate_StatusCode(t *testing.T) {
 }
 
 func TestEvaluate_JSONPathOperators(t *testing.T) {
-	body := map[string]interface{}{"name": "eptest", "id": "prd_123", "empty": ""}
+	body := map[string]any{"name": "eptest", "id": "prd_123", "empty": ""}
 	cases := []struct {
 		extractor, path, op, value string
 		want                       bool
@@ -97,7 +97,7 @@ func TestEvaluate_NumericCompare(t *testing.T) {
 // declares but the evaluator previously did not implement (startsWith, endsWith,
 // regex, greaterThanOrEqual, lessThanOrEqual).
 func TestEvaluate_ExpandedOperators(t *testing.T) {
-	body := map[string]interface{}{"name": "eptest"}
+	body := map[string]any{"name": "eptest"}
 	cases := []struct {
 		name                       string
 		extractor, path, op, value string
@@ -177,7 +177,7 @@ func TestRunAssertions_RecordsEveryPass(t *testing.T) {
 		mkAssertion(t, "statusCode", "", "equals", "200"),
 		mkAssertion(t, "jsonPath", "$.name", "equals", "eptest"),
 	)
-	ctx := fakeCtx{status: 200, parsed: map[string]interface{}{"name": "eptest"}}
+	ctx := fakeCtx{status: 200, parsed: map[string]any{"name": "eptest"}}
 	results, err := node.RunAssertionsForTest(n, ctx)
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
@@ -201,7 +201,7 @@ func TestRunAssertions_RecordsFailureWithActual(t *testing.T) {
 		mkAssertion(t, "jsonPath", "$.name", "equals", "no"), // fails: actual "eptest"
 		mkAssertion(t, "jsonPath", "$.x", "equals", "y"),     // never reached
 	)
-	ctx := fakeCtx{status: 200, parsed: map[string]interface{}{"name": "eptest"}}
+	ctx := fakeCtx{status: 200, parsed: map[string]any{"name": "eptest"}}
 	results, err := node.RunAssertionsForTest(n, ctx)
 	if err == nil {
 		t.Fatal("expected a failure error")
@@ -254,7 +254,7 @@ func TestAssertionResults_SerializeInPayload(t *testing.T) {
 		t.Fatalf("unexpected err: %v", err)
 	}
 	// Mirror how the result is held: an interface value carrying the concrete type.
-	var held interface{} = &node.RequestExecutionResult{AssertionResults: results}
+	var held any = &node.RequestExecutionResult{AssertionResults: results}
 	encoded, err := json.Marshal(held)
 	if err != nil {
 		t.Fatalf("marshal: %v", err)

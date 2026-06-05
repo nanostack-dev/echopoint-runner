@@ -10,7 +10,7 @@ import (
 	"github.com/nanostack-dev/echopoint-runner/pkg/extractors"
 )
 
-func (n *RequestNode) validateInputsPresent(inputs map[string]interface{}) error {
+func (n *RequestNode) validateInputsPresent(inputs map[string]any) error {
 	for _, dep := range n.InputSchema() {
 		if _, exists := inputs[dep]; !exists {
 			err := fmt.Errorf("missing required input: %s", dep)
@@ -25,7 +25,7 @@ func (n *RequestNode) validateInputsPresent(inputs map[string]interface{}) error
 	return nil
 }
 
-func (n *RequestNode) prepareRequest(inputs map[string]interface{}) (string, map[string]string, interface{}, error) {
+func (n *RequestNode) prepareRequest(inputs map[string]any) (string, map[string]string, any, error) {
 	log.Debug().
 		Str("nodeID", n.GetID()).
 		Str("rawURL", n.Data.URL).
@@ -84,14 +84,14 @@ func (n *RequestNode) prepareRequest(inputs map[string]interface{}) (string, map
 	return url, headers, body, nil
 }
 
-func (n *RequestNode) parseResponseBody(contentType string, respBody []byte) interface{} {
+func (n *RequestNode) parseResponseBody(contentType string, respBody []byte) any {
 	log.Debug().
 		Str("nodeID", n.GetID()).
 		Str("contentType", contentType).
 		Msg("Parsing response body")
 
 	if strings.Contains(contentType, "application/json") {
-		var parsedBody interface{}
+		var parsedBody any
 		if unmarshalErr := json.Unmarshal(respBody, &parsedBody); unmarshalErr != nil {
 			log.Warn().
 				Str("nodeID", n.GetID()).
@@ -160,8 +160,8 @@ func (n *RequestNode) runAssertions(
 	return results, nil
 }
 
-func (n *RequestNode) extractOutputs(respCtx extractors.ResponseContext) (map[string]interface{}, error) {
-	output := make(map[string]interface{})
+func (n *RequestNode) extractOutputs(respCtx extractors.ResponseContext) (map[string]any, error) {
+	output := make(map[string]any)
 
 	log.Debug().
 		Str("nodeID", n.GetID()).
@@ -196,7 +196,7 @@ func (n *RequestNode) extractOutputs(respCtx extractors.ResponseContext) (map[st
 	return output, nil
 }
 
-func (n *RequestNode) validateOutput(output map[string]interface{}) error {
+func (n *RequestNode) validateOutput(output map[string]any) error {
 	for _, expectedKey := range n.OutputSchema() {
 		if _, exists := output[expectedKey]; !exists {
 			errOutput := fmt.Errorf("failed to extract expected output: %s", expectedKey)

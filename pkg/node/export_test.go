@@ -19,10 +19,10 @@ func RunAssertionsForTest(
 // exercise the assert -> extract -> validate -> build path without HTTP.
 func ProcessResponseForTest(
 	n *RequestNode,
-	inputs map[string]interface{},
+	inputs map[string]any,
 	url string,
 	headers map[string]string,
-	body interface{},
+	body any,
 	resp *http.Response,
 	respBody []byte,
 	startTime time.Time,
@@ -32,20 +32,20 @@ func ProcessResponseForTest(
 
 func PrepareRequestForTest(
 	n *RequestNode,
-	inputs map[string]interface{},
-) (string, map[string]string, interface{}, error) {
+	inputs map[string]any,
+) (string, map[string]string, any, error) {
 	return n.prepareRequest(inputs)
 }
 
 func CreateResponseBackedErrorResultForTest(
 	n *RequestNode,
-	inputs map[string]interface{},
+	inputs map[string]any,
 	url string,
 	headers map[string]string,
-	body interface{},
+	body any,
 	resp *http.Response,
 	respBody []byte,
-	parsedBody interface{},
+	parsedBody any,
 	err error,
 	duration time.Duration,
 ) AnyExecutionResult {

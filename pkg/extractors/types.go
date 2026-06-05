@@ -7,7 +7,7 @@ import (
 )
 
 type AnyExtractor interface {
-	Extract(ctx ResponseContext) (interface{}, error)
+	Extract(ctx ResponseContext) (any, error)
 	GetType() ExtractorType
 }
 
@@ -48,11 +48,11 @@ type BodyReader interface {
 
 // ParsedBodyReader provides access to pre-parsed body (JSON, XML, etc.)
 type ParsedBodyReader interface {
-	GetParsedBody() interface{}
+	GetParsedBody() any
 	GetRawBody() []byte
 }
 
 // TimingInfo provides access to response timing information.
 type TimingInfo interface {
-	GetDuration() interface{} // Can be used for future timing metrics
+	GetDuration() any // Can be used for future timing metrics
 }

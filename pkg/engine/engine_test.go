@@ -81,7 +81,7 @@ func (n *MockNode) GetOutputs() []node.Output {
 func (n *MockNode) Execute(_ node.ExecutionContext) (node.AnyExecutionResult, error) {
 	n.executed = true
 
-	outputs := map[string]interface{}{}
+	outputs := map[string]any{}
 	var err error
 
 	if n.shouldError {
@@ -120,7 +120,7 @@ type DataContractMockNode struct {
 	runWhen     node.RunWhen
 	inputDeps   []string
 	outputKeys  []string
-	outputs     map[string]interface{}
+	outputs     map[string]any
 	shouldError bool
 	executedAt  *time.Time
 }
@@ -219,7 +219,7 @@ func newDataContractMockNode(id string, inputDeps, outputKeys []string) *DataCon
 		nodeType:   node.TypeRequest,
 		inputDeps:  inputDeps,
 		outputKeys: outputKeys,
-		outputs:    make(map[string]interface{}),
+		outputs:    make(map[string]any),
 	}
 }
 
@@ -322,7 +322,7 @@ func TestFlowEngine_Execute_LinearFlow(t *testing.T) {
 	flowEngine, err := engine.NewFlowEngine(flowInstance, &engine.Options{})
 	require.NoError(t, err)
 
-	result, err := flowEngine.Execute(make(map[string]interface{}))
+	result, err := flowEngine.Execute(make(map[string]any))
 
 	require.NoError(t, err)
 	require.True(t, result.Success)
@@ -354,7 +354,7 @@ func TestFlowEngine_Execute_ParallelFlow(t *testing.T) {
 		},
 	)
 	require.NoError(t, err)
-	result, err := flowEngine.Execute(make(map[string]interface{}))
+	result, err := flowEngine.Execute(make(map[string]any))
 
 	require.NoError(t, err)
 	require.True(t, result.Success)
@@ -387,7 +387,7 @@ func TestFlowEngine_Execute_BranchingFlow(t *testing.T) {
 	flowEngine, err := engine.NewFlowEngine(flowInstance, &engine.Options{})
 	require.NoError(t, err)
 
-	result, err := flowEngine.Execute(make(map[string]interface{}))
+	result, err := flowEngine.Execute(make(map[string]any))
 
 	require.NoError(t, err)
 	require.True(t, result.Success)
@@ -414,7 +414,7 @@ func TestFlowEngine_Execute_NodeFailsWithError(t *testing.T) {
 	flowEngine, err := engine.NewFlowEngine(flowInstance, &engine.Options{})
 	require.NoError(t, err)
 
-	result, err := flowEngine.Execute(make(map[string]interface{}))
+	result, err := flowEngine.Execute(make(map[string]any))
 
 	require.Error(t, err)
 	require.False(t, result.Success)
@@ -444,7 +444,7 @@ func TestFlowEngine_Execute_AlwaysNodeRunsAfterMainFailure(t *testing.T) {
 	flowEngine, err := engine.NewFlowEngine(flowInstance, &engine.Options{})
 	require.NoError(t, err)
 
-	result, err := flowEngine.Execute(map[string]interface{}{})
+	result, err := flowEngine.Execute(map[string]any{})
 	require.Error(t, err)
 	require.False(t, result.Success)
 	assert.NotNil(t, cleanup.executedAt)
@@ -471,7 +471,7 @@ func TestFlowEngine_Execute_AlwaysNodeSkippedWhenInputsMissing(t *testing.T) {
 	flowEngine, err := engine.NewFlowEngine(flowInstance, &engine.Options{})
 	require.NoError(t, err)
 
-	result, err := flowEngine.Execute(map[string]interface{}{})
+	result, err := flowEngine.Execute(map[string]any{})
 	require.Error(t, err)
 	require.False(t, result.Success)
 	require.Contains(t, result.ExecutionResults, "cleanup")
@@ -543,7 +543,7 @@ func TestFlowEngine_Execute_AlwaysCleanupChainContinuesAfterIntermediateSkip(t *
 	flowEngine, err := engine.NewFlowEngine(flowInstance, &engine.Options{})
 	require.NoError(t, err)
 
-	result, err := flowEngine.Execute(map[string]interface{}{
+	result, err := flowEngine.Execute(map[string]any{
 		"email":    "rowan@nanostack.dev",
 		"password": "secret",
 	})
@@ -625,7 +625,7 @@ func TestFlowEngine_Execute_AlwaysCleanupJoinRunsAfterUpstreamCleanupIsSkipped(t
 	flowEngine, err := engine.NewFlowEngine(flowInstance, &engine.Options{})
 	require.NoError(t, err)
 
-	result, err := flowEngine.Execute(map[string]interface{}{})
+	result, err := flowEngine.Execute(map[string]any{})
 	require.Error(t, err)
 	require.False(t, result.Success)
 
@@ -660,7 +660,7 @@ func TestFlowEngine_Execute_NoNodes(t *testing.T) {
 	flowEngine, err := engine.NewFlowEngine(flowInstance, &engine.Options{})
 	require.NoError(t, err)
 
-	result, err := flowEngine.Execute(make(map[string]interface{}))
+	result, err := flowEngine.Execute(make(map[string]any))
 
 	require.Error(t, err)
 	require.False(t, result.Success)
@@ -684,7 +684,7 @@ func TestFlowEngine_Execute_CycleDetection(t *testing.T) {
 	flowEngine, err := engine.NewFlowEngine(flowInstance, &engine.Options{})
 	require.NoError(t, err)
 
-	result, err := flowEngine.Execute(make(map[string]interface{}))
+	result, err := flowEngine.Execute(make(map[string]any))
 
 	require.Error(t, err)
 	require.False(t, result.Success)
@@ -713,7 +713,7 @@ func TestFlowEngine_Execute_WithObserver(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	result, err := flowEngine.Execute(make(map[string]interface{}))
+	result, err := flowEngine.Execute(make(map[string]any))
 
 	require.NoError(t, err)
 	require.True(t, result.Success)
@@ -744,7 +744,7 @@ func TestFlowEngine_Execute_WithObserver(t *testing.T) {
 // TestDataContract_SimpleDataPassing tests basic multi-node data passing.
 func TestDataContract_SimpleDataPassing(t *testing.T) {
 	node1 := newDataContractMockNode("create-user", []string{}, []string{"userId", "statusCode"})
-	node1.outputs = map[string]interface{}{
+	node1.outputs = map[string]any{
 		"userId":     "user-123",
 		"statusCode": 201,
 	}
@@ -752,8 +752,8 @@ func TestDataContract_SimpleDataPassing(t *testing.T) {
 	node2 := newDataContractMockNode(
 		"fetch-user", []string{"create-user.userId"}, []string{"userData"},
 	)
-	node2.outputs = map[string]interface{}{
-		"userData": map[string]interface{}{"name": "John", "email": "john@example.com"},
+	node2.outputs = map[string]any{
+		"userData": map[string]any{"name": "John", "email": "john@example.com"},
 	}
 
 	flowInstance := flow.Flow{
@@ -767,7 +767,7 @@ func TestDataContract_SimpleDataPassing(t *testing.T) {
 	flowEngine, err := engine.NewFlowEngine(flowInstance, nil)
 	require.NoError(t, err)
 
-	result, err := flowEngine.Execute(make(map[string]interface{}))
+	result, err := flowEngine.Execute(make(map[string]any))
 
 	require.NoError(t, err)
 	require.True(t, result.Success)
@@ -791,7 +791,7 @@ func TestDataContract_MissingInput(t *testing.T) {
 		Name:  "Missing Input Test",
 		Nodes: []node.AnyNode{dataContractMockNode},
 		Edges: []edge.Edge{},
-		InitialInputs: map[string]interface{}{
+		InitialInputs: map[string]any{
 			"provided": "value",
 		},
 	}
@@ -812,10 +812,10 @@ func TestDataContract_MissingInput(t *testing.T) {
 // TestDataContract_ExecutionResults tests complete execution tracing.
 func TestDataContract_ExecutionResults(t *testing.T) {
 	node1 := newDataContractMockNode("step1", []string{}, []string{"output"})
-	node1.outputs = map[string]interface{}{"output": "value1"}
+	node1.outputs = map[string]any{"output": "value1"}
 
 	node2 := newDataContractMockNode("step2", []string{"step1.output"}, []string{"output"})
-	node2.outputs = map[string]interface{}{"output": "value2"}
+	node2.outputs = map[string]any{"output": "value2"}
 
 	flowInstance := flow.Flow{
 		Name:  "Frame Test",
@@ -828,7 +828,7 @@ func TestDataContract_ExecutionResults(t *testing.T) {
 	flowEngine, err := engine.NewFlowEngine(flowInstance, nil)
 	require.NoError(t, err)
 
-	result, err := flowEngine.Execute(make(map[string]interface{}))
+	result, err := flowEngine.Execute(make(map[string]any))
 
 	require.NoError(t, err)
 	require.True(t, result.Success)
@@ -837,11 +837,11 @@ func TestDataContract_ExecutionResults(t *testing.T) {
 	frame1 := result.ExecutionResults["step1"]
 	assert.NotNil(t, frame1.GetExecutedAt())
 	require.NoError(t, frame1.GetError())
-	assert.Equal(t, map[string]interface{}{"output": "value1"}, frame1.GetOutputs())
+	assert.Equal(t, map[string]any{"output": "value1"}, frame1.GetOutputs())
 
 	frame2 := result.ExecutionResults["step2"]
 	assert.Equal(t, "value1", frame2.GetInputs()["step1.output"])
-	assert.Equal(t, map[string]interface{}{"output": "value2"}, frame2.GetOutputs())
+	assert.Equal(t, map[string]any{"output": "value2"}, frame2.GetOutputs())
 }
 
 func TestFlowEngine_Execute_ModuleNodeExportsNestedOutputs(t *testing.T) {
@@ -967,7 +967,7 @@ func TestFlowEngine_Execute_ModuleNodeExportsNestedOutputs(t *testing.T) {
 	resolver := staticModuleResolver{
 		"flow-charge": {
 			FlowDefinition: childChargeJSON,
-			InputOverrides: map[string]interface{}{
+			InputOverrides: map[string]any{
 				"currency": "eur",
 			},
 		},
@@ -976,7 +976,7 @@ func TestFlowEngine_Execute_ModuleNodeExportsNestedOutputs(t *testing.T) {
 		},
 	}
 
-	result, err := engine.ExecuteFlowDefinition(*parentFlow, map[string]interface{}{
+	result, err := engine.ExecuteFlowDefinition(*parentFlow, map[string]any{
 		"customerId": "cust-123",
 		"currency":   "gbp",
 	}, &engine.ExecuteOptions{
@@ -1059,14 +1059,14 @@ func TestFlowEngine_Execute_ModuleNodeInheritsInputsAndAppliesOverrides(t *testi
 	resolver := staticModuleResolver{
 		"flow-child": {
 			FlowDefinition: childJSON,
-			InputOverrides: map[string]interface{}{
+			InputOverrides: map[string]any{
 				"TOKEN":      "child-token",
 				"retryCount": 5,
 			},
 		},
 	}
 
-	result, err := engine.ExecuteFlowDefinition(*parentFlow, map[string]interface{}{
+	result, err := engine.ExecuteFlowDefinition(*parentFlow, map[string]any{
 		"BASE_URL":      "https://api.example.com",
 		"TOKEN":         "root-token",
 		"retryCount":    2,
@@ -1129,7 +1129,7 @@ func TestFlowEngine_Execute_ModuleNodeFailsWhenChildOutputBindingMissing(t *test
 		},
 	}
 
-	result, err := engine.ExecuteFlowDefinition(*parentFlow, map[string]interface{}{}, &engine.ExecuteOptions{
+	result, err := engine.ExecuteFlowDefinition(*parentFlow, map[string]any{}, &engine.ExecuteOptions{
 		ModuleResolver: resolver,
 	})
 	require.Error(t, err)
@@ -1181,7 +1181,7 @@ func TestFlowEngine_Execute_ModuleNodeTrimsFlowID(t *testing.T) {
 		},
 	}
 
-	result, err := engine.ExecuteFlowDefinition(*parentFlow, map[string]interface{}{}, &engine.ExecuteOptions{
+	result, err := engine.ExecuteFlowDefinition(*parentFlow, map[string]any{}, &engine.ExecuteOptions{
 		ModuleResolver: resolver,
 	})
 	require.NoError(t, err)
@@ -1201,22 +1201,22 @@ func TestFlowExecutionResultToPayload_IncludesModuleExecutionResult(t *testing.T
 					NodeID:      "charge-customer",
 					DisplayName: "Charge Customer",
 					NodeType:    node.TypeModule,
-					Inputs: map[string]interface{}{
+					Inputs: map[string]any{
 						"customerId": "cust-123",
 					},
-					Outputs: map[string]interface{}{
+					Outputs: map[string]any{
 						"chargeId": "ch_123",
 					},
 					ExecutedAt: time.Now(),
 				},
 				FlowID: "flow-charge",
-				ChildFinalOutputs: map[string]interface{}{
+				ChildFinalOutputs: map[string]any{
 					"create-charge.chargeId": "ch_123",
 				},
 				DurationMs: 42,
 			},
 		},
-		FinalOutputs: map[string]interface{}{
+		FinalOutputs: map[string]any{
 			"charge-customer.chargeId": "ch_123",
 		},
 		Success:    true,
@@ -1227,9 +1227,9 @@ func TestFlowExecutionResultToPayload_IncludesModuleExecutionResult(t *testing.T
 	require.NoError(t, err)
 	require.Contains(t, payload, "execution_results")
 
-	executionResults, ok := payload["execution_results"].(map[string]interface{})
+	executionResults, ok := payload["execution_results"].(map[string]any)
 	require.True(t, ok)
-	modulePayload, ok := executionResults["charge-customer"].(map[string]interface{})
+	modulePayload, ok := executionResults["charge-customer"].(map[string]any)
 	require.True(t, ok)
 	assert.Equal(t, string(node.TypeModule), modulePayload["node_type"])
 	assert.Equal(t, "flow-charge", modulePayload["flow_id"])
@@ -1281,7 +1281,7 @@ func TestFlowEngine_Execute_ModuleNodeRejectsDirectCycle(t *testing.T) {
 		},
 	}
 
-	result, err := engine.ExecuteFlowDefinition(*parentFlow, map[string]interface{}{}, &engine.ExecuteOptions{
+	result, err := engine.ExecuteFlowDefinition(*parentFlow, map[string]any{}, &engine.ExecuteOptions{
 		ModuleResolver: resolver,
 	})
 	require.Error(t, err)
@@ -1349,7 +1349,7 @@ func TestFlowEngine_Execute_ModuleNodeRejectsIndirectCycle(t *testing.T) {
 		"flow-b": {FlowDefinition: flowBJSON},
 	}
 
-	result, err := engine.ExecuteFlowDefinition(*parentFlow, map[string]interface{}{}, &engine.ExecuteOptions{
+	result, err := engine.ExecuteFlowDefinition(*parentFlow, map[string]any{}, &engine.ExecuteOptions{
 		ModuleResolver: resolver,
 	})
 	require.Error(t, err)
@@ -1455,7 +1455,7 @@ func TestFlowEngine_Execute_ModuleNodeRejectsIndirectCycleBeforeSideEffects(t *t
 		"flow-b": {FlowDefinition: flowBJSON},
 	}
 
-	result, err := engine.ExecuteFlowDefinition(*parentFlow, map[string]interface{}{}, &engine.ExecuteOptions{
+	result, err := engine.ExecuteFlowDefinition(*parentFlow, map[string]any{}, &engine.ExecuteOptions{
 		ModuleResolver: resolver,
 	})
 	require.Error(t, err)

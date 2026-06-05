@@ -56,7 +56,7 @@ func TestSimpleParseFromJson(t *testing.T) {
 			)
 
 			// Validate body
-			body, ok := data.Body.(map[string]interface{})
+			body, ok := data.Body.(map[string]any)
 			require.True(t, ok, "body should be a map")
 			assert.Equal(t, "John Doe", body["name"], "body name should match")
 			assert.Equal(t, "john@example.com", body["email"], "body email should match")
@@ -144,7 +144,7 @@ func TestSimpleParseFromJson(t *testing.T) {
 			assert.Equal(t, "POST", data.Method, "method should be POST")
 			assert.Equal(t, "https://api.example.com/error-log", data.URL, "url should match")
 
-			body, ok := data.Body.(map[string]interface{})
+			body, ok := data.Body.(map[string]any)
 			require.True(t, ok, "body should be a map")
 			assert.Equal(t, "User creation failed", body["error"], "error message should match")
 
