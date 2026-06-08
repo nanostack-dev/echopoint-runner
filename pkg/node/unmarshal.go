@@ -5,7 +5,9 @@ import (
 	"fmt"
 )
 
-// UnmarshalNode unmarshals JSON into the appropriate typed node based on the type field.
+// UnmarshalNode unmarshals JSON into the appropriate typed node via the node-kind
+// registry (see registry.go). Adding a node type is one RegisterNodeKind call, not
+// a new case here.
 func UnmarshalNode(data []byte) (AnyNode, error) {
 	var peek struct {
 		Type Type `json:"type"`
@@ -14,35 +16,9 @@ func UnmarshalNode(data []byte) (AnyNode, error) {
 		return nil, fmt.Errorf("failed to peek node type: %w", err)
 	}
 
-	switch peek.Type {
-	case TypeRequest:
-		var node RequestNode
-		if err := json.Unmarshal(data, &node); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal request node: %w", err)
-		}
-		if node.RunWhen == "" {
-			node.RunWhen = RunWhenOnSuccess
-		}
-		return &node, nil
-	case TypeDelay:
-		var node DelayNode
-		if err := json.Unmarshal(data, &node); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal delay node: %w", err)
-		}
-		if node.RunWhen == "" {
-			node.RunWhen = RunWhenOnSuccess
-		}
-		return &node, nil
-	case TypeModule:
-		var node ModuleNode
-		if err := json.Unmarshal(data, &node); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal module node: %w", err)
-		}
-		if node.RunWhen == "" {
-			node.RunWhen = RunWhenOnSuccess
-		}
-		return &node, nil
-	default:
+	kind, ok := nodeKinds[peek.Type]
+	if !ok {
 		return nil, fmt.Errorf("unknown node type: %s", peek.Type)
 	}
+	return kind.decode(data)
 }
