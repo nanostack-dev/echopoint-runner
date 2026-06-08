@@ -91,7 +91,7 @@ func TestNodeFinishedPayload_CarriesSkipFields(t *testing.T) {
 	if resultMap["error_message"] != `Skipped because step "Create" failed` {
 		t.Errorf("error_message not carried: %v", resultMap["error_message"])
 	}
-	if _, ok := resultMap["missing_inputs"]; !ok {
+	if _, present := resultMap["missing_inputs"]; !present {
 		t.Errorf("missing_inputs not carried: %v", resultMap)
 	}
 }
