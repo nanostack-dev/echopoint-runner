@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sort"
@@ -18,6 +19,9 @@ type Options struct {
 	ModuleResolver  node.ModuleResolver
 	ModuleCallStack []string
 	DynamicVars     node.DynamicResolver
+	// Ctx is the request-scoped context propagated to every node execution for
+	// cancellation/deadlines. Nil is treated as context.Background().
+	Ctx context.Context
 }
 
 type FlowEngine struct {
@@ -30,11 +34,13 @@ type FlowEngine struct {
 	moduleResolver  node.ModuleResolver
 	moduleCallStack []string
 	dynamicVars     node.DynamicResolver
+	ctx             context.Context
 }
 
 type moduleExecutor struct {
 	resolver  node.ModuleResolver
 	callStack []string
+	ctx       context.Context
 }
 
 func (e moduleExecutor) ExecuteModule(request node.ModuleExecutionRequest) (*node.FlowExecutionResult, error) {
@@ -59,6 +65,7 @@ func (e moduleExecutor) ExecuteModule(request node.ModuleExecutionRequest) (*nod
 	return ExecuteFlowDefinition(*parsedFlow, request.Inputs, &ExecuteOptions{
 		ModuleResolver:  e.resolver,
 		ModuleCallStack: append(append([]string{}, e.callStack...), trimmedFlowID),
+		Ctx:             e.ctx,
 	})
 }
 
@@ -152,7 +159,26 @@ func NewFlowEngine(flowInstance flow.Flow, options *Options) (*FlowEngine, error
 		nilIfNoModuleResolverFromOptions(options),
 		cloneStringSlice(moduleCallStackFromOptions(options)),
 		dynamicVarsFromOptions(options),
+		ctxFromOptions(options),
 	}, nil
+}
+
+// ctxFromOptions returns the context from engine options, defaulting to
+// context.Background() when unset.
+func ctxFromOptions(options *Options) context.Context {
+	if options != nil && options.Ctx != nil {
+		return options.Ctx
+	}
+	return context.Background()
+}
+
+// ctxFromExecuteOptions returns the context from execute options, defaulting to
+// context.Background() when unset.
+func ctxFromExecuteOptions(options *ExecuteOptions) context.Context {
+	if options != nil && options.Ctx != nil {
+		return options.Ctx
+	}
+	return context.Background()
 }
 
 // dynamicVarsFromOptions returns the dynamic-variable resolver from engine
@@ -180,6 +206,7 @@ func (engine *FlowEngine) Execute(initialInputs map[string]any) (
 		ModuleResolver:  engine.moduleResolver,
 		ModuleCallStack: cloneStringSlice(engine.moduleCallStack),
 		DynamicVars:     engine.dynamicVars,
+		Ctx:             engine.ctx,
 	})
 }
 
@@ -188,6 +215,9 @@ type ExecuteOptions struct {
 	ModuleResolver  node.ModuleResolver
 	ModuleCallStack []string
 	DynamicVars     node.DynamicResolver
+	// Ctx is the request-scoped context propagated to node execution. Nil is
+	// treated as context.Background().
+	Ctx context.Context
 }
 
 func ExecuteFlowDefinition(
@@ -225,6 +255,7 @@ func ExecuteFlowDefinition(
 		ModuleResolver:  nilIfNoModuleResolver(options),
 		ModuleCallStack: moduleCallStack(options),
 		DynamicVars:     dynamicVarsFromExecuteOptions(options),
+		Ctx:             ctxFromExecuteOptions(options),
 	})
 	if err != nil {
 		return nil, err

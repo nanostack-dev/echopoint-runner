@@ -96,7 +96,7 @@ func (n *RequestNode) Execute(ctx ExecutionContext) (AnyExecutionResult, error) 
 		return n.createErrorResult(ctx.Inputs, err, time.Since(startTime)), err
 	}
 
-	resp, respBody, err := n.makeRequestAndReadBody(url, n.Data.Method, headers, body, n.Data.Timeout)
+	resp, respBody, err := n.makeRequestAndReadBody(ctx.Context(), url, n.Data.Method, headers, body, n.Data.Timeout)
 	if err != nil {
 		log.Error().
 			Str("nodeID", n.GetID()).
@@ -287,14 +287,19 @@ func (n *RequestNode) resolveTemplatesWithError(
 // makeRequestAndReadBody makes an HTTP request and reads the entire response body
 // within the timeout period. The timeout applies to the entire operation (request + body read).
 func (n *RequestNode) makeRequestAndReadBody(
-	url, method string, headers map[string]string, body any, timeout int,
+	parent context.Context, url, method string, headers map[string]string, body any, timeout int,
 ) (*http.Response, []byte, error) {
 	// An unset/zero timeout means "no explicit timeout"; apply a sane default so the
 	// request isn't cancelled with an instant 0ms deadline.
 	if timeout <= 0 {
 		timeout = defaultRequestTimeoutMs
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Millisecond)
+	if parent == nil {
+		parent = context.Background()
+	}
+	// The per-request timeout layers on top of the caller's context, so flow-level
+	// cancellation/deadlines also abort the request.
+	ctx, cancel := context.WithTimeout(parent, time.Duration(timeout)*time.Millisecond)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, method, url, nil)

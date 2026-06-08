@@ -73,8 +73,19 @@ func (n *DelayNode) Execute(ctx ExecutionContext) (AnyExecutionResult, error) {
 		Int("durationMS", delayMs).
 		Msg("Starting delay")
 
-	// Sleep for the specified duration
-	time.Sleep(time.Duration(delayMs) * time.Millisecond)
+	// Wait for the delay, aborting early if the execution context is cancelled.
+	timer := time.NewTimer(time.Duration(delayMs) * time.Millisecond)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+	case <-ctx.Context().Done():
+		cancelErr := ctx.Context().Err()
+		log.Warn().
+			Str("nodeID", n.GetID()).
+			Err(cancelErr).
+			Msg("Delay node cancelled before completion")
+		return nil, cancelErr
+	}
 
 	// DelayNode typically doesn't produce outputs, but may pass through declared outputs
 	outputs := make(map[string]any)
