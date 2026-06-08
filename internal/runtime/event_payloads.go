@@ -20,38 +20,18 @@ type nodeStartedPayload struct {
 	Timestamp   string `json:"timestamp"`
 }
 
+// nodeFinishedPayload carries the node's full execution result. Result is the
+// engine's own AnyExecutionResult (the single source of truth) — kept typed so
+// the wire shape stays compile-checked, while serializing to the flat object the
+// control plane decodes with DecodeAnyExecutionResult. Every field
+// (request/response, assertion_results, skip_reason, missing_inputs,
+// error_message, outputs) is preserved without a parallel, lossy struct.
 type nodeFinishedPayload struct {
-	NodeID      string             `json:"nodeId"`
-	DisplayName string             `json:"displayName"`
-	Duration    int64              `json:"duration"`
-	Timestamp   string             `json:"timestamp"`
-	Success     *bool              `json:"success,omitempty"`
-	Result      *nodeResultPayload `json:"result,omitempty"`
-	Error       string             `json:"error,omitempty"`
-}
-
-// nodeResultPayload mirrors a node's execution result. duration_ms is set for
-// request nodes, delay_ms for delay nodes, request/response only for requests —
-// hence the pointers with omitempty.
-type nodeResultPayload struct {
-	NodeID      string         `json:"node_id"`
-	DisplayName string         `json:"display_name"`
-	NodeType    string         `json:"node_type"`
-	Outputs     map[string]any `json:"outputs"`
-	Request     *requestInfo   `json:"request,omitempty"`
-	Response    *responseInfo  `json:"response,omitempty"`
-	DurationMs  *int64         `json:"duration_ms,omitempty"`
-	DelayMs     *int64         `json:"delay_ms,omitempty"`
-}
-
-type requestInfo struct {
-	Method  string            `json:"method"`
-	URL     string            `json:"url"`
-	Headers map[string]string `json:"headers"`
-}
-
-type responseInfo struct {
-	StatusCode       int                    `json:"status_code"`
-	Headers          map[string][]string    `json:"headers"`
-	AssertionResults []node.AssertionResult `json:"assertion_results,omitempty"`
+	NodeID      string                  `json:"nodeId"`
+	DisplayName string                  `json:"displayName"`
+	Duration    int64                   `json:"duration"`
+	Timestamp   string                  `json:"timestamp"`
+	Success     *bool                   `json:"success,omitempty"`
+	Result      node.AnyExecutionResult `json:"result,omitempty"`
+	Error       string                  `json:"error,omitempty"`
 }
