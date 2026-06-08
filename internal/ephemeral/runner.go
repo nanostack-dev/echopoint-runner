@@ -7,9 +7,9 @@ import (
 
 	"github.com/nanostack-dev/echopoint-runner/internal/controlplane"
 	"github.com/nanostack-dev/echopoint-runner/pkg/dynamicvars"
-	"github.com/nanostack-dev/echopoint-runner/pkg/engine"
 	flowpkg "github.com/nanostack-dev/echopoint-runner/pkg/flow"
 	"github.com/nanostack-dev/echopoint-runner/pkg/node"
+	"github.com/nanostack-dev/echopoint-runner/pkg/runner"
 	"github.com/rs/zerolog/log"
 )
 
@@ -38,13 +38,10 @@ func Run(pkg *Package) Result {
 		return failedResult(startedAt, fmt.Sprintf("parse flow definition: %v", err), nil)
 	}
 
-	inputs := mergeInputs(flowDef.InitialInputs, pkg.Inputs)
-
-	execResult, execErr := engine.ExecuteFlowDefinition(*flowDef, inputs, &engine.ExecuteOptions{
-		Observer:       engine.NoopObserver{},
-		ModuleResolver: buildModuleResolver(pkg),
-		DynamicVars:    dynamicvars.New(pkg.ExecutionID),
-	})
+	execResult, execErr := runner.Run(*flowDef, pkg.Inputs,
+		runner.WithReferencedFlows(pkg.ReferencedFlows),
+		runner.WithDynamicVars(dynamicvars.New(pkg.ExecutionID)),
+	)
 
 	completedAt := time.Now().UTC()
 	durationMs := completedAt.Sub(startedAt).Milliseconds()
@@ -119,51 +116,6 @@ func toPayload(result *node.FlowExecutionResult) (*map[string]any, error) {
 		return nil, err
 	}
 	return &payload, nil
-}
-
-type referencedFlowResolver struct {
-	flows map[string]node.ResolvedModuleFlow
-}
-
-func (r referencedFlowResolver) ResolveFlow(flowID string) (node.ResolvedModuleFlow, bool) {
-	resolved, ok := r.flows[flowID]
-	return resolved, ok
-}
-
-func buildModuleResolver(pkg *Package) node.ModuleResolver {
-	if len(pkg.ReferencedFlows) == 0 {
-		return nil
-	}
-	resolved := make(map[string]node.ResolvedModuleFlow, len(pkg.ReferencedFlows))
-	for flowID, ref := range pkg.ReferencedFlows {
-		resolved[flowID] = node.ResolvedModuleFlow{
-			FlowDefinition: ref.FlowDefinition,
-			InputOverrides: cloneInputs(ref.InputOverrides),
-		}
-	}
-	return referencedFlowResolver{flows: resolved}
-}
-
-func cloneInputs(src map[string]any) map[string]any {
-	if len(src) == 0 {
-		return nil
-	}
-	cloned := make(map[string]any, len(src))
-	for k, v := range src {
-		cloned[k] = v
-	}
-	return cloned
-}
-
-func mergeInputs(base, override map[string]any) map[string]any {
-	merged := make(map[string]any, len(base)+len(override))
-	for k, v := range base {
-		merged[k] = v
-	}
-	for k, v := range override {
-		merged[k] = v
-	}
-	return merged
 }
 
 func sortedKeys(m map[string]any) []string {
