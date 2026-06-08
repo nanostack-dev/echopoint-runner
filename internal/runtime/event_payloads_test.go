@@ -23,7 +23,14 @@ func toMap(t *testing.T, v any) map[string]any {
 	return m
 }
 
-func TestRequestResultPayload_WireShape(t *testing.T) {
+func ptrStr(s string) *string { return &s }
+
+// The node result is shipped as the engine's own AnyExecutionResult, so the wire
+// shape is the flat engine shape (request_method, response_status_code,
+// assertion_results, …) that the control plane decodes with
+// DecodeAnyExecutionResult — not a parallel nested struct.
+func TestNodeFinishedPayload_CarriesFlatEngineResult(t *testing.T) {
+	succeeded := true
 	result := &node.RequestExecutionResult{
 		BaseExecutionResult: node.BaseExecutionResult{
 			NodeID:      "ping",
@@ -33,65 +40,65 @@ func TestRequestResultPayload_WireShape(t *testing.T) {
 		},
 		RequestMethod:      "GET",
 		RequestURL:         "https://example.test/x",
-		RequestHeaders:     map[string]string{"Accept": "application/json"},
 		ResponseStatusCode: 200,
-		ResponseHeaders:    map[string][]string{"Content-Type": {"application/json"}},
 		AssertionResults: []node.AssertionResult{
 			{Index: 0, Extractor: "statusCode", Operator: "equals", Expected: "200", Actual: 200, Passed: true},
 		},
 		DurationMs: 12,
 	}
 
-	m := toMap(t, executionResultToEventPayload(result))
+	m := toMap(t, nodeFinishedPayload{NodeID: "ping", Success: &succeeded, Result: result})
+	resultMap, ok := m["result"].(map[string]any)
+	if !ok {
+		t.Fatalf("result missing or not an object: %v", m)
+	}
 
-	for _, k := range []string{"node_id", "display_name", "node_type", "outputs", "request", "response", "duration_ms"} {
-		if _, ok := m[k]; !ok {
-			t.Errorf("missing key %q in %v", k, m)
+	for _, k := range []string{
+		"node_id", "node_type", "outputs",
+		"request_method", "request_url", "response_status_code", "assertion_results",
+	} {
+		if _, present := resultMap[k]; !present {
+			t.Errorf("flat result missing key %q in %v", k, resultMap)
 		}
 	}
-	if _, ok := m["delay_ms"]; ok {
-		t.Error("request result must not emit delay_ms")
-	}
-	resp, _ := m["response"].(map[string]any)
-	if _, ok := resp["assertion_results"]; !ok {
-		t.Errorf("response missing assertion_results: %v", resp)
-	}
-	req, _ := m["request"].(map[string]any)
-	if req["method"] != "GET" || req["url"] != "https://example.test/x" {
-		t.Errorf("request fields wrong: %v", req)
+	// Must NOT be the old nested shape.
+	if _, nested := resultMap["request"].(map[string]any); nested {
+		t.Error("result must be flat, not nested under request{}")
 	}
 }
 
-func TestRequestResultPayload_OmitsEmptyAssertionResults(t *testing.T) {
+// Skipped nodes must carry the reason and missing inputs over the wire so the
+// control plane records them as skipped.
+func TestNodeFinishedPayload_CarriesSkipFields(t *testing.T) {
+	succeeded := true
 	result := &node.RequestExecutionResult{
-		BaseExecutionResult: node.BaseExecutionResult{NodeID: "n", NodeType: node.TypeRequest},
-		ResponseStatusCode:  204,
+		BaseExecutionResult: node.BaseExecutionResult{
+			NodeID:        "notify",
+			NodeType:      node.TypeRequest,
+			SkipReason:    ptrStr("dependency_failed"),
+			ErrorMsg:      ptrStr(`Skipped because step "Create" failed`),
+			MissingInputs: []string{"create.id"},
+		},
 	}
-	resp, _ := toMap(t, executionResultToEventPayload(result))["response"].(map[string]any)
-	if _, ok := resp["assertion_results"]; ok {
-		t.Errorf("empty assertion results must be omitted, got %v", resp)
-	}
-}
 
-func TestDelayResultPayload_WireShape(t *testing.T) {
-	result := &node.DelayExecutionResult{
-		BaseExecutionResult: node.BaseExecutionResult{NodeID: "wait", NodeType: node.TypeDelay},
-		DelayMs:             500,
+	resultMap, ok := toMap(t, nodeFinishedPayload{NodeID: "notify", Success: &succeeded, Result: result})["result"].(map[string]any)
+	if !ok {
+		t.Fatal("result missing")
 	}
-	m := toMap(t, executionResultToEventPayload(result))
-	if _, ok := m["delay_ms"]; !ok {
-		t.Errorf("delay result must emit delay_ms: %v", m)
+	if resultMap["skip_reason"] != "dependency_failed" {
+		t.Errorf("skip_reason not carried: %v", resultMap["skip_reason"])
 	}
-	if _, ok := m["request"]; ok {
-		t.Error("delay result must not emit request")
+	if resultMap["error_message"] != `Skipped because step "Create" failed` {
+		t.Errorf("error_message not carried: %v", resultMap["error_message"])
+	}
+	if _, present := resultMap["missing_inputs"]; !present {
+		t.Errorf("missing_inputs not carried: %v", resultMap)
 	}
 }
 
 func TestNodeFinishedPayload_SuccessVsFailureShape(t *testing.T) {
 	succeeded := true
-	success := toMap(t, nodeFinishedPayload{
-		NodeID: "n", Success: &succeeded, Result: &nodeResultPayload{NodeID: "n"},
-	})
+	success := toMap(t, nodeFinishedPayload{NodeID: "n", Success: &succeeded})
 	if success["success"] != true {
 		t.Error("success payload must carry success=true")
 	}
@@ -105,8 +112,5 @@ func TestNodeFinishedPayload_SuccessVsFailureShape(t *testing.T) {
 	}
 	if _, ok := failure["success"]; ok {
 		t.Error("failure payload must not carry success")
-	}
-	if _, ok := failure["result"]; ok {
-		t.Error("failure payload must not carry result")
 	}
 }

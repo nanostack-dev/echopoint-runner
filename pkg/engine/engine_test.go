@@ -423,6 +423,67 @@ func TestFlowEngine_Execute_NodeFailsWithError(t *testing.T) {
 	assert.False(t, node3.executed, "node3 should not be executed due to error")
 }
 
+func TestFlowEngine_Execute_DownstreamSkippedWhenDependencyFails(t *testing.T) {
+	create := newDataContractMockNode("step-create", nil, []string{"resourceId"})
+	create.outputs["resourceId"] = "res-1"
+
+	// step-failing fails and never produces its declared output.
+	failing := newDataContractMockNode("step-failing", []string{"step-create.resourceId"}, []string{"token"})
+	failing.shouldError = true
+
+	// step-dependent consumes the failed node's output, so it can never run.
+	dependent := newDataContractMockNode("step-dependent", []string{"step-failing.token"}, nil)
+
+	// step-good succeeds in the same batch as step-failing; step-tail depends on it
+	// (input available) but is aborted because the flow failed.
+	good := newDataContractMockNode("step-good", []string{"step-create.resourceId"}, []string{"value"})
+	good.outputs["value"] = "v"
+	tail := newDataContractMockNode("step-tail", []string{"step-good.value"}, nil)
+
+	flowInstance := flow.Flow{
+		Name:  "Downstream Skip",
+		Nodes: []node.AnyNode{create, failing, dependent, good, tail},
+		Edges: []edge.Edge{
+			{ID: "e1", Source: "step-create", Target: "step-failing", Type: edge.TypeSuccess},
+			{ID: "e2", Source: "step-failing", Target: "step-dependent", Type: edge.TypeSuccess},
+			{ID: "e3", Source: "step-create", Target: "step-good", Type: edge.TypeSuccess},
+			{ID: "e4", Source: "step-good", Target: "step-tail", Type: edge.TypeSuccess},
+		},
+		Version: "1.0",
+	}
+
+	flowEngine, err := engine.NewFlowEngine(flowInstance, &engine.Options{})
+	require.NoError(t, err)
+
+	result, err := flowEngine.Execute(map[string]any{})
+	require.Error(t, err)
+	require.False(t, result.Success)
+
+	assert.NotNil(t, create.executedAt)
+	assert.NotNil(t, failing.executedAt)
+	assert.Nil(t, dependent.executedAt, "dependent must not run")
+	assert.Nil(t, tail.executedAt, "tail must not run")
+
+	// The dependent node is recorded as skipped, naming the step that failed.
+	require.Contains(t, result.ExecutionResults, "step-dependent")
+	dependentResult, ok := result.ExecutionResults["step-dependent"].(*node.RequestExecutionResult)
+	require.True(t, ok)
+	require.NotNil(t, dependentResult.SkipReason)
+	assert.Equal(t, "dependency_failed", *dependentResult.SkipReason)
+	require.NotNil(t, dependentResult.ErrorMsg)
+	assert.Contains(t, *dependentResult.ErrorMsg, "step-failing")
+	assert.Equal(t, []string{"step-failing.token"}, dependentResult.MissingInputs)
+
+	// The downstream-of-success node is also skipped (aborted with the flow).
+	require.Contains(t, result.ExecutionResults, "step-tail")
+	tailResult, ok := result.ExecutionResults["step-tail"].(*node.RequestExecutionResult)
+	require.True(t, ok)
+	require.NotNil(t, tailResult.SkipReason)
+	assert.Equal(t, "aborted_after_failure", *tailResult.SkipReason)
+	require.NotNil(t, tailResult.ErrorMsg)
+	assert.Contains(t, *tailResult.ErrorMsg, "step-failing")
+}
+
 func TestFlowEngine_Execute_AlwaysNodeRunsAfterMainFailure(t *testing.T) {
 	create := newDataContractMockNode("create", nil, []string{"resourceId"})
 	create.outputs["resourceId"] = "res-123"
@@ -562,7 +623,9 @@ func TestFlowEngine_Execute_AlwaysCleanupChainContinuesAfterIntermediateSkip(t *
 	deleteAPIKeyResult, ok := result.ExecutionResults["step-delete-api-key"].(*node.RequestExecutionResult)
 	require.True(t, ok)
 	require.NotNil(t, deleteAPIKeyResult.SkipReason)
-	assert.Equal(t, "missing_inputs", *deleteAPIKeyResult.SkipReason)
+	assert.Equal(t, "dependency_failed", *deleteAPIKeyResult.SkipReason)
+	require.NotNil(t, deleteAPIKeyResult.ErrorMsg)
+	assert.Contains(t, *deleteAPIKeyResult.ErrorMsg, "step-create-api-key")
 	assert.Equal(t, []string{"step-create-api-key.apiKeyId"}, deleteAPIKeyResult.MissingInputs)
 
 	deleteProductResult := result.ExecutionResults["step-delete-product"]
@@ -642,7 +705,7 @@ func TestFlowEngine_Execute_AlwaysCleanupJoinRunsAfterUpstreamCleanupIsSkipped(t
 	deleteRoleResult, ok := result.ExecutionResults["step-delete-role"].(*node.RequestExecutionResult)
 	require.True(t, ok)
 	require.NotNil(t, deleteRoleResult.SkipReason)
-	assert.Equal(t, "not_reachable_after_main_phase", *deleteRoleResult.SkipReason)
+	assert.Equal(t, "aborted_after_failure", *deleteRoleResult.SkipReason)
 
 	deleteProductResult := result.ExecutionResults["step-delete-product"]
 	require.NoError(t, deleteProductResult.GetError())
