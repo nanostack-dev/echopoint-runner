@@ -12,9 +12,8 @@ import (
 	configpkg "github.com/nanostack-dev/echopoint-runner/internal/config"
 	"github.com/nanostack-dev/echopoint-runner/internal/controlplane"
 	"github.com/nanostack-dev/echopoint-runner/pkg/dynamicvars"
-	"github.com/nanostack-dev/echopoint-runner/pkg/engine"
 	flowpkg "github.com/nanostack-dev/echopoint-runner/pkg/flow"
-	"github.com/nanostack-dev/echopoint-runner/pkg/node"
+	"github.com/nanostack-dev/echopoint-runner/pkg/runner"
 	"github.com/rs/zerolog/log"
 )
 
@@ -36,15 +35,6 @@ type Runtime struct {
 type activeJob struct {
 	job       *controlplane.ClaimedJob
 	startedAt time.Time
-}
-
-type referencedFlowResolver struct {
-	flows map[string]node.ResolvedModuleFlow
-}
-
-func (r referencedFlowResolver) ResolveFlow(flowID string) (node.ResolvedModuleFlow, bool) {
-	resolved, ok := r.flows[flowID]
-	return resolved, ok
 }
 
 func New(config configpkg.Config) *Runtime {
@@ -172,19 +162,11 @@ func (r *Runtime) executeClaimedJob(active *activeJob) {
 		return
 	}
 
-	inputs := make(map[string]any, len(active.job.Inputs)+len(flowDef.InitialInputs))
-	for key, value := range flowDef.InitialInputs {
-		inputs[key] = value
-	}
-	for key, value := range active.job.Inputs {
-		inputs[key] = value
-	}
-
-	result, execErr := engine.ExecuteFlowDefinition(*flowDef, inputs, &engine.ExecuteOptions{
-		Observer:       reporter,
-		ModuleResolver: buildReferencedFlowResolver(active.job),
-		DynamicVars:    dynamicvars.New(active.job.ExecutionID.String()),
-	})
+	result, execErr := runner.Run(*flowDef, active.job.Inputs,
+		runner.WithObserver(reporter),
+		runner.WithReferencedFlows(active.job.ReferencedFlows),
+		runner.WithDynamicVars(dynamicvars.New(active.job.ExecutionID.String())),
+	)
 	if execErr != nil {
 		errorMsg := execErr.Error()
 		var errorCode *string
@@ -242,31 +224,6 @@ func (r *Runtime) executeClaimedJob(active *activeJob) {
 		Str("execution_id", active.job.ExecutionID.String()).
 		Int64("duration_ms", completedAt.Sub(active.startedAt).Milliseconds()).
 		Msg("runner job completed")
-}
-
-func buildReferencedFlowResolver(job *controlplane.ClaimedJob) node.ModuleResolver {
-	if job == nil || len(job.ReferencedFlows) == 0 {
-		return nil
-	}
-	resolved := make(map[string]node.ResolvedModuleFlow, len(job.ReferencedFlows))
-	for flowID, referencedFlow := range job.ReferencedFlows {
-		resolved[flowID] = node.ResolvedModuleFlow{
-			FlowDefinition: referencedFlow.FlowDefinition,
-			InputOverrides: cloneInputs(referencedFlow.InputOverrides),
-		}
-	}
-	return referencedFlowResolver{flows: resolved}
-}
-
-func cloneInputs(source map[string]any) map[string]any {
-	if len(source) == 0 {
-		return nil
-	}
-	cloned := make(map[string]any, len(source))
-	for key, value := range source {
-		cloned[key] = value
-	}
-	return cloned
 }
 
 func sortedInputKeys(inputs map[string]any) []string {
