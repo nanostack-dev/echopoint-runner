@@ -22,6 +22,7 @@ type Options struct {
 	DynamicVars     node.DynamicResolver
 	ModuleCallStack []string
 	Ctx             context.Context
+	Middleware      []engine.Middleware
 }
 
 // Option mutates Options.
@@ -56,6 +57,12 @@ func WithContext(ctx context.Context) Option {
 	return func(o *Options) { o.Ctx = ctx }
 }
 
+// WithMiddleware wraps each node's execution (outermost first). Use the Retry /
+// Timeout helpers or any custom engine.Middleware.
+func WithMiddleware(middleware ...engine.Middleware) Option {
+	return func(o *Options) { o.Middleware = append(o.Middleware, middleware...) }
+}
+
 // Run executes flowDef. It overlays inputs on the flow's declared InitialInputs
 // (inputs win), resolves referenced flows into the module resolver, and runs the
 // engine. The returned result is the single source of truth; callers serialize
@@ -72,6 +79,7 @@ func Run(flowDef flow.Flow, inputs map[string]any, opts ...Option) (*node.FlowEx
 		ModuleCallStack: options.ModuleCallStack,
 		DynamicVars:     options.DynamicVars,
 		Ctx:             options.Ctx,
+		Middleware:      options.Middleware,
 	})
 }
 

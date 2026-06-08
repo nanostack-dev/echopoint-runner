@@ -22,6 +22,8 @@ type Options struct {
 	// Ctx is the request-scoped context propagated to every node execution for
 	// cancellation/deadlines. Nil is treated as context.Background().
 	Ctx context.Context
+	// Middleware wraps each node's execution (retry/timeout/tracing). Outermost first.
+	Middleware []Middleware
 }
 
 type FlowEngine struct {
@@ -35,6 +37,7 @@ type FlowEngine struct {
 	moduleCallStack []string
 	dynamicVars     node.DynamicResolver
 	ctx             context.Context
+	middleware      []Middleware
 }
 
 type moduleExecutor struct {
@@ -160,7 +163,16 @@ func NewFlowEngine(flowInstance flow.Flow, options *Options) (*FlowEngine, error
 		cloneStringSlice(moduleCallStackFromOptions(options)),
 		dynamicVarsFromOptions(options),
 		ctxFromOptions(options),
+		middlewareFromOptions(options),
 	}, nil
+}
+
+// middlewareFromOptions returns the middleware chain from engine options, or nil.
+func middlewareFromOptions(options *Options) []Middleware {
+	if options == nil {
+		return nil
+	}
+	return options.Middleware
 }
 
 // ctxFromOptions returns the context from engine options, defaulting to
@@ -179,6 +191,15 @@ func ctxFromExecuteOptions(options *ExecuteOptions) context.Context {
 		return options.Ctx
 	}
 	return context.Background()
+}
+
+// middlewareFromExecuteOptions returns the middleware chain from execute options,
+// or nil.
+func middlewareFromExecuteOptions(options *ExecuteOptions) []Middleware {
+	if options == nil {
+		return nil
+	}
+	return options.Middleware
 }
 
 // dynamicVarsFromOptions returns the dynamic-variable resolver from engine
@@ -207,6 +228,7 @@ func (engine *FlowEngine) Execute(initialInputs map[string]any) (
 		ModuleCallStack: cloneStringSlice(engine.moduleCallStack),
 		DynamicVars:     engine.dynamicVars,
 		Ctx:             engine.ctx,
+		Middleware:      engine.middleware,
 	})
 }
 
@@ -218,6 +240,8 @@ type ExecuteOptions struct {
 	// Ctx is the request-scoped context propagated to node execution. Nil is
 	// treated as context.Background().
 	Ctx context.Context
+	// Middleware wraps each node's execution (retry/timeout/tracing). Outermost first.
+	Middleware []Middleware
 }
 
 func ExecuteFlowDefinition(
@@ -256,6 +280,7 @@ func ExecuteFlowDefinition(
 		ModuleCallStack: moduleCallStack(options),
 		DynamicVars:     dynamicVarsFromExecuteOptions(options),
 		Ctx:             ctxFromExecuteOptions(options),
+		Middleware:      middlewareFromExecuteOptions(options),
 	})
 	if err != nil {
 		return nil, err
