@@ -262,7 +262,8 @@ func (engine *FlowEngine) runNode(
 		StartedAt:   startedAt,
 	})
 
-	result, err := n.Execute(engine.buildExecutionContext(inputs, outputView))
+	executor := chainMiddleware(n.Execute, engine.middleware)
+	result, err := executor(engine.buildExecutionContext(inputs, outputView))
 	finishedAt := time.Now()
 	if result != nil && !result.GetExecutedAt().IsZero() {
 		finishedAt = result.GetExecutedAt()
