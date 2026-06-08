@@ -17,6 +17,13 @@ type executionState struct {
 	result          *node.FlowExecutionResult
 	startTime       time.Time
 	mainFailed      bool
+	// failedNodes / skippedNodes track node IDs by terminal state so a skipped
+	// node's reason can name the upstream step that caused it.
+	// firstFailedName is the display name of the earliest failure, used when a
+	// skip has no specific missing-input culprit.
+	failedNodes     map[string]bool
+	skippedNodes    map[string]bool
+	firstFailedName string
 }
 
 type nodeRunResult struct {
@@ -36,6 +43,8 @@ func (engine *FlowEngine) executeNodes(
 		executedCount:   0,
 		result:          result,
 		startTime:       startTime,
+		failedNodes:     make(map[string]bool),
+		skippedNodes:    make(map[string]bool),
 	}
 
 	state.allOutputs[""] = initialInputs
@@ -50,6 +59,12 @@ func (engine *FlowEngine) executeNodes(
 	}
 
 	engine.runOnSuccessPhase(state)
+	if state.mainFailed {
+		// Downstream on_success nodes can never run now — record them as skipped
+		// with a reason naming the step that blocked them, instead of dropping
+		// them silently (or erroring as "unreachable").
+		engine.skipBlockedOnSuccessNodes(state)
+	}
 	engine.runAlwaysPhase(state)
 
 	return engine.finalizeExecution(state)
@@ -94,6 +109,7 @@ func (engine *FlowEngine) recordOnSuccessResults(completed []nodeRunResult, stat
 			}
 			state.mainFailed = true
 			mainPhaseFailed = true
+			engine.markNodeFailed(nodeResult.node, state)
 		} else {
 			state.executedCount++
 		}
@@ -116,8 +132,11 @@ func (engine *FlowEngine) recordAlwaysResults(completed []nodeRunResult, state *
 		if nodeResult.err == nil {
 			state.executedCount++
 			engine.propagateNodeOutputs(nodeResult.node, nodeResult.result, state)
-		} else if state.result.Error == nil {
-			state.result.Error = nodeResult.err
+		} else {
+			if state.result.Error == nil {
+				state.result.Error = nodeResult.err
+			}
+			engine.markNodeFailed(nodeResult.node, state)
 		}
 	}
 
@@ -204,7 +223,8 @@ func (engine *FlowEngine) runNode(
 
 	if err := engine.validateInputs(n, outputView); err != nil {
 		if n.GetRunWhen() == node.RunWhenAlways {
-			skipped := engine.createSkippedNodeResult(n, err, outputView)
+			state.skippedNodes[nodeID] = true
+			skipped := engine.createSkippedNodeResult(n, err, state)
 			engine.observer.NodeFinished(NodeFinishedEvent{
 				NodeID:      nodeID,
 				DisplayName: displayName,
@@ -323,6 +343,57 @@ func (engine *FlowEngine) markNodeComplete(n node.AnyNode, state *executionState
 	delete(state.remainingInputs, n)
 }
 
+func (engine *FlowEngine) markNodeFailed(n node.AnyNode, state *executionState) {
+	if len(state.failedNodes) == 0 {
+		state.firstFailedName = engine.nodeDisplayName(n.GetID())
+	}
+	state.failedNodes[n.GetID()] = true
+}
+
+// skipBlockedOnSuccessNodes records a skipped result for every on_success node
+// that never ran after a main-phase failure (still present in remainingInputs).
+// It deliberately does NOT mark them complete: leaving them in remainingInputs
+// preserves the always-phase frontier logic, so downstream cleanup nodes whose
+// real upstream was skipped stay blocked (and get skipped) rather than running.
+func (engine *FlowEngine) skipBlockedOnSuccessNodes(state *executionState) {
+	for _, currentNode := range engine.flow.Nodes {
+		if currentNode.GetRunWhen() != node.RunWhenOnSuccess {
+			continue
+		}
+		if _, exists := state.remainingInputs[currentNode]; !exists {
+			continue
+		}
+		engine.recordSkippedNode(currentNode, state, false)
+	}
+}
+
+// recordSkippedNode builds the skipped result, stores it, emits a NodeFinished
+// event (so SSE/persistence observe the skip), and tracks it. When cascade is
+// true it also unblocks successors via markNodeComplete (used by the always
+// cleanup phase); on_success skips pass cascade=false.
+func (engine *FlowEngine) recordSkippedNode(
+	n node.AnyNode,
+	state *executionState,
+	cascade bool,
+) {
+	startedAt := time.Now()
+	result := engine.createSkippedNodeResult(n, nil, state)
+	state.result.ExecutionResults[n.GetID()] = result
+	state.skippedNodes[n.GetID()] = true
+	engine.observer.NodeFinished(NodeFinishedEvent{
+		NodeID:      n.GetID(),
+		DisplayName: n.GetDisplayName(),
+		NodeType:    n.GetType(),
+		StartedAt:   startedAt,
+		FinishedAt:  time.Now(),
+		DurationMs:  0,
+		Result:      result,
+	})
+	if cascade {
+		engine.markNodeComplete(n, state)
+	}
+}
+
 func (engine *FlowEngine) finalizeExecution(state *executionState) error {
 	if state.result.Error != nil {
 		state.result.Success = false
@@ -379,9 +450,7 @@ func (engine *FlowEngine) skipFrontierAlwaysNodes(state *executionState) bool {
 	}
 
 	for _, currentNode := range toSkip {
-		result := engine.createSkippedNodeResult(currentNode, nil, node.NewOutputView(state.allOutputs))
-		state.result.ExecutionResults[currentNode.GetID()] = result
-		engine.markNodeComplete(currentNode, state)
+		engine.recordSkippedNode(currentNode, state, true)
 	}
 
 	return true

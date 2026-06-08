@@ -10,7 +10,6 @@ import (
 	"github.com/nanostack-dev/echopoint-runner/internal/controlplane"
 	"github.com/nanostack-dev/echopoint-runner/pkg/engine"
 	"github.com/nanostack-dev/echopoint-runner/pkg/executionevents"
-	"github.com/nanostack-dev/echopoint-runner/pkg/node"
 	"github.com/rs/zerolog/log"
 )
 
@@ -133,11 +132,14 @@ func (r *jobEventReporter) NodeFinished(evt engine.NodeFinishedEvent) {
 		Timestamp:   evt.FinishedAt.Format(time.RFC3339),
 	}
 
+	// Always ship the engine's full result (the source of truth) — for failures
+	// too, so assertion results and response detail survive.
+	payload.Result = evt.Result
+
 	eventType := executionevents.NodeCompleted
 	if evt.Result != nil && evt.Result.GetError() == nil {
 		succeeded := true
 		payload.Success = &succeeded
-		payload.Result = executionResultToEventPayload(evt.Result)
 	} else {
 		eventType = executionevents.NodeFailed
 		if evt.Result != nil && evt.Result.GetError() != nil {
@@ -275,37 +277,4 @@ func eventSize(event controlplane.RunnerProgressEvent) int {
 	}
 
 	return len(encoded)
-}
-
-func executionResultToEventPayload(result node.AnyExecutionResult) *nodeResultPayload {
-	if result == nil {
-		return nil
-	}
-
-	payload := &nodeResultPayload{
-		NodeID:      result.GetNodeID(),
-		DisplayName: result.GetDisplayName(),
-		NodeType:    string(result.GetNodeType()),
-		Outputs:     result.GetOutputs(),
-	}
-
-	if requestResult, ok := node.As[*node.RequestExecutionResult](result); ok {
-		payload.Request = &requestInfo{
-			Method:  requestResult.RequestMethod,
-			URL:     requestResult.RequestURL,
-			Headers: requestResult.RequestHeaders,
-		}
-		payload.Response = &responseInfo{
-			StatusCode:       requestResult.ResponseStatusCode,
-			Headers:          requestResult.ResponseHeaders,
-			AssertionResults: requestResult.AssertionResults,
-		}
-		durationMs := requestResult.DurationMs
-		payload.DurationMs = &durationMs
-	} else if delayResult, isDelayResult := node.As[*node.DelayExecutionResult](result); isDelayResult {
-		delayMs := delayResult.DelayMs
-		payload.DelayMs = &delayMs
-	}
-
-	return payload
 }
