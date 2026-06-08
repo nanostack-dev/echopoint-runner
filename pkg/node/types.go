@@ -1,6 +1,7 @@
 package node
 
 import (
+	"context"
 	"fmt"
 	"time"
 )
@@ -78,6 +79,10 @@ const (
 
 // ExecutionContext provides inputs and context for a node's execution.
 type ExecutionContext struct {
+	// Ctx is the request-scoped context for the execution. Nodes use it for
+	// cancellation and deadlines (e.g. the HTTP request honors it). May be nil,
+	// in which case callers should treat it as context.Background().
+	Ctx context.Context
 	// Inputs contains all the data this node declared it needs in InputSchema()
 	// Keys are in format "nodeId.outputKey" (e.g., "create-user.userId")
 	Inputs map[string]any
@@ -95,6 +100,15 @@ type ExecutionContext struct {
 	// DynamicVars resolves {{$name}} template variables (fake-data generators).
 	// May be nil, in which case {{$...}} references are left untouched.
 	DynamicVars DynamicResolver
+}
+
+// Context returns the execution context, defaulting to context.Background() when
+// none was provided so callers never need a nil check.
+func (c ExecutionContext) Context() context.Context {
+	if c.Ctx != nil {
+		return c.Ctx
+	}
+	return context.Background()
 }
 
 // DynamicResolver resolves a {{$name:args}} dynamic template variable to a
