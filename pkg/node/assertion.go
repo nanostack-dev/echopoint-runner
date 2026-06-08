@@ -3,9 +3,6 @@ package node
 import (
 	"encoding/json"
 	"fmt"
-	"regexp"
-	"strconv"
-	"strings"
 
 	"github.com/nanostack-dev/echopoint-runner/pkg/extractors"
 	_ "github.com/nanostack-dev/echopoint-runner/pkg/extractors/http" // Register HTTP extractors in init()
@@ -127,163 +124,13 @@ func (ca *CompositeAssertion) Evaluate(ctx extractors.ResponseContext) Assertion
 	}
 	res.Actual = actual
 
-	passed, err := applyOperator(ca.OperatorType, actual, ca.ExpectedValue)
+	passed, err := operators.Compare(operators.OperatorType(ca.OperatorType), actual, ca.ExpectedValue)
 	if err != nil {
 		res.Error = err.Error()
 		return res
 	}
 	res.Passed = passed
 	return res
-}
-
-// comparator applies an operator to the extracted actual and the expected value.
-type comparator func(actual, expected any) (bool, error)
-
-// comparators is the single dispatch table for assertion operators, keyed by the
-// shared operators.OperatorType constants so the supported set is checked against
-// pkg/operators rather than duplicated string literals. Comparisons are lenient
-// (stringify/coerce) because the wire delivers expected values as strings while
-// extracted actuals are typed (e.g. an int statusCode vs the string "200").
-//
-//nolint:gochecknoglobals // immutable operator dispatch table, built once
-var comparators = map[operators.OperatorType]comparator{
-	operators.OperatorTypeEquals: func(a, e any) (bool, error) {
-		return toString(a) == toString(e), nil
-	},
-	operators.OperatorTypeNotEquals: func(a, e any) (bool, error) {
-		return toString(a) != toString(e), nil
-	},
-	operators.OperatorTypeContains: func(a, e any) (bool, error) {
-		return strings.Contains(toString(a), toString(e)), nil
-	},
-	operators.OperatorTypeNotContains: func(a, e any) (bool, error) {
-		return !strings.Contains(toString(a), toString(e)), nil
-	},
-	operators.OperatorTypeStartsWith: func(a, e any) (bool, error) {
-		return strings.HasPrefix(toString(a), toString(e)), nil
-	},
-	operators.OperatorTypeEndsWith: func(a, e any) (bool, error) {
-		return strings.HasSuffix(toString(a), toString(e)), nil
-	},
-	operators.OperatorTypeRegex: func(a, e any) (bool, error) {
-		return regexp.MatchString(toString(e), toString(a))
-	},
-	operators.OperatorTypeGreaterThan: func(a, e any) (bool, error) {
-		return compareNumeric(a, e, func(x, y float64) bool { return x > y })
-	},
-	operators.OperatorTypeLessThan: func(a, e any) (bool, error) {
-		return compareNumeric(a, e, func(x, y float64) bool { return x < y })
-	},
-	operators.OperatorTypeGreaterThanOrEqual: func(a, e any) (bool, error) {
-		return compareNumeric(a, e, func(x, y float64) bool { return x >= y })
-	},
-	operators.OperatorTypeLessThanOrEqual: func(a, e any) (bool, error) {
-		return compareNumeric(a, e, func(x, y float64) bool { return x <= y })
-	},
-	operators.OperatorTypeBetween: between,
-	operators.OperatorTypeEmpty: func(a, _ any) (bool, error) {
-		return isEmpty(a), nil
-	},
-	operators.OperatorTypeNotEmpty: func(a, _ any) (bool, error) {
-		return !isEmpty(a), nil
-	},
-}
-
-func applyOperator(operator string, actual, expected any) (bool, error) {
-	cmp, ok := comparators[operators.OperatorType(operator)]
-	if !ok {
-		return false, fmt.Errorf("unknown assertion operator %q", operator)
-	}
-	return cmp(actual, expected)
-}
-
-// between reports whether actual lies within an inclusive [min, max] range. The
-// expected value must be a two-element list (as decoded from operator_data.value).
-func between(actual, expected any) (bool, error) {
-	bounds, ok := expected.([]any)
-	if !ok || len(bounds) != 2 {
-		return false, fmt.Errorf("between requires a [min, max] pair, got %v", expected)
-	}
-	value, err := toFloat(actual)
-	if err != nil {
-		return false, fmt.Errorf("actual value %v is not numeric: %w", actual, err)
-	}
-	low, err := toFloat(bounds[0])
-	if err != nil {
-		return false, fmt.Errorf("lower bound %v is not numeric: %w", bounds[0], err)
-	}
-	high, err := toFloat(bounds[1])
-	if err != nil {
-		return false, fmt.Errorf("upper bound %v is not numeric: %w", bounds[1], err)
-	}
-	return value >= low && value <= high, nil
-}
-
-func compareNumeric(actual, expected any, cmp func(a, b float64) bool) (bool, error) {
-	a, err := toFloat(actual)
-	if err != nil {
-		return false, fmt.Errorf("actual value %v is not numeric: %w", actual, err)
-	}
-	b, err := toFloat(expected)
-	if err != nil {
-		return false, fmt.Errorf("expected value %v is not numeric: %w", expected, err)
-	}
-	return cmp(a, b), nil
-}
-
-func isEmpty(v any) bool {
-	if v == nil {
-		return true
-	}
-	switch t := v.(type) {
-	case string:
-		return t == ""
-	case []any:
-		return len(t) == 0
-	case map[string]any:
-		return len(t) == 0
-	default:
-		return toString(v) == ""
-	}
-}
-
-func toString(v any) string {
-	if v == nil {
-		return ""
-	}
-	switch t := v.(type) {
-	case string:
-		return t
-	case float64:
-		return strconv.FormatFloat(t, 'f', -1, 64)
-	case float32:
-		return strconv.FormatFloat(float64(t), 'f', -1, 64)
-	case int:
-		return strconv.Itoa(t)
-	case int64:
-		return strconv.FormatInt(t, 10)
-	case bool:
-		return strconv.FormatBool(t)
-	default:
-		return fmt.Sprintf("%v", v)
-	}
-}
-
-func toFloat(v any) (float64, error) {
-	switch t := v.(type) {
-	case float64:
-		return t, nil
-	case float32:
-		return float64(t), nil
-	case int:
-		return float64(t), nil
-	case int64:
-		return float64(t), nil
-	case string:
-		return strconv.ParseFloat(t, 64)
-	default:
-		return strconv.ParseFloat(fmt.Sprintf("%v", v), 64)
-	}
 }
 
 func firstNonEmpty(a, b string) string {
