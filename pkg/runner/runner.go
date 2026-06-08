@@ -7,6 +7,8 @@
 package runner
 
 import (
+	"context"
+
 	"github.com/nanostack-dev/echopoint-runner/pkg/engine"
 	"github.com/nanostack-dev/echopoint-runner/pkg/flow"
 	"github.com/nanostack-dev/echopoint-runner/pkg/node"
@@ -19,6 +21,7 @@ type Options struct {
 	ReferencedFlows flow.ReferencedFlowRegistry
 	DynamicVars     node.DynamicResolver
 	ModuleCallStack []string
+	Ctx             context.Context
 }
 
 // Option mutates Options.
@@ -47,6 +50,12 @@ func WithModuleCallStack(stack []string) Option {
 	return func(o *Options) { o.ModuleCallStack = stack }
 }
 
+// WithContext propagates a request-scoped context to every node execution
+// (cancellation + deadlines). Defaults to context.Background().
+func WithContext(ctx context.Context) Option {
+	return func(o *Options) { o.Ctx = ctx }
+}
+
 // Run executes flowDef. It overlays inputs on the flow's declared InitialInputs
 // (inputs win), resolves referenced flows into the module resolver, and runs the
 // engine. The returned result is the single source of truth; callers serialize
@@ -62,6 +71,7 @@ func Run(flowDef flow.Flow, inputs map[string]any, opts ...Option) (*node.FlowEx
 		ModuleResolver:  ModuleResolver(options.ReferencedFlows),
 		ModuleCallStack: options.ModuleCallStack,
 		DynamicVars:     options.DynamicVars,
+		Ctx:             options.Ctx,
 	})
 }
 

@@ -262,16 +262,7 @@ func (engine *FlowEngine) runNode(
 		StartedAt:   startedAt,
 	})
 
-	ctx := node.ExecutionContext{
-		Inputs:         inputs,
-		FlowInputs:     outputView.Node(""),
-		AllOutputs:     outputView,
-		ModuleResolver: engine.moduleResolver,
-		ModuleExecutor: moduleExecutor{resolver: engine.moduleResolver, callStack: engine.moduleCallStack},
-		DynamicVars:    engine.dynamicVars,
-	}
-
-	result, err := n.Execute(ctx)
+	result, err := n.Execute(engine.buildExecutionContext(inputs, outputView))
 	finishedAt := time.Now()
 	if result != nil && !result.GetExecutedAt().IsZero() {
 		finishedAt = result.GetExecutedAt()
@@ -333,6 +324,27 @@ func (engine *FlowEngine) propagateNodeOutputs(
 		Str("nodeType", string(nodeType)).
 		Int("outputCount", len(outputs)).
 		Msg("Node outputs stored")
+}
+
+// buildExecutionContext assembles the per-node ExecutionContext, propagating the
+// flow's context, module resolver/executor, and dynamic vars.
+func (engine *FlowEngine) buildExecutionContext(
+	inputs map[string]any,
+	outputView node.OutputView,
+) node.ExecutionContext {
+	return node.ExecutionContext{
+		Ctx:            engine.ctx,
+		Inputs:         inputs,
+		FlowInputs:     outputView.Node(""),
+		AllOutputs:     outputView,
+		ModuleResolver: engine.moduleResolver,
+		ModuleExecutor: moduleExecutor{
+			resolver:  engine.moduleResolver,
+			callStack: engine.moduleCallStack,
+			ctx:       engine.ctx,
+		},
+		DynamicVars: engine.dynamicVars,
+	}
 }
 
 func (engine *FlowEngine) markNodeComplete(n node.AnyNode, state *executionState) {
