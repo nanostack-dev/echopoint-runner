@@ -19,7 +19,9 @@ func RegisterExtractor(extType ExtractorType, factory func([]byte) (AnyExtractor
 	extractorRegistry[extType] = factory
 }
 
-// UnmarshalExtractor creates an appropriate Extractor from raw JSON.
+// UnmarshalExtractor creates an Extractor from raw JSON via the registry.
+// Built-in extractors register in builtin.go; statusCode/header in the http
+// package — so this is a pure lookup with no per-type switch to edit.
 func UnmarshalExtractor(data []byte) (AnyExtractor, error) {
 	var peek struct {
 		Type ExtractorType `json:"type"`
@@ -29,39 +31,11 @@ func UnmarshalExtractor(data []byte) (AnyExtractor, error) {
 		return nil, fmt.Errorf("failed to peek extractor type: %w", err)
 	}
 
-	switch peek.Type {
-	case ExtractorTypeJSONPath:
-		var extractor JSONPathExtractor
-		if err := json.Unmarshal(data, &extractor); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal JSONPath extractor: %w", err)
-		}
-		return extractor, nil
-
-	case ExtractorTypeXMLPath:
-		var extractor XMLPathExtractor
-		if err := json.Unmarshal(data, &extractor); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal XMLPath extractor: %w", err)
-		}
-		return extractor, nil
-
-	case ExtractorTypeBody:
-		var extractor BodyExtractor
-		if err := json.Unmarshal(data, &extractor); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal Body extractor: %w", err)
-		}
-		return extractor, nil
-
-	case ExtractorTypeStatusCode, ExtractorTypeHeader:
-		// These are registered in the http package init()
-		registryMutex.RLock()
-		factory, ok := extractorRegistry[peek.Type]
-		registryMutex.RUnlock()
-		if ok {
-			return factory(data)
-		}
-		return nil, fmt.Errorf("extractor type %s not registered", peek.Type)
-
-	default:
+	registryMutex.RLock()
+	factory, ok := extractorRegistry[peek.Type]
+	registryMutex.RUnlock()
+	if !ok {
 		return nil, fmt.Errorf("unknown extractor type: %s", peek.Type)
 	}
+	return factory(data)
 }
