@@ -1,186 +1,81 @@
 package node
 
 import (
-	"context"
-	"fmt"
 	"time"
+
+	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 )
 
-type OutputView interface {
-	HasNode(nodeID string) bool
-	Get(nodeID, outputKey string) (any, bool)
-	// Node returns a defensive copy of the requested node outputs.
-	Node(nodeID string) map[string]any
-}
+// OutputView is re-exported from spi (the L0 contract). Alias kept for back-compat.
+type OutputView = spi.OutputView
 
+// AnyNode is the full authoring/engine view of a node: the capability-agnostic
+// core (spi.Node) plus the assertion and output accessors, which carry concrete
+// extractor decode/eval behavior and therefore stay in this package.
 type AnyNode interface {
-	GetID() string
-	GetDisplayName() string
-	GetType() Type
-	GetRunWhen() RunWhen
-	InputSchema() []string
+	spi.Node
 
-	// OutputSchema defines what this node produces
-	// Examples: []string{"statusCode", "userId", "responseBody"}
-	OutputSchema() []string
-
-	// GetAssertions returns the list of assertions to validate during execution
-	// Assertions should be evaluated before extractions
+	// GetAssertions returns the list of assertions to validate during execution.
+	// Assertions should be evaluated before extractions.
 	GetAssertions() []CompositeAssertion
 
-	// GetOutputs returns the list of extractions to perform on the response/data
-	// Outputs should be evaluated after assertions pass
+	// GetOutputs returns the list of extractions to perform on the response/data.
+	// Outputs should be evaluated after assertions pass.
 	GetOutputs() []Output
-
-	// Execute performs the node's action with provided inputs
-	// Returns AnyExecutionResult (polymorphic) containing outputs and execution metadata
-	// Error indicates execution failure
-	Execute(ctx ExecutionContext) (AnyExecutionResult, error)
 }
 
-type ResolvedModuleFlow struct {
-	FlowDefinition []byte
-	InputOverrides map[string]any
-}
+// ResolvedModuleFlow is re-exported from spi. Alias kept for back-compat.
+type ResolvedModuleFlow = spi.ResolvedModuleFlow
 
-type ModuleResolver interface {
-	ResolveFlow(flowID string) (ResolvedModuleFlow, bool)
-}
+// ModuleResolver is re-exported from spi. Alias kept for back-compat.
+type ModuleResolver = spi.ModuleResolver
 
-type ModuleExecutionRequest struct {
-	FlowID         string
-	FlowDefinition []byte
-	Inputs         map[string]any
-}
+// ModuleExecutionRequest is re-exported from spi. Alias kept for back-compat.
+type ModuleExecutionRequest = spi.ModuleExecutionRequest
 
-type ModuleExecutor interface {
-	ExecuteModule(request ModuleExecutionRequest) (*FlowExecutionResult, error)
-}
+// ModuleExecutor is re-exported from spi. Alias kept for back-compat.
+type ModuleExecutor = spi.ModuleExecutor
 
+// TypeNode is a node with typed data.
 type TypeNode[T any] interface {
 	AnyNode
 	GetData() T
 }
 
-type Type string
+// Type is re-exported from spi (was node.Type, now spi.Kind). Alias kept for back-compat.
+type Type = spi.Kind
 
+// Built-in node kinds (re-exported from spi).
 const (
-	TypeRequest Type = "request"
-	TypeDelay   Type = "delay"
-	TypeModule  Type = "module"
+	TypeRequest = spi.KindRequest
+	TypeDelay   = spi.KindDelay
+	TypeModule  = spi.KindModule
 )
 
-type RunWhen string
+// RunWhen is re-exported from spi. Alias kept for back-compat.
+type RunWhen = spi.RunWhen
 
+// RunWhen phases (re-exported from spi).
 const (
-	RunWhenOnSuccess RunWhen = "on_success"
-	RunWhenAlways    RunWhen = "always"
+	RunWhenOnSuccess = spi.RunWhenOnSuccess
+	RunWhenAlways    = spi.RunWhenAlways
 )
 
-// ExecutionContext provides inputs and context for a node's execution.
-type ExecutionContext struct {
-	// Ctx is the request-scoped context for the execution. Nodes use it for
-	// cancellation and deadlines (e.g. the HTTP request honors it). May be nil,
-	// in which case callers should treat it as context.Background().
-	Ctx context.Context
-	// Inputs contains all the data this node declared it needs in InputSchema()
-	// Keys are in format "nodeId.outputKey" (e.g., "create-user.userId")
-	Inputs map[string]any
-	// FlowInputs contains the full effective inputs for the current flow execution,
-	// including inherited inputs, static overrides, and any initial input values.
-	FlowInputs map[string]any
-	// AllOutputs exposes a read-only snapshot of outputs from nodes that completed
-	// before the current scheduling batch started.
-	AllOutputs OutputView
-	// ModuleResolver exposes the additional flow definitions available to module
-	// nodes during nested execution.
-	ModuleResolver ModuleResolver
-	// ModuleExecutor runs nested flows for module nodes.
-	ModuleExecutor ModuleExecutor
-	// DynamicVars resolves {{$name}} template variables (fake-data generators).
-	// May be nil, in which case {{$...}} references are left untouched.
-	DynamicVars DynamicResolver
-}
+// ExecutionContext is re-exported from spi. Alias kept for back-compat.
+type ExecutionContext = spi.ExecutionContext
 
-// Context returns the execution context, defaulting to context.Background() when
-// none was provided so callers never need a nil check.
-func (c ExecutionContext) Context() context.Context {
-	if c.Ctx != nil {
-		return c.Ctx
-	}
-	return context.Background()
-}
+// DynamicResolver is re-exported from spi. Alias kept for back-compat.
+type DynamicResolver = spi.DynamicResolver
 
-// DynamicResolver resolves a {{$name:args}} dynamic template variable to a
-// generated value. Implemented by pkg/dynamicvars.
-type DynamicResolver interface {
-	Resolve(name string, args []string) (string, error)
-}
+// AnyExecutionResult is re-exported from spi (was node.AnyExecutionResult, now
+// spi.AnyResult). Alias kept for back-compat.
+type AnyExecutionResult = spi.AnyResult
 
-// AnyExecutionResult is the interface for all execution results (polymorphic).
-type AnyExecutionResult interface {
-	GetNodeID() string
-	GetDisplayName() string
-	GetNodeType() Type
-	GetInputs() map[string]any
-	GetOutputs() map[string]any
-	GetError() error
-	GetExecutedAt() time.Time
+// BaseExecutionResult is re-exported from spi. Alias kept for back-compat.
+type BaseExecutionResult = spi.BaseExecutionResult
 
-	// Internal method to prevent external implementations
-	isExecutionResult()
-}
-
-// BaseExecutionResult provides common fields for all execution results.
-type BaseExecutionResult struct {
-	NodeID        string         `json:"node_id"`
-	DisplayName   string         `json:"display_name"`
-	NodeType      Type           `json:"node_type"`
-	RunWhen       RunWhen        `json:"run_when,omitempty"`
-	Inputs        map[string]any `json:"inputs"`
-	Outputs       map[string]any `json:"outputs"`
-	Error         error          `json:"-"` // Don't serialize Go error
-	ErrorCode     *string        `json:"error_code,omitempty"`
-	ErrorMsg      *string        `json:"error_message,omitempty"`
-	SkipReason    *string        `json:"skip_reason,omitempty"`
-	MissingInputs []string       `json:"missing_inputs,omitempty"`
-	ExecutedAt    time.Time      `json:"executed_at"`
-}
-
-// GetNodeID returns the node ID.
-func (b *BaseExecutionResult) GetNodeID() string { return b.NodeID }
-
-// GetDisplayName returns the node display name.
-func (b *BaseExecutionResult) GetDisplayName() string { return b.DisplayName }
-
-// GetNodeType returns the node type.
-func (b *BaseExecutionResult) GetNodeType() Type { return b.NodeType }
-
-// GetInputs returns the inputs map.
-func (b *BaseExecutionResult) GetInputs() map[string]any { return b.Inputs }
-
-// GetOutputs returns the outputs map.
-func (b *BaseExecutionResult) GetOutputs() map[string]any { return b.Outputs }
-
-// GetError returns the error if any.
-func (b *BaseExecutionResult) GetError() error { return b.Error }
-
-// GetExecutedAt returns the execution timestamp.
-func (b *BaseExecutionResult) GetExecutedAt() time.Time { return b.ExecutedAt }
-
-func (b *BaseExecutionResult) isExecutionResult() {}
-
-// AssertionResult records the outcome of evaluating a single node assertion,
-// captured whether it passed or failed so the full result can be reported.
-type AssertionResult struct {
-	Index     int    `json:"index"`
-	Extractor string `json:"extractor"`
-	Operator  string `json:"operator"`
-	Expected  any    `json:"expected"`
-	Actual    any    `json:"actual"`
-	Passed    bool   `json:"passed"`
-	Error     string `json:"error,omitempty"`
-}
+// AssertionResult is re-exported from spi. Alias kept for back-compat.
+type AssertionResult = spi.AssertionResult
 
 // RequestExecutionResult stores HTTP request node execution data.
 type RequestExecutionResult struct {
@@ -224,30 +119,16 @@ type ModuleExecutionResult struct {
 
 // As safely casts an AnyExecutionResult to a concrete result type T
 // (e.g. As[*RequestExecutionResult](result)). It reports false instead of
-// panicking when the dynamic type does not match.
+// panicking when the dynamic type does not match. Delegates to spi.As.
 func As[T AnyExecutionResult](result AnyExecutionResult) (T, bool) {
-	concrete, ok := result.(T)
-	return concrete, ok
+	return spi.As[T](result)
 }
 
 // MustAs casts an AnyExecutionResult to a concrete result type T, panicking when
-// the dynamic type does not match. Use only where the type is an invariant.
+// the dynamic type does not match. Delegates to spi.MustAs.
 func MustAs[T AnyExecutionResult](result AnyExecutionResult) T {
-	concrete, ok := As[T](result)
-	if !ok {
-		var want T
-		panic(fmt.Sprintf("expected execution result of type %T but got %T", want, result))
-	}
-	return concrete
+	return spi.MustAs[T](result)
 }
 
-// FlowExecutionResult contains the complete trace of a flow execution.
-type FlowExecutionResult struct {
-	ExecutionResults map[string]AnyExecutionResult `json:"execution_results"` // Polymorphic results!
-	FinalOutputs     map[string]any                `json:"final_outputs"`     // All outputs flattened for convenience (format: "nodeId.outputKey": value)
-	Success          bool                          `json:"success"`
-	Error            error                         `json:"-"`
-	ErrorCode        *string                       `json:"error_code,omitempty"`
-	ErrorMsg         *string                       `json:"error_message,omitempty"`
-	DurationMS       int64                         `json:"duration_ms"`
-}
+// FlowExecutionResult is re-exported from spi. Alias kept for back-compat.
+type FlowExecutionResult = spi.FlowExecutionResult
