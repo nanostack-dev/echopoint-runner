@@ -5,7 +5,14 @@ import (
 	"time"
 
 	"github.com/nanostack-dev/echopoint-runner/pkg/extractors"
+	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 )
+
+// ClassifyRequestErrorForTest exposes the unexported transport-error classifier
+// so black-box tests can verify the user-facing code and message.
+func ClassifyRequestErrorForTest(rawURL string, err error) *spi.UserError {
+	return classifyRequestError(rawURL, err)
+}
 
 // RunAssertionsForTest exposes the unexported runAssertions so tests can verify
 // that every assertion outcome is recorded.

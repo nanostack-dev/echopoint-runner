@@ -12,6 +12,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/nanostack-dev/echopoint-runner/pkg/extractors"
+	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 )
 
 // defaultRequestTimeoutMs is applied when a request node has no explicit timeout
@@ -98,13 +99,12 @@ func (n *RequestNode) Execute(ctx ExecutionContext) (AnyExecutionResult, error) 
 
 	resp, respBody, err := n.makeRequestAndReadBody(ctx.Context(), url, n.Data.Method, headers, body, n.Data.Timeout)
 	if err != nil {
-		log.Error().
-			Str("nodeID", n.GetID()).
-			Str("method", n.Data.Method).
-			Str("url", url).
-			Err(err).
-			Msg("HTTP request failed")
-		return n.createErrorResult(ctx.Inputs, err, time.Since(startTime)), err
+		// A transport failure targets a user-configured URL (DNS, connection,
+		// TLS, timeout) — the user's endpoint, not a runner fault. Classify it
+		// into a clean, user-facing result and let it propagate as a UserError;
+		// the engine logs UserErrors at debug rather than tripping error alerts.
+		userErr := classifyRequestError(url, err)
+		return n.createErrorResult(ctx.Inputs, userErr, time.Since(startTime)), userErr
 	}
 	defer resp.Body.Close()
 
@@ -207,6 +207,12 @@ func (n *RequestNode) createErrorResult(
 ) AnyExecutionResult {
 	errMsg := err.Error()
 	errCode := "REQUEST_FAILED"
+	// A classified UserError carries a clean, user-facing message and a stable
+	// code; surface those instead of the raw Go error string.
+	if userErr, ok := spi.AsUserError(err); ok {
+		errMsg = userErr.Message
+		errCode = userErr.Code
+	}
 
 	return &RequestExecutionResult{
 		BaseExecutionResult: BaseExecutionResult{
