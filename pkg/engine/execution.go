@@ -8,6 +8,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/nanostack-dev/echopoint-runner/pkg/node"
+	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 )
 
 type executionState struct {
@@ -236,14 +237,18 @@ func (engine *FlowEngine) runNode(
 			})
 			return skipped, nil
 		}
-		log.Error().
+		// Input validation failure is caused by the user's flow definition, not a
+		// runner fault. Classify it as a UserError and log at debug rather than
+		// tripping error alerts.
+		userErr := spi.NewUserError("NODE_INPUT_VALIDATION_FAILED", err.Error(), err)
+		log.Debug().
 			Str("flowName", engine.flow.Name).
 			Str("nodeID", nodeID).
 			Str("nodeType", string(nodeType)).
 			Err(err).
 			Int64("durationMS", time.Since(state.startTime).Milliseconds()).
 			Msg("Node execution failed: input validation error")
-		return nil, err
+		return nil, userErr
 	}
 
 	inputs := engine.assembleInputs(n, outputView)
@@ -271,7 +276,15 @@ func (engine *FlowEngine) runNode(
 	durationMs := finishedAt.Sub(startedAt).Milliseconds()
 
 	if err != nil {
-		log.Error().
+		// Log by error kind: a UserError is a user-caused outcome (their target
+		// endpoint erred, an assertion failed, invalid node input) already
+		// reported back as a failed node result, so it logs at debug. Anything
+		// else is treated as a genuine runner fault and logged at error.
+		event := log.Error()
+		if _, ok := spi.AsUserError(err); ok {
+			event = log.Debug()
+		}
+		event.
 			Str("flowName", engine.flow.Name).
 			Str("nodeID", nodeID).
 			Str("nodeType", string(nodeType)).
