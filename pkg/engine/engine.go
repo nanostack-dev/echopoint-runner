@@ -12,6 +12,7 @@ import (
 
 	"github.com/nanostack-dev/echopoint-runner/pkg/flow"
 	"github.com/nanostack-dev/echopoint-runner/pkg/node"
+	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 )
 
 type Options struct {
@@ -46,15 +47,26 @@ type moduleExecutor struct {
 	ctx       context.Context
 }
 
+// ExecuteModule runs a nested module flow. Every failure it returns is caused by
+// the referenced flow's definition (missing flow_id, a module cycle, or a flow
+// that fails to parse/validate) rather than a fault in the runner, so each is
+// returned as a spi.UserError. This keeps the node executor logging them at
+// debug — the same way it treats input-validation failures — instead of error,
+// which would otherwise inflate error metrics and trip error-rate alerts on a
+// user's invalid flow definition.
 func (e moduleExecutor) ExecuteModule(request node.ModuleExecutionRequest) (*node.FlowExecutionResult, error) {
 	trimmedFlowID := strings.TrimSpace(request.FlowID)
 	if trimmedFlowID == "" {
-		return nil, errors.New("module flow_id is required")
+		return nil, spi.NewUserError("MODULE_FLOW_ID_REQUIRED", "module flow_id is required", nil)
 	}
 	for _, activeFlowID := range e.callStack {
 		if activeFlowID == trimmedFlowID {
 			cycle := append(append([]string{}, e.callStack...), trimmedFlowID)
-			return nil, fmt.Errorf("module cycle detected: %s", strings.Join(cycle, " -> "))
+			return nil, spi.NewUserError(
+				"MODULE_CYCLE_DETECTED",
+				fmt.Sprintf("module cycle detected: %s", strings.Join(cycle, " -> ")),
+				nil,
+			)
 		}
 	}
 
@@ -62,7 +74,7 @@ func (e moduleExecutor) ExecuteModule(request node.ModuleExecutionRequest) (*nod
 		AllowedInitialInputKeys: sortedInputKeys(request.Inputs),
 	})
 	if err != nil {
-		return nil, fmt.Errorf("parse module flow: %w", err)
+		return nil, spi.NewUserError("MODULE_FLOW_PARSE_FAILED", "parse module flow", err)
 	}
 
 	return ExecuteFlowDefinition(*parsedFlow, request.Inputs, &ExecuteOptions{
