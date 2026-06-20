@@ -2,6 +2,7 @@ package engine
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/nanostack-dev/echopoint-runner/pkg/flow"
@@ -54,11 +55,9 @@ func validateModuleReferences(
 }
 
 func detectModuleCycle(callStack []string, targetFlowID string) error {
-	for _, activeFlowID := range callStack {
-		if activeFlowID == targetFlowID {
-			cycle := append(cloneStringSlice(callStack), targetFlowID)
-			return fmt.Errorf("module cycle detected: %s", strings.Join(cycle, " -> "))
-		}
+	if slices.Contains(callStack, targetFlowID) {
+		cycle := append(cloneStringSlice(callStack), targetFlowID)
+		return fmt.Errorf("module cycle detected: %s", strings.Join(cycle, " -> "))
 	}
 	return nil
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -59,15 +60,13 @@ func (e moduleExecutor) ExecuteModule(request node.ModuleExecutionRequest) (*nod
 	if trimmedFlowID == "" {
 		return nil, spi.NewUserError("MODULE_FLOW_ID_REQUIRED", "module flow_id is required", nil)
 	}
-	for _, activeFlowID := range e.callStack {
-		if activeFlowID == trimmedFlowID {
-			cycle := append(append([]string{}, e.callStack...), trimmedFlowID)
-			return nil, spi.NewUserError(
-				"MODULE_CYCLE_DETECTED",
-				fmt.Sprintf("module cycle detected: %s", strings.Join(cycle, " -> ")),
-				nil,
-			)
-		}
+	if slices.Contains(e.callStack, trimmedFlowID) {
+		cycle := append(append([]string{}, e.callStack...), trimmedFlowID)
+		return nil, spi.NewUserError(
+			"MODULE_CYCLE_DETECTED",
+			fmt.Sprintf("module cycle detected: %s", strings.Join(cycle, " -> ")),
+			nil,
+		)
 	}
 
 	parsedFlow, err := flow.ParseFromJSONWithOptions(request.FlowDefinition, flow.ParseOptions{
