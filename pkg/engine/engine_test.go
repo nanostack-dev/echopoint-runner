@@ -1422,6 +1422,51 @@ func TestFlowEngine_Execute_ModuleNodeRejectsDirectCycle(t *testing.T) {
 	assert.Equal(t, "FLOW_VALIDATION_FAILED", *result.ErrorCode)
 	assert.Empty(t, result.ExecutionResults)
 	assert.Empty(t, result.FinalOutputs)
+
+	// A module cycle is the flow author's fault, so module-graph validation must
+	// surface it as a UserError. The engine logs UserErrors at debug, keeping
+	// invalid flow definitions out of the error stream / error-rate alerts.
+	userErr, ok := spi.AsUserError(err)
+	require.True(t, ok, "module cycle should be a UserError, got %T", err)
+	assert.Equal(t, "MODULE_CYCLE_DETECTED", userErr.Code)
+}
+
+func TestFlowEngine_Execute_ModuleReferenceNotFoundIsUserError(t *testing.T) {
+	parentJSON := []byte(`{
+		"name": "Parent Flow",
+		"version": "1.0",
+		"nodes": [
+			{
+				"id": "module-step",
+				"display_name": "Module Step",
+				"type": "module",
+				"data": {
+					"flow_id": "flow-missing"
+				}
+			}
+		],
+		"edges": []
+	}`)
+
+	parentFlow, err := flow.ParseFromJSON(parentJSON)
+	require.NoError(t, err)
+
+	// Resolver that knows about no referenced flows: the module reference dangles.
+	resolver := staticModuleResolver{}
+
+	result, err := engine.ExecuteFlowDefinition(*parentFlow, map[string]any{}, &engine.ExecuteOptions{
+		ModuleResolver: resolver,
+	})
+	require.Error(t, err)
+	require.False(t, result.Success)
+	assert.Contains(t, err.Error(), `referenced flow "flow-missing" not found`)
+	assert.Equal(t, "FLOW_VALIDATION_FAILED", *result.ErrorCode)
+
+	// A dangling module reference is a flow-definition fault, so it must be a
+	// UserError and logged at debug rather than inflating error-rate alerts.
+	userErr, ok := spi.AsUserError(err)
+	require.True(t, ok, "missing module reference should be a UserError, got %T", err)
+	assert.Equal(t, "MODULE_FLOW_NOT_FOUND", userErr.Code)
 }
 
 func TestFlowEngine_Execute_ModuleNodeRejectsIndirectCycle(t *testing.T) {
