@@ -23,7 +23,8 @@ func toMap(t *testing.T, v any) map[string]any {
 	return m
 }
 
-func ptrStr(s string) *string { return &s }
+//go:fix inline
+func ptrStr(s string) *string { return new(s) }
 
 // The node result is shipped as the engine's own AnyExecutionResult, so the wire
 // shape is the flat engine shape (request_method, response_status_code,
@@ -75,8 +76,8 @@ func TestNodeFinishedPayload_CarriesSkipFields(t *testing.T) {
 		BaseExecutionResult: node.BaseExecutionResult{
 			NodeID:        "notify",
 			NodeType:      node.TypeRequest,
-			SkipReason:    ptrStr("dependency_failed"),
-			ErrorMsg:      ptrStr(`Skipped because step "Create" failed`),
+			SkipReason:    new("dependency_failed"),
+			ErrorMsg:      new(`Skipped because step "Create" failed`),
 			MissingInputs: []string{"create.id"},
 		},
 	}

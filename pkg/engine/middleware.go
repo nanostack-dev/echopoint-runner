@@ -1,6 +1,10 @@
 package engine
 
-import "github.com/nanostack-dev/echopoint-runner/pkg/node"
+import (
+	"slices"
+
+	"github.com/nanostack-dev/echopoint-runner/pkg/node"
+)
 
 // NodeExecutor runs a single node and returns its result. It is the unit that
 // Middleware wraps.
@@ -15,9 +19,9 @@ type Middleware func(NodeExecutor) NodeExecutor
 // chainMiddleware wraps base with the given middlewares, outermost-first.
 func chainMiddleware(base NodeExecutor, middlewares []Middleware) NodeExecutor {
 	wrapped := base
-	for i := len(middlewares) - 1; i >= 0; i-- {
-		if middlewares[i] != nil {
-			wrapped = middlewares[i](wrapped)
+	for _, v := range slices.Backward(middlewares) {
+		if v != nil {
+			wrapped = v(wrapped)
 		}
 	}
 	return wrapped

@@ -2,6 +2,7 @@ package engine
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/nanostack-dev/echopoint-runner/pkg/flow"
@@ -55,19 +56,17 @@ func validateModuleReferences(
 }
 
 func detectModuleCycle(callStack []string, targetFlowID string) error {
-	for _, activeFlowID := range callStack {
-		if activeFlowID == targetFlowID {
-			cycle := append(cloneStringSlice(callStack), targetFlowID)
-			// A module cycle is an invalid flow graph authored by the user, not a
-			// runner fault. Classify it as a UserError so the node executor logs it
-			// at debug instead of error — mirroring moduleExecutor.ExecuteModule and
-			// keeping invalid flow definitions out of error-rate alerts.
-			return spi.NewUserError(
-				"MODULE_CYCLE_DETECTED",
-				fmt.Sprintf("module cycle detected: %s", strings.Join(cycle, " -> ")),
-				nil,
-			)
-		}
+	if slices.Contains(callStack, targetFlowID) {
+		cycle := append(cloneStringSlice(callStack), targetFlowID)
+		// A module cycle is an invalid flow graph authored by the user, not a
+		// runner fault. Classify it as a UserError so the node executor logs it
+		// at debug instead of error — mirroring moduleExecutor.ExecuteModule and
+		// keeping invalid flow definitions out of error-rate alerts.
+		return spi.NewUserError(
+			"MODULE_CYCLE_DETECTED",
+			fmt.Sprintf("module cycle detected: %s", strings.Join(cycle, " -> ")),
+			nil,
+		)
 	}
 	return nil
 }
