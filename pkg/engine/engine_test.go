@@ -1371,6 +1371,43 @@ func TestFlowEngine_Execute_ModuleFlowParseFailureIsUserError(t *testing.T) {
 	assert.Contains(t, err.Error(), "references unknown initial variable 'email'")
 }
 
+func TestFlowEngine_Execute_ModuleMissingFlowIDIsUserError(t *testing.T) {
+	// A module node with no flow_id is an incomplete flow definition authored by
+	// the user. The module-graph validation pass intentionally skips empty
+	// flow_ids, so the failure surfaces only at node-execution time. It must be
+	// classified as a UserError so the engine logs it at debug, keeping invalid
+	// user flow definitions out of the error stream / error-rate alerts.
+	parentJSON := []byte(`{
+		"name": "Parent Flow",
+		"version": "1.0",
+		"nodes": [
+			{
+				"id": "run-module",
+				"display_name": "Run Module",
+				"type": "module",
+				"data": {
+					"flow_id": ""
+				}
+			}
+		],
+		"edges": []
+	}`)
+
+	parentFlow, err := flow.ParseFromJSON(parentJSON)
+	require.NoError(t, err)
+
+	result, err := engine.ExecuteFlowDefinition(*parentFlow, map[string]any{}, &engine.ExecuteOptions{
+		ModuleResolver: staticModuleResolver{},
+	})
+	require.Error(t, err)
+	require.False(t, result.Success)
+
+	userErr, ok := spi.AsUserError(err)
+	require.True(t, ok, "missing module flow_id should be a UserError, got %T", err)
+	assert.Equal(t, "MODULE_FLOW_ID_REQUIRED", userErr.Code)
+	assert.Contains(t, err.Error(), "module flow_id is required")
+}
+
 func TestFlowEngine_Execute_ModuleNodeRejectsDirectCycle(t *testing.T) {
 	parentJSON := []byte(`{
 		"name": "Parent Flow",
