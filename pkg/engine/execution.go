@@ -2,6 +2,7 @@ package engine
 
 import (
 	"fmt"
+	"maps"
 	"sync"
 	"time"
 
@@ -55,9 +56,7 @@ func (engine *FlowEngine) executeNodes(
 		Any("initialInputs", initialInputs).
 		Msg("Initialized flow execution with initial inputs")
 
-	for k, v := range engine.nodeEdgeInput {
-		state.remainingInputs[k] = v
-	}
+	maps.Copy(state.remainingInputs, engine.nodeEdgeInput)
 
 	engine.runOnSuccessPhase(state)
 	if state.mainFailed {
@@ -321,9 +320,7 @@ func (engine *FlowEngine) propagateNodeOutputs(
 	nodeID := n.GetID()
 	nodeType := n.GetType()
 	copiedOutputs := make(map[string]any, len(outputs))
-	for key, value := range outputs {
-		copiedOutputs[key] = value
-	}
+	maps.Copy(copiedOutputs, outputs)
 
 	state.allOutputs[nodeID] = copiedOutputs
 

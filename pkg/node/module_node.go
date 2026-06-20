@@ -3,6 +3,7 @@ package node
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"sort"
 	"strings"
 	"time"
@@ -97,15 +98,9 @@ func (n *ModuleNode) Execute(ctx ExecutionContext) (AnyExecutionResult, error) {
 		Msg("Starting module node execution")
 
 	childInputs := make(map[string]any, len(ctx.FlowInputs)+len(resolvedFlow.InputOverrides)+len(moduleInputs))
-	for key, value := range ctx.FlowInputs {
-		childInputs[key] = value
-	}
-	for key, value := range resolvedFlow.InputOverrides {
-		childInputs[key] = value
-	}
-	for key, value := range moduleInputs {
-		childInputs[key] = value
-	}
+	maps.Copy(childInputs, ctx.FlowInputs)
+	maps.Copy(childInputs, resolvedFlow.InputOverrides)
+	maps.Copy(childInputs, moduleInputs)
 
 	result, err := ctx.ModuleExecutor.ExecuteModule(ModuleExecutionRequest{
 		FlowID:         flowID,
@@ -211,8 +206,6 @@ func cloneMap(source map[string]any) map[string]any {
 		return map[string]any{}
 	}
 	cloned := make(map[string]any, len(source))
-	for key, value := range source {
-		cloned[key] = value
-	}
+	maps.Copy(cloned, source)
 	return cloned
 }
