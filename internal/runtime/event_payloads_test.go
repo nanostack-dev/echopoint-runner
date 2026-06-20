@@ -23,9 +23,6 @@ func toMap(t *testing.T, v any) map[string]any {
 	return m
 }
 
-//go:fix inline
-func ptrStr(s string) *string { return new(s) }
-
 // The node result is shipped as the engine's own AnyExecutionResult, so the wire
 // shape is the flat engine shape (request_method, response_status_code,
 // assertion_results, …) that the control plane decodes with
