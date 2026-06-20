@@ -15,6 +15,7 @@ import (
 	"github.com/nanostack-dev/echopoint-runner/pkg/engine"
 	"github.com/nanostack-dev/echopoint-runner/pkg/flow"
 	"github.com/nanostack-dev/echopoint-runner/pkg/node"
+	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -1300,6 +1301,74 @@ func TestFlowExecutionResultToPayload_IncludesModuleExecutionResult(t *testing.T
 
 	_, marshalErr := json.Marshal(payload)
 	require.NoError(t, marshalErr)
+}
+
+func TestFlowEngine_Execute_ModuleFlowParseFailureIsUserError(t *testing.T) {
+	parentJSON := []byte(`{
+		"name": "Parent Flow",
+		"version": "1.0",
+		"nodes": [
+			{
+				"id": "run-module",
+				"display_name": "Run Module",
+				"type": "module",
+				"data": {
+					"flow_id": "flow-child"
+				}
+			}
+		],
+		"edges": []
+	}`)
+
+	// The child references an initial variable "email" that the module is never
+	// given, so parsing the child definition fails at module-execution time.
+	// This reproduces the observed
+	// "parse module flow: ... references unknown initial variable 'email'"
+	// failure, which is caused by the flow author, not the runner.
+	childJSON := []byte(`{
+		"name": "Child Flow",
+		"version": "1.0",
+		"nodes": [
+			{
+				"id": "call-api",
+				"display_name": "Call API",
+				"type": "request",
+				"data": {
+					"method": "POST",
+					"url": "https://example.com",
+					"headers": {
+						"X-Email": "{{email}}"
+					},
+					"timeout": 1000
+				}
+			}
+		],
+		"edges": []
+	}`)
+
+	parentFlow, err := flow.ParseFromJSON(parentJSON)
+	require.NoError(t, err)
+
+	resolver := staticModuleResolver{
+		"flow-child": {
+			FlowDefinition: childJSON,
+		},
+	}
+
+	result, err := engine.ExecuteFlowDefinition(*parentFlow, map[string]any{}, &engine.ExecuteOptions{
+		ModuleResolver: resolver,
+	})
+	require.Error(t, err)
+	require.False(t, result.Success)
+
+	// A bad module flow definition is the flow author's fault, so it must be
+	// classified as a UserError. The engine logs UserErrors at debug, keeping
+	// invalid flow definitions out of the error stream / error-rate alerts.
+	userErr, ok := spi.AsUserError(err)
+	require.True(t, ok, "module flow parse failure should be a UserError, got %T", err)
+	assert.Equal(t, "MODULE_FLOW_PARSE_FAILED", userErr.Code)
+	assert.Contains(t, err.Error(), "parse module flow")
+	assert.Contains(t, err.Error(), "references unknown initial variable 'email'")
 }
 
 func TestFlowEngine_Execute_ModuleNodeRejectsDirectCycle(t *testing.T) {
