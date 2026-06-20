@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 	"github.com/rs/zerolog/log"
 )
 
@@ -67,7 +68,14 @@ func (n *ModuleNode) Execute(ctx ExecutionContext) (AnyExecutionResult, error) {
 	startTime := time.Now()
 	flowID := strings.TrimSpace(n.Data.FlowID)
 	if flowID == "" {
-		err := errors.New("module flow_id is required")
+		// A module node without a flow_id is an incomplete flow definition
+		// authored by the user, not a runner fault. The module-graph validation
+		// pass intentionally skips empty flow_ids, so this runtime guard is the
+		// only place it surfaces. Classify it as a UserError so the node
+		// executor logs it at debug rather than error (mirroring
+		// engine.ExecuteModule and the module-graph validation path), keeping
+		// invalid user flow definitions out of the error stream / error alerts.
+		err := spi.NewUserError("MODULE_FLOW_ID_REQUIRED", "module flow_id is required", nil)
 		return n.createErrorResult(ctx.Inputs, flowID, err, startTime, nil), err
 	}
 	if ctx.ModuleResolver == nil {
