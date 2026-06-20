@@ -8,6 +8,7 @@ package runner
 
 import (
 	"context"
+	"maps"
 
 	"github.com/nanostack-dev/echopoint-runner/pkg/engine"
 	"github.com/nanostack-dev/echopoint-runner/pkg/flow"
@@ -87,12 +88,8 @@ func Run(flowDef flow.Flow, inputs map[string]any, opts ...Option) (*node.FlowEx
 // keys the caller did not provide (e.g. flow-declared defaults); override wins.
 func MergeInputs(base, override map[string]any) map[string]any {
 	merged := make(map[string]any, len(base)+len(override))
-	for key, value := range base {
-		merged[key] = value
-	}
-	for key, value := range override {
-		merged[key] = value
-	}
+	maps.Copy(merged, base)
+	maps.Copy(merged, override)
 	return merged
 }
 
@@ -128,8 +125,6 @@ func cloneInputs(src map[string]any) map[string]any {
 		return nil
 	}
 	cloned := make(map[string]any, len(src))
-	for key, value := range src {
-		cloned[key] = value
-	}
+	maps.Copy(cloned, src)
 	return cloned
 }
