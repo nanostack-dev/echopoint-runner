@@ -1,5 +1,7 @@
 package node
 
+import "maps"
+
 type outputSnapshot struct {
 	outputs map[string]map[string]any
 }
@@ -13,9 +15,7 @@ func NewOutputView(outputs map[string]map[string]any) OutputView {
 		}
 
 		copied := make(map[string]any, len(nodeOutputs))
-		for key, value := range nodeOutputs {
-			copied[key] = value
-		}
+		maps.Copy(copied, nodeOutputs)
 		snapshot[nodeID] = copied
 	}
 
@@ -44,9 +44,7 @@ func (o outputSnapshot) Node(nodeID string) map[string]any {
 	}
 
 	copyNodeOutputs := make(map[string]any, len(nodeOutputs))
-	for key, value := range nodeOutputs {
-		copyNodeOutputs[key] = value
-	}
+	maps.Copy(copyNodeOutputs, nodeOutputs)
 
 	return copyNodeOutputs
 }

@@ -140,11 +140,9 @@ func (r *Runtime) runClaimLoop(ctx context.Context) error {
 			Time("lease_expires_at", claimedJob.LeaseExpiresAt).
 			Msg("claimed runner job")
 
-		r.workers.Add(1)
-		go func() {
-			defer r.workers.Done()
+		r.workers.Go(func() {
 			r.executeClaimedJob(jobState)
-		}()
+		})
 	}
 }
 

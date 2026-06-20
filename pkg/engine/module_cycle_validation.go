@@ -2,10 +2,12 @@ package engine
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/nanostack-dev/echopoint-runner/pkg/flow"
 	"github.com/nanostack-dev/echopoint-runner/pkg/node"
+	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 )
 
 func validateModuleGraph(root flow.Flow, resolver node.ModuleResolver, callStack []string) error {
@@ -54,11 +56,17 @@ func validateModuleReferences(
 }
 
 func detectModuleCycle(callStack []string, targetFlowID string) error {
-	for _, activeFlowID := range callStack {
-		if activeFlowID == targetFlowID {
-			cycle := append(cloneStringSlice(callStack), targetFlowID)
-			return fmt.Errorf("module cycle detected: %s", strings.Join(cycle, " -> "))
-		}
+	if slices.Contains(callStack, targetFlowID) {
+		cycle := append(cloneStringSlice(callStack), targetFlowID)
+		// A module cycle is an invalid flow graph authored by the user, not a
+		// runner fault. Classify it as a UserError so the node executor logs it
+		// at debug instead of error — mirroring moduleExecutor.ExecuteModule and
+		// keeping invalid flow definitions out of error-rate alerts.
+		return spi.NewUserError(
+			"MODULE_CYCLE_DETECTED",
+			fmt.Sprintf("module cycle detected: %s", strings.Join(cycle, " -> ")),
+			nil,
+		)
 	}
 	return nil
 }
@@ -74,14 +82,23 @@ func resolveModuleFlow(
 
 	resolvedFlow, ok := resolver.ResolveFlow(flowID)
 	if !ok {
-		return flow.Flow{}, fmt.Errorf("referenced flow %q not found", flowID)
+		// A dangling module reference is a flow-definition fault, not a runner
+		// fault — classify as a UserError so it logs at debug, not error.
+		return flow.Flow{}, spi.NewUserError(
+			"MODULE_FLOW_NOT_FOUND",
+			fmt.Sprintf("referenced flow %q not found", flowID),
+			nil,
+		)
 	}
 
 	parsedFlow, err := flow.ParseFromJSONWithOptions(resolvedFlow.FlowDefinition, flow.ParseOptions{
 		AllowUnknownInitialInputs: true,
 	})
 	if err != nil {
-		return flow.Flow{}, fmt.Errorf("parse module flow: %w", err)
+		// The referenced flow's own definition fails to parse — the flow author's
+		// fault. Classify as a UserError (same code as the execution-time path in
+		// moduleExecutor.ExecuteModule) so it logs at debug, not error.
+		return flow.Flow{}, spi.NewUserError("MODULE_FLOW_PARSE_FAILED", "parse module flow", err)
 	}
 
 	parsedFlows[flowID] = *parsedFlow
