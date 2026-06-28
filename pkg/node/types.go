@@ -51,6 +51,7 @@ const (
 	TypeRequest = spi.KindRequest
 	TypeDelay   = spi.KindDelay
 	TypeModule  = spi.KindModule
+	TypePoll    = spi.KindPoll
 )
 
 // RunWhen is re-exported from spi. Alias kept for back-compat.
@@ -130,6 +131,22 @@ type ModuleExecutionResult struct {
 	FlowID            string         `json:"flow_id"`
 	ChildFinalOutputs map[string]any `json:"child_final_outputs,omitempty"`
 	DurationMs        int64          `json:"duration_ms"`
+}
+
+// PollExecutionResult stores poll-until node execution data. The poll node
+// re-runs an inline body sub-flow on an interval until all of its exit-condition
+// assertions pass on a single attempt, or it exhausts its attempt/deadline budget.
+type PollExecutionResult struct {
+	BaseExecutionResult
+
+	// Attempts is the number of body executions performed (the attempt on which
+	// the poll succeeded, or the total attempts made before giving up).
+	//
+	// The exit-condition evaluation from the final attempt (the passing attempt on
+	// success, or the last attempt on failure) is recorded in the promoted
+	// BaseExecutionResult.AssertionResults field.
+	Attempts   int   `json:"attempts"`
+	DurationMs int64 `json:"duration_ms"`
 }
 
 // As safely casts an AnyExecutionResult to a concrete result type T

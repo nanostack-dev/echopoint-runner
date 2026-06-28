@@ -9,6 +9,7 @@ const (
 	KindRequest Kind = "request"
 	KindDelay   Kind = "delay"
 	KindModule  Kind = "module"
+	KindPoll    Kind = "poll"
 )
 
 // RunWhen controls whether a node runs only on the success path or also after
