@@ -1,114 +1,141 @@
 package node_test
 
 import (
-	"encoding/json"
 	"testing"
 
+	"github.com/nanostack-dev/echopoint-runner/pkg/engine"
+	"github.com/nanostack-dev/echopoint-runner/pkg/flow"
 	node "github.com/nanostack-dev/echopoint-runner/pkg/node"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// mustAssertion decodes a single CompositeAssertion from its snake_case wire shape.
-func mustAssertion(t *testing.T, wire string) node.CompositeAssertion {
-	t.Helper()
-	var ca node.CompositeAssertion
-	require.NoError(t, json.Unmarshal([]byte(wire), &ca), "decode assertion")
-	return ca
-}
+// The assert node is thin: Execute resolves its target and exposes it as a
+// ResponseContext; the ENGINE-level pass evaluates assertions/outputs and flips
+// the result to failed on a miss. These tests therefore drive assertions through
+// the engine (flow.ParseFromJSONWithOptions + engine.ExecuteFlowDefinition)
+// rather than calling Execute() directly, since assertions no longer run there.
 
-// jsonPathEquals builds an assertion that asserts a JSONPath equals a value.
-func jsonPathEquals(t *testing.T, path string, expected any) node.CompositeAssertion {
+// runAssertFlow parses a single-node assert flow and executes it through the
+// engine, returning the flow result, the assert node's typed result, and the
+// execution error (non-nil when an assertion fails).
+func runAssertFlow(
+	t *testing.T, flowJSON []byte, inputKeys []string, inputs map[string]any,
+) (*node.FlowExecutionResult, *node.AssertExecutionResult, error) {
 	t.Helper()
-	exp, err := json.Marshal(expected)
+	parsed, err := flow.ParseFromJSONWithOptions(flowJSON, flow.ParseOptions{
+		AllowedInitialInputKeys: inputKeys,
+	})
 	require.NoError(t, err)
-	wire := `{
-		"extractor_type": "jsonPath",
-		"extractor_data": {"path": "` + path + `"},
-		"operator_type": "equals",
-		"operator_data": {"value": ` + string(exp) + `}
-	}`
-	return mustAssertion(t, wire)
+
+	result, execErr := engine.ExecuteFlowDefinition(*parsed, inputs, &engine.ExecuteOptions{})
+	require.NotNil(t, result)
+	assertRes := node.MustAs[*node.AssertExecutionResult](result.ExecutionResults["verify"])
+	return result, assertRes, execErr
 }
 
 func TestAssertNode_JSONPathEqualsPasses(t *testing.T) {
-	n := &node.AssertNode{
-		BaseNode: node.BaseNode{
-			ID:          "assert1",
-			DisplayName: "Validate status",
-			NodeType:    node.TypeAssert,
-			Assertions: []node.CompositeAssertion{
-				jsonPathEquals(t, "$.status", "ok"),
-			},
-		},
-		Data: node.AssertData{
-			Target: map[string]any{"status": "ok", "count": float64(3)},
-		},
-	}
+	flowJSON := []byte(`{
+		"name": "assert pass",
+		"version": "1.0",
+		"nodes": [{
+			"id": "verify",
+			"display_name": "Validate status",
+			"type": "assert",
+			"data": {},
+			"assertions": [{
+				"extractor_type": "jsonPath",
+				"extractor_data": {"path": "$.status"},
+				"operator_type": "equals",
+				"operator_data": {"value": "ok"}
+			}]
+		}],
+		"edges": []
+	}`)
 
-	res, err := n.Execute(node.ExecutionContext{Inputs: map[string]any{}})
+	result, assertRes, err := runAssertFlow(
+		t, flowJSON, []string{"status"}, map[string]any{"status": "ok"},
+	)
 	require.NoError(t, err)
+	require.True(t, result.Success)
 
-	assertRes, ok := node.As[*node.AssertExecutionResult](res)
-	require.True(t, ok, "result should be *AssertExecutionResult")
 	require.Len(t, assertRes.AssertionResults, 1)
 	assert.True(t, assertRes.AssertionResults[0].Passed)
 	assert.Equal(t, 0, assertRes.AssertionResults[0].Index)
 	require.NoError(t, assertRes.GetError())
 }
 
-func TestAssertNode_FailingAssertionReturnsError(t *testing.T) {
-	n := &node.AssertNode{
-		BaseNode: node.BaseNode{
-			ID:          "assert1",
-			DisplayName: "Validate status",
-			NodeType:    node.TypeAssert,
-			Assertions: []node.CompositeAssertion{
-				jsonPathEquals(t, "$.status", "ok"),
-			},
-		},
-		Data: node.AssertData{
-			Target: map[string]any{"status": "error"},
-		},
-	}
+func TestAssertNode_FailingAssertionFlipsToFailed(t *testing.T) {
+	flowJSON := []byte(`{
+		"name": "assert fail",
+		"version": "1.0",
+		"nodes": [{
+			"id": "verify",
+			"display_name": "Validate status",
+			"type": "assert",
+			"data": {},
+			"assertions": [{
+				"extractor_type": "jsonPath",
+				"extractor_data": {"path": "$.status"},
+				"operator_type": "equals",
+				"operator_data": {"value": "ok"}
+			}]
+		}],
+		"edges": []
+	}`)
 
-	res, err := n.Execute(node.ExecutionContext{Inputs: map[string]any{}})
+	result, assertRes, err := runAssertFlow(
+		t, flowJSON, []string{"status"}, map[string]any{"status": "error"},
+	)
 	require.Error(t, err)
+	require.False(t, result.Success)
 	assert.Contains(t, err.Error(), "assertion 0 failed")
 
-	assertRes, ok := node.As[*node.AssertExecutionResult](res)
-	require.True(t, ok)
 	require.Len(t, assertRes.AssertionResults, 1)
 	assert.False(t, assertRes.AssertionResults[0].Passed)
 	assert.Equal(t, "error", assertRes.AssertionResults[0].Actual)
 	require.NotNil(t, assertRes.ErrorMsg)
 	assert.Contains(t, *assertRes.ErrorMsg, "assertion 0 failed")
 	require.NotNil(t, assertRes.ErrorCode)
-	assert.Equal(t, "ASSERT_FAILED", *assertRes.ErrorCode)
+	// The engine-level assertion pass owns failure classification — assert misses
+	// surface the unified ASSERTION_FAILED code (was node-local ASSERT_FAILED).
+	assert.Equal(t, "ASSERTION_FAILED", *assertRes.ErrorCode)
 }
 
 func TestAssertNode_StopsAtFirstFailingAssertion(t *testing.T) {
-	n := &node.AssertNode{
-		BaseNode: node.BaseNode{
-			ID:          "assert1",
-			DisplayName: "Validate status",
-			NodeType:    node.TypeAssert,
-			Assertions: []node.CompositeAssertion{
-				jsonPathEquals(t, "$.status", "ok"),      // passes
-				jsonPathEquals(t, "$.count", float64(9)), // fails (actual 3)
-			},
-		},
-		Data: node.AssertData{
-			Target: map[string]any{"status": "ok", "count": float64(3)},
-		},
-	}
+	flowJSON := []byte(`{
+		"name": "assert stop",
+		"version": "1.0",
+		"nodes": [{
+			"id": "verify",
+			"display_name": "Validate status",
+			"type": "assert",
+			"data": {},
+			"assertions": [
+				{
+					"extractor_type": "jsonPath",
+					"extractor_data": {"path": "$.status"},
+					"operator_type": "equals",
+					"operator_data": {"value": "ok"}
+				},
+				{
+					"extractor_type": "jsonPath",
+					"extractor_data": {"path": "$.count"},
+					"operator_type": "equals",
+					"operator_data": {"value": 9}
+				}
+			]
+		}],
+		"edges": []
+	}`)
 
-	res, err := n.Execute(node.ExecutionContext{Inputs: map[string]any{}})
+	_, assertRes, err := runAssertFlow(
+		t, flowJSON, []string{"status", "count"},
+		map[string]any{"status": "ok", "count": float64(3)},
+	)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "assertion 1 failed")
 
-	assertRes, ok := node.As[*node.AssertExecutionResult](res)
-	require.True(t, ok)
 	require.Len(t, assertRes.AssertionResults, 2, "should record up to and including the failing assertion")
 	assert.True(t, assertRes.AssertionResults[0].Passed)
 	assert.False(t, assertRes.AssertionResults[1].Passed)
@@ -121,67 +148,75 @@ func TestAssertNode_StopsAtFirstFailingAssertion(t *testing.T) {
 // from refs declared in InputSchema — which an omitted target leaves empty — so
 // FlowInputs is the real map to assert over by default.
 func TestAssertNode_TargetOmittedAssertsOverFlowInputs(t *testing.T) {
-	n := &node.AssertNode{
-		BaseNode: node.BaseNode{
-			ID:          "assert1",
-			DisplayName: "Validate flow inputs",
-			NodeType:    node.TypeAssert,
-			Assertions: []node.CompositeAssertion{
-				jsonPathEquals(t, "$.userId", "u-123"),
-			},
-		},
-		// No Data.Target — asserts over ctx.FlowInputs.
-	}
+	flowJSON := []byte(`{
+		"name": "assert flow inputs",
+		"version": "1.0",
+		"nodes": [{
+			"id": "verify",
+			"display_name": "Validate flow inputs",
+			"type": "assert",
+			"data": {},
+			"assertions": [{
+				"extractor_type": "jsonPath",
+				"extractor_data": {"path": "$.userId"},
+				"operator_type": "equals",
+				"operator_data": {"value": "u-123"}
+			}]
+		}],
+		"edges": []
+	}`)
 
-	res, err := n.Execute(node.ExecutionContext{
-		// ctx.Inputs is empty (the engine leaves it empty when InputSchema is []);
-		// FlowInputs carries the flow's initial inputs.
-		Inputs:     map[string]any{},
-		FlowInputs: map[string]any{"userId": "u-123"},
-	})
+	result, assertRes, err := runAssertFlow(
+		t, flowJSON, []string{"userId"}, map[string]any{"userId": "u-123"},
+	)
 	require.NoError(t, err)
+	require.True(t, result.Success)
 
-	assertRes := node.MustAs[*node.AssertExecutionResult](res)
 	require.Len(t, assertRes.AssertionResults, 1)
 	assert.True(t, assertRes.AssertionResults[0].Passed)
 }
 
+// TestAssertNode_CapturesExtractorOutputOnSuccess verifies the engine pass also
+// runs the node's declared OUTPUT extractors against the resolved target and
+// merges them onto the result.
 func TestAssertNode_CapturesExtractorOutputOnSuccess(t *testing.T) {
-	outputWire := `{
-		"id": "assert1",
-		"type": "assert",
-		"display_name": "Validate and capture",
-		"data": {"target": "{{{user.payload}}}"},
-		"assertions": [{
-			"extractor_type": "jsonPath",
-			"extractor_data": {"path": "$.status"},
-			"operator_type": "equals",
-			"operator_data": {"value": "active"}
+	flowJSON := []byte(`{
+		"name": "assert outputs",
+		"version": "1.0",
+		"nodes": [{
+			"id": "verify",
+			"display_name": "Validate and capture",
+			"type": "assert",
+			"data": {},
+			"assertions": [{
+				"extractor_type": "jsonPath",
+				"extractor_data": {"path": "$.status"},
+				"operator_type": "equals",
+				"operator_data": {"value": "active"}
+			}],
+			"outputs": [{
+				"name": "userId",
+				"extractor": {"type": "jsonPath", "path": "$.id"}
+			}]
 		}],
-		"outputs": [{
-			"name": "userId",
-			"extractor": {"type": "jsonPath", "path": "$.id"}
-		}]
-	}`
+		"edges": []
+	}`)
 
-	anyNode, err := node.UnmarshalNode([]byte(outputWire))
+	result, assertRes, err := runAssertFlow(
+		t, flowJSON, []string{"status", "id"},
+		map[string]any{"status": "active", "id": "u-42"},
+	)
 	require.NoError(t, err)
-	assertNode, ok := node.AsAssertNode(anyNode)
-	require.True(t, ok)
+	require.True(t, result.Success)
 
-	res, execErr := assertNode.Execute(node.ExecutionContext{
-		Inputs: map[string]any{
-			"user.payload": map[string]any{"status": "active", "id": "u-42"},
-		},
-	})
-	require.NoError(t, execErr)
-
-	assertRes := node.MustAs[*node.AssertExecutionResult](res)
 	assert.Equal(t, "u-42", assertRes.Outputs["userId"])
 	require.Len(t, assertRes.AssertionResults, 1)
 	assert.True(t, assertRes.AssertionResults[0].Passed)
 }
 
+// TestAssertNode_DecodeViaUnmarshalNode is a pure node-level test: it checks wire
+// decoding, run_when default, InputSchema ref surfacing, and the registered
+// skipped-result factory — none of which depend on assertion evaluation.
 func TestAssertNode_DecodeViaUnmarshalNode(t *testing.T) {
 	wire := `{
 		"id": "assert-decode",
