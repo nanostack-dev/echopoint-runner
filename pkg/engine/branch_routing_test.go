@@ -134,6 +134,51 @@ func TestBranchRouting_DiamondReconvergence(t *testing.T) {
 	requireSkipped(t, result.ExecutionResults["nodeB"])
 }
 
+// (b2) cross-arm diamond: J is reachable from the taken arm (A) but templates an
+// output from the ROUTED-AWAY arm (B). J must be SKIPPED with a
+// dependency_skipped reason — NOT hard-fail validateInputs and error the flow.
+func TestBranchRouting_DiamondJoinReferencesRoutedAwayArm(t *testing.T) {
+	branch := branchNodeForTest(t, "router", "nodeA", "nodeB", "")
+	nodeA := newDataContractMockNode("nodeA", nil, []string{"value"})
+	nodeA.outputs = map[string]any{"value": "fromA"}
+	nodeB := newDataContractMockNode("nodeB", nil, []string{"value"})
+	nodeB.outputs = map[string]any{"value": "fromB"}
+	// J reads B's output, but B is on the routed-away arm and gets skipped.
+	nodeJ := newDataContractMockNode("nodeJ", []string{"nodeB.value"}, []string{"joined"})
+	nodeJ.outputs = map[string]any{"joined": "ok"}
+
+	flowInstance := flow.Flow{
+		Name:          "branch-diamond-crossarm",
+		Version:       "1.0",
+		InitialInputs: map[string]any{"route": "a"},
+		Nodes:         []node.AnyNode{branch, nodeA, nodeB, nodeJ},
+		Edges: []edge.Edge{
+			successEdge("router", "nodeA"),
+			successEdge("router", "nodeB"),
+			successEdge("nodeA", "nodeJ"),
+			successEdge("nodeB", "nodeJ"),
+		},
+	}
+
+	result, err := engine.ExecuteFlowDefinition(flowInstance, map[string]any{"route": "a"}, nil)
+	// Graceful skip, not a NODE_INPUT_VALIDATION_FAILED hard failure.
+	require.NoError(t, err)
+	require.True(t, result.Success)
+
+	assert.NotNil(t, nodeA.executedAt, "nodeA should execute")
+	assert.Nil(t, nodeB.executedAt, "nodeB should be skipped")
+	assert.Nil(t, nodeJ.executedAt, "nodeJ must be skipped, not run into validateInputs")
+
+	requireSkipped(t, result.ExecutionResults["nodeB"])
+	jResult := result.ExecutionResults["nodeJ"]
+	requireSkipped(t, jResult)
+	skippedJ, ok := skippedBaseOf(jResult)
+	require.True(t, ok)
+	require.NotNil(t, skippedJ.SkipReason)
+	assert.Equal(t, "dependency_skipped", *skippedJ.SkipReason,
+		"J skip reason should name the skipped upstream dependency")
+}
+
 // (c) nested branch inside the taken path.
 func TestBranchRouting_NestedBranch(t *testing.T) {
 	outer := branchNodeForTest(t, "outer", "inner", "skipped", "")
