@@ -266,7 +266,7 @@ func (engine *FlowEngine) runNode(
 		StartedAt:   startedAt,
 	})
 
-	executor := chainMiddleware(n.Execute, engine.middleware)
+	executor := chainMiddleware(evalExecutor(n), engine.middleware)
 	result, err := executor(engine.buildExecutionContext(inputs, outputView))
 	finishedAt := time.Now()
 	if result != nil && !result.GetExecutedAt().IsZero() {
@@ -309,6 +309,82 @@ func (engine *FlowEngine) runNode(
 	})
 
 	return result, err
+}
+
+// evalExecutor wraps a node's Execute so the engine-level assertion/output pass
+// runs INSIDE the middleware chain. Wrapping it before chainMiddleware means
+// retry middleware still re-runs the node when an assertion fails — the assertion
+// failure is part of the executed unit, not a post-chain step.
+func evalExecutor(n node.AnyNode) NodeExecutor {
+	return func(ec node.ExecutionContext) (node.AnyExecutionResult, error) {
+		res, execErr := n.Execute(ec)
+		if execErr != nil || res == nil {
+			return res, execErr
+		}
+		return applyAssertionsAndOutputs(n, res)
+	}
+}
+
+// applyAssertionsAndOutputs runs the uniform, engine-level assertion + output
+// pass over a node's successful result. It is the single place assertions and
+// outputs are evaluated for every node kind: a result opts in by implementing
+// node.AssertionContextProvider and exposing a ResponseContext. Results that do
+// not implement it (delay, module) are returned unchanged.
+//
+// On an assertion failure the result is marked failed (AssertionResults captured,
+// error surfaced) and the error is returned so the node fails — and so retry
+// middleware, which wraps this call, can re-run the node. Output extraction and
+// schema validation run only after all assertions pass; produced outputs are
+// merged into the result.
+func applyAssertionsAndOutputs(
+	n node.AnyNode, res node.AnyExecutionResult,
+) (node.AnyExecutionResult, error) {
+	provider, ok := res.(node.AssertionContextProvider)
+	if !ok {
+		return res, nil
+	}
+	rc := provider.AssertionContext()
+	if rc == nil {
+		// No context (e.g. an error result built before the exchange completed).
+		return res, nil
+	}
+
+	failer, _ := res.(interface {
+		SetAssertionResults([]spi.AssertionResult)
+		Fail(error, string)
+		MergeOutputs(map[string]any)
+	})
+
+	assertionResults, assertErr := node.EvaluateAssertions(n.GetAssertions(), rc)
+	if failer != nil {
+		failer.SetAssertionResults(assertionResults)
+	}
+	if assertErr != nil {
+		if failer != nil {
+			failer.Fail(assertErr, "ASSERTION_FAILED")
+		}
+		return res, assertErr
+	}
+
+	produced, extractErr := node.ExtractOutputs(n.GetOutputs(), rc)
+	if extractErr != nil {
+		if failer != nil {
+			failer.Fail(extractErr, "OUTPUT_EXTRACTION_FAILED")
+		}
+		return res, extractErr
+	}
+	if failer != nil {
+		failer.MergeOutputs(produced)
+	}
+
+	if validateErr := node.ValidateOutputs(n.OutputSchema(), produced); validateErr != nil {
+		if failer != nil {
+			failer.Fail(validateErr, "OUTPUT_VALIDATION_FAILED")
+		}
+		return res, validateErr
+	}
+
+	return res, nil
 }
 
 func (engine *FlowEngine) propagateNodeOutputs(

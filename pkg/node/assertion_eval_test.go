@@ -254,7 +254,9 @@ func TestAssertionResults_SerializeInPayload(t *testing.T) {
 		t.Fatalf("unexpected err: %v", err)
 	}
 	// Mirror how the result is held: an interface value carrying the concrete type.
-	var held any = &node.RequestExecutionResult{AssertionResults: results}
+	var held any = &node.RequestExecutionResult{
+		BaseExecutionResult: node.BaseExecutionResult{AssertionResults: results},
+	}
 	encoded, err := json.Marshal(held)
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
