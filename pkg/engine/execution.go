@@ -90,7 +90,15 @@ func (engine *FlowEngine) runOnSuccessPhase(state *executionState) {
 		toRun := make([]node.AnyNode, 0, len(ready))
 		toSkip := make([]node.AnyNode, 0)
 		for _, readyNode := range ready {
-			if engine.isFullyDead(readyNode, state) {
+			// A node is skipped (rather than run) when it is fully dead OR when one
+			// of its data inputs references the output of a node that was skipped
+			// via routing/dead-edge. The latter is a cross-arm diamond join: the
+			// join is reachable from a taken arm but templates an output from a
+			// routed-away arm. Running it would hard-fail validateInputs and error
+			// the whole flow; skipping it instead yields a graceful
+			// dependency_skipped outcome.
+			if engine.isFullyDead(readyNode, state) ||
+				engine.inputsReferenceSkippedNode(readyNode, state) {
 				toSkip = append(toSkip, readyNode)
 				continue
 			}
@@ -137,6 +145,25 @@ func (engine *FlowEngine) isFullyDead(n node.AnyNode, state *executionState) boo
 		return false
 	}
 	return true
+}
+
+// inputsReferenceSkippedNode reports whether any of n's InputSchema data-refs
+// point to a source node that was skipped (via routing/dead-edge). Such a source
+// produced no output, so running n would hard-fail validateInputs and error the
+// whole flow. We skip n instead, letting describeSkipCause classify it as
+// dependency_skipped. Refs to initial inputs (empty source) and refs to nodes
+// that produced output are ignored, so nodes with all inputs available still run.
+func (engine *FlowEngine) inputsReferenceSkippedNode(n node.AnyNode, state *executionState) bool {
+	for _, inputKey := range n.InputSchema() {
+		sourceNodeID, _, err := parseDataRef(inputKey)
+		if err != nil || sourceNodeID == "" {
+			continue
+		}
+		if state.skippedNodes[sourceNodeID] {
+			return true
+		}
+	}
+	return false
 }
 
 func (engine *FlowEngine) runAlwaysPhase(state *executionState) {
