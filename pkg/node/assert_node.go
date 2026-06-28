@@ -12,11 +12,18 @@ import (
 )
 
 // AssertData configures an assert node. Target is the value to assert against;
-// when empty the node asserts over its declared inputs.
+// when empty the node asserts over the flow's initial inputs.
 type AssertData struct {
 	// Target is the value the assertions/extractors run against. It may carry
 	// {{template}} or {{{raw}}} references that resolve to inputs/flow data. When
-	// nil/empty the node falls back to asserting over ctx.Inputs.
+	// nil/empty the node falls back to asserting over the flow's initial inputs
+	// (ctx.FlowInputs).
+	//
+	// To assert over an UPSTREAM NODE's output, set an explicit target that
+	// references it (e.g. "{{{create-user.payload}}}"); InputSchema surfaces that
+	// ref so the engine populates ctx.Inputs and the template resolves to the
+	// upstream value. An OMITTED target asserts over the flow's initial inputs
+	// (ctx.FlowInputs) — not over upstream node outputs.
 	Target any `json:"target,omitempty"`
 }
 
@@ -24,6 +31,10 @@ type AssertData struct {
 // Unlike RequestNode it runs assertions over an in-memory value rather than an
 // HTTP response, making it a first-class way to verify data produced by earlier
 // nodes (transforms, modules, branches) in an API-flow test.
+//
+// To assert over an UPSTREAM NODE's output, set an explicit target referencing it
+// (e.g. "{{{node.output}}}"); the omitted-target default instead asserts over the
+// flow's initial inputs.
 type AssertNode struct {
 	BaseNode
 
@@ -77,7 +88,7 @@ func (n *AssertNode) Execute(ctx ExecutionContext) (AnyExecutionResult, error) {
 		Any("inputs", ctx.Inputs).
 		Msg("Starting assert node execution")
 
-	target := n.resolveTarget(ctx.Inputs)
+	target := n.resolveTarget(ctx)
 	valueCtx := newValueResponseContext(target)
 
 	assertionResults, assertErr := runNodeAssertions(n.GetID(), n.GetAssertions(), valueCtx)
@@ -115,16 +126,20 @@ func (n *AssertNode) Execute(ctx ExecutionContext) (AnyExecutionResult, error) {
 
 // resolveTarget produces the value the assertions run against. When a target is
 // configured it is template-resolved against the node inputs; otherwise the node
-// asserts over the inputs themselves so jsonPath extractors can reach them.
-func (n *AssertNode) resolveTarget(inputs map[string]any) any {
+// asserts over the flow's initial inputs (ctx.FlowInputs) so jsonPath extractors
+// can reach them. The engine only populates ctx.Inputs from refs declared in
+// InputSchema (derived solely from Target templates), so an omitted target leaves
+// ctx.Inputs empty — ctx.FlowInputs is the real, engine-populated map to assert
+// over by default.
+func (n *AssertNode) resolveTarget(ctx ExecutionContext) any {
 	if n.Data.Target == nil {
-		return mapOf(inputs)
+		return mapOf(ctx.FlowInputs)
 	}
 	if s, ok := n.Data.Target.(string); ok && s == "" {
-		return mapOf(inputs)
+		return mapOf(ctx.FlowInputs)
 	}
 
-	resolver := NewTemplateResolverWithDynamics(inputs, n.dynamic)
+	resolver := NewTemplateResolverWithDynamics(ctx.Inputs, n.dynamic)
 	resolved, err := resolver.Resolve(n.Data.Target)
 	if err != nil {
 		log.Warn().

@@ -115,21 +115,29 @@ func TestAssertNode_StopsAtFirstFailingAssertion(t *testing.T) {
 	assert.Equal(t, 1, assertRes.AssertionResults[1].Index)
 }
 
-func TestAssertNode_TargetOmittedAssertsOverInputs(t *testing.T) {
+// TestAssertNode_TargetOmittedAssertsOverFlowInputs documents the omitted-target
+// default: with no Data.Target, the node asserts over ctx.FlowInputs (the flow's
+// effective initial inputs), NOT ctx.Inputs. The engine only populates ctx.Inputs
+// from refs declared in InputSchema — which an omitted target leaves empty — so
+// FlowInputs is the real map to assert over by default.
+func TestAssertNode_TargetOmittedAssertsOverFlowInputs(t *testing.T) {
 	n := &node.AssertNode{
 		BaseNode: node.BaseNode{
 			ID:          "assert1",
-			DisplayName: "Validate inputs",
+			DisplayName: "Validate flow inputs",
 			NodeType:    node.TypeAssert,
 			Assertions: []node.CompositeAssertion{
-				jsonPathEquals(t, "$['create-user.userId']", "u-123"),
+				jsonPathEquals(t, "$.userId", "u-123"),
 			},
 		},
-		// No Data.Target — asserts over ctx.Inputs.
+		// No Data.Target — asserts over ctx.FlowInputs.
 	}
 
 	res, err := n.Execute(node.ExecutionContext{
-		Inputs: map[string]any{"create-user.userId": "u-123"},
+		// ctx.Inputs is empty (the engine leaves it empty when InputSchema is []);
+		// FlowInputs carries the flow's initial inputs.
+		Inputs:     map[string]any{},
+		FlowInputs: map[string]any{"userId": "u-123"},
 	})
 	require.NoError(t, err)
 
