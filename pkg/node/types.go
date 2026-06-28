@@ -51,6 +51,7 @@ const (
 	TypeRequest = spi.KindRequest
 	TypeDelay   = spi.KindDelay
 	TypeModule  = spi.KindModule
+	TypeLoop    = spi.KindLoop
 )
 
 // RunWhen is re-exported from spi. Alias kept for back-compat.
@@ -130,6 +131,30 @@ type ModuleExecutionResult struct {
 	FlowID            string         `json:"flow_id"`
 	ChildFinalOutputs map[string]any `json:"child_final_outputs,omitempty"`
 	DurationMs        int64          `json:"duration_ms"`
+}
+
+// LoopExecutionResult stores foreach loop node execution data.
+type LoopExecutionResult struct {
+	BaseExecutionResult
+
+	// Iterations is the number of body executions that were attempted
+	// (after applying any max_iterations cap).
+	Iterations int   `json:"iterations"`
+	DurationMs int64 `json:"duration_ms"`
+
+	// assertionCtx is the ResponseContext the engine's assertion/output pass
+	// evaluates against. It wraps the loop's aggregate outputs ({results, count})
+	// so users can assert on the collected iteration results; it is never
+	// serialized. It is built during Execute on the success path only.
+	assertionCtx extractors.ResponseContext
+}
+
+// AssertionContext exposes the ResponseContext the engine-level assertion/output
+// pass evaluates against — the loop's aggregate outputs ({results, count}). It
+// satisfies AssertionContextProvider; a nil context (e.g. an error result built
+// before the loop completed) signals the engine to skip the pass.
+func (r *LoopExecutionResult) AssertionContext() extractors.ResponseContext {
+	return r.assertionCtx
 }
 
 // As safely casts an AnyExecutionResult to a concrete result type T
