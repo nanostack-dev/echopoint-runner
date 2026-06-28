@@ -84,4 +84,17 @@ func init() {
 			return &ModuleExecutionResult{BaseExecutionResult: base}
 		},
 	)
+	RegisterNodeKind(TypeLoop,
+		func(data []byte) (AnyNode, error) {
+			var n LoopNode
+			if err := json.Unmarshal(data, &n); err != nil {
+				return nil, err
+			}
+			applyRunWhenDefault(&n.BaseNode)
+			return &n, nil
+		},
+		func(base BaseExecutionResult) AnyExecutionResult {
+			return &LoopExecutionResult{BaseExecutionResult: base}
+		},
+	)
 }
