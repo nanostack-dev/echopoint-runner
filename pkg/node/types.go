@@ -51,6 +51,7 @@ const (
 	TypeRequest = spi.KindRequest
 	TypeDelay   = spi.KindDelay
 	TypeModule  = spi.KindModule
+	TypeBranch  = spi.KindBranch
 )
 
 // RunWhen is re-exported from spi. Alias kept for back-compat.
@@ -130,6 +131,27 @@ type ModuleExecutionResult struct {
 	FlowID            string         `json:"flow_id"`
 	ChildFinalOutputs map[string]any `json:"child_final_outputs,omitempty"`
 	DurationMs        int64          `json:"duration_ms"`
+}
+
+// BranchExecutionResult stores value-based routing decision data. It implements
+// spi.RoutingResult so the engine skips the successor subtrees the branch routed
+// away from.
+type BranchExecutionResult struct {
+	BaseExecutionResult
+
+	// MatchedTarget is the successor node ID execution was routed to, or "" when
+	// no case matched and no default was configured.
+	MatchedTarget string `json:"matched_target"`
+	// RoutedTargetIDs holds the chosen successor node IDs (one element when a
+	// case/default matched, empty otherwise).
+	RoutedTargetIDs []string `json:"routed_targets"`
+	DurationMs      int64    `json:"duration_ms"`
+}
+
+// RoutedTargets implements spi.RoutingResult, returning the successor node IDs
+// this branch routed execution to.
+func (r *BranchExecutionResult) RoutedTargets() []string {
+	return r.RoutedTargetIDs
 }
 
 // As safely casts an AnyExecutionResult to a concrete result type T
