@@ -142,6 +142,18 @@ type SetVariableExecutionResult struct {
 	DurationMs int64 `json:"duration_ms"`
 }
 
+// AssertionContext exposes the computed variables map (the node Outputs) as the
+// ResponseContext the engine-level assertion/output pass evaluates against. This
+// gives set-variable nodes free assertions over their resolved variables,
+// satisfying AssertionContextProvider. A nil Outputs map (e.g. an error result)
+// signals the engine to skip the pass.
+func (r *SetVariableExecutionResult) AssertionContext() extractors.ResponseContext {
+	if r.Outputs == nil {
+		return nil
+	}
+	return extractors.NewValueResponseContext(r.Outputs)
+}
+
 // As safely casts an AnyExecutionResult to a concrete result type T
 // (e.g. As[*RequestExecutionResult](result)). It reports false instead of
 // panicking when the dynamic type does not match. Delegates to spi.As.
