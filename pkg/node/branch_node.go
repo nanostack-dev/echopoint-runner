@@ -1,11 +1,7 @@
 package node
 
 import (
-	"bytes"
-	"encoding/json"
-	"io"
 	"maps"
-	"net/http"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -93,7 +89,7 @@ func (n *BranchNode) Execute(ctx ExecutionContext) (AnyExecutionResult, error) {
 		Msg("Starting branch node execution")
 
 	target := n.resolveTarget(ctx.Inputs)
-	vc := newValueResponseContext(target)
+	vc := extractors.NewValueResponseContext(target)
 
 	chosen := ""
 	matchedIndex := -1
@@ -170,44 +166,3 @@ func (n *BranchNode) resolveTarget(inputs map[string]any) any {
 	}
 	return resolved
 }
-
-// valueResponseContext adapts an in-memory value to the extractors.ResponseContext
-// surface so assertions (jsonPath/body/header/statusCode) can evaluate against a
-// branch target value rather than an HTTP response. The shared
-// concreteResponseContext panics on a nil *http.Response, so branch-style nodes
-// supply this value-backed implementation instead.
-type valueResponseContext struct {
-	raw    []byte
-	parsed any
-}
-
-func newValueResponseContext(value any) *valueResponseContext {
-	raw, _ := json.Marshal(value)
-	return &valueResponseContext{raw: raw, parsed: value}
-}
-
-func (c *valueResponseContext) HasCapability(capability string) bool {
-	switch capability {
-	case "body", "parsed_body":
-		return true
-	default:
-		return false
-	}
-}
-
-func (c *valueResponseContext) GetParsedBody() any      { return c.parsed }
-func (c *valueResponseContext) GetRawBody() []byte      { return c.raw }
-func (c *valueResponseContext) GetBody() io.Reader      { return bytes.NewReader(c.raw) }
-func (c *valueResponseContext) GetStatus() int          { return 0 }
-func (c *valueResponseContext) GetHeader(string) string { return "" }
-func (c *valueResponseContext) Headers() http.Header    { return http.Header{} }
-
-// Compile-time checks that valueResponseContext satisfies the extractor
-// capability interfaces the branch assertions rely on.
-var (
-	_ extractors.ResponseContext  = (*valueResponseContext)(nil)
-	_ extractors.ParsedBodyReader = (*valueResponseContext)(nil)
-	_ extractors.BodyReader       = (*valueResponseContext)(nil)
-	_ extractors.StatusReader     = (*valueResponseContext)(nil)
-	_ extractors.HeaderAccessor   = (*valueResponseContext)(nil)
-)
