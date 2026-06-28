@@ -48,9 +48,10 @@ type Type = spi.Kind
 
 // Built-in node kinds (re-exported from spi).
 const (
-	TypeRequest = spi.KindRequest
-	TypeDelay   = spi.KindDelay
-	TypeModule  = spi.KindModule
+	TypeRequest     = spi.KindRequest
+	TypeDelay       = spi.KindDelay
+	TypeModule      = spi.KindModule
+	TypeSetVariable = spi.KindSetVariable
 )
 
 // RunWhen is re-exported from spi. Alias kept for back-compat.
@@ -130,6 +131,15 @@ type ModuleExecutionResult struct {
 	FlowID            string         `json:"flow_id"`
 	ChildFinalOutputs map[string]any `json:"child_final_outputs,omitempty"`
 	DurationMs        int64          `json:"duration_ms"`
+}
+
+// SetVariableExecutionResult stores set-variable node execution data. The
+// computed named values are exposed both as the node Outputs (via the embedded
+// base) and as the engine sees them; DurationMs records resolution time.
+type SetVariableExecutionResult struct {
+	BaseExecutionResult
+
+	DurationMs int64 `json:"duration_ms"`
 }
 
 // As safely casts an AnyExecutionResult to a concrete result type T
