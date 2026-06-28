@@ -51,6 +51,7 @@ const (
 	TypeRequest = spi.KindRequest
 	TypeDelay   = spi.KindDelay
 	TypeModule  = spi.KindModule
+	TypeAssert  = spi.KindAssert
 )
 
 // RunWhen is re-exported from spi. Alias kept for back-compat.
@@ -130,6 +131,31 @@ type ModuleExecutionResult struct {
 	FlowID            string         `json:"flow_id"`
 	ChildFinalOutputs map[string]any `json:"child_final_outputs,omitempty"`
 	DurationMs        int64          `json:"duration_ms"`
+}
+
+// AssertExecutionResult stores assert node execution data: the value asserted
+// over and the full set of assertion outcomes captured during evaluation.
+type AssertExecutionResult struct {
+	BaseExecutionResult
+
+	// AssertionResults now lives on the embedded BaseExecutionResult so the
+	// engine-level assertion pass fills it uniformly; the wire shape (the
+	// "assertion_results" tag) is unchanged.
+
+	// assertionCtx is the ResponseContext the engine's assertion/output pass
+	// evaluates against. It is built during Execute from the resolved target
+	// value and exposed via AssertionContext(); it is never serialized.
+	assertionCtx extractors.ResponseContext
+
+	DurationMs int64 `json:"duration_ms"`
+}
+
+// AssertionContext exposes the ResponseContext the engine-level assertion/output
+// pass evaluates against. It satisfies AssertionContextProvider; a nil context
+// (e.g. an error result built before the target was resolved) signals the
+// engine to skip the pass.
+func (r *AssertExecutionResult) AssertionContext() extractors.ResponseContext {
+	return r.assertionCtx
 }
 
 // As safely casts an AnyExecutionResult to a concrete result type T
