@@ -1,13 +1,10 @@
 package node
 
 import (
-	"bytes"
-	"encoding/json"
-	"io"
 	"maps"
-	"net/http"
 	"time"
 
+	"github.com/nanostack-dev/echopoint-runner/pkg/extractors"
 	"github.com/rs/zerolog/log"
 )
 
@@ -76,9 +73,13 @@ func (n *AssertNode) OutputSchema() []string {
 	return (&SchemaInference{}).InferRequestNodeOutputSchema(n.GetOutputs())
 }
 
-// Execute resolves the target value, runs every assertion against it, then
-// extracts declared outputs. Assertions stop at the first failure (which is
-// recorded) and the node returns a failed result with the matching error.
+// Execute resolves the target value and returns an AssertExecutionResult that
+// exposes it as a ResponseContext (via AssertionContext). It does NOT run
+// assertions or extract outputs itself: the engine-level pass drives those
+// uniformly for every node that implements AssertionContextProvider (see
+// engine.applyAssertionsAndOutputs), filling AssertionResults, merging outputs,
+// and flipping the result to failed on a miss. Keeping the node thin means a
+// single shared seam owns assertion/output evaluation and retry behavior.
 func (n *AssertNode) Execute(ctx ExecutionContext) (AnyExecutionResult, error) {
 	startTime := time.Now()
 	n.dynamic = ctx.DynamicVars
@@ -89,17 +90,6 @@ func (n *AssertNode) Execute(ctx ExecutionContext) (AnyExecutionResult, error) {
 		Msg("Starting assert node execution")
 
 	target := n.resolveTarget(ctx)
-	valueCtx := newValueResponseContext(target)
-
-	assertionResults, assertErr := runNodeAssertions(n.GetID(), n.GetAssertions(), valueCtx)
-	if assertErr != nil {
-		return n.createErrorResult(ctx.Inputs, assertionResults, assertErr, time.Since(startTime)), assertErr
-	}
-
-	outputs, err := extractNodeOutputs(n.GetID(), n.GetOutputs(), valueCtx)
-	if err != nil {
-		return n.createErrorResult(ctx.Inputs, assertionResults, err, time.Since(startTime)), err
-	}
 
 	result := &AssertExecutionResult{
 		BaseExecutionResult: BaseExecutionResult{
@@ -107,19 +97,16 @@ func (n *AssertNode) Execute(ctx ExecutionContext) (AnyExecutionResult, error) {
 			DisplayName: n.GetDisplayName(),
 			NodeType:    TypeAssert,
 			Inputs:      ctx.Inputs,
-			Outputs:     outputs,
 			ExecutedAt:  time.Now(),
 		},
-		AssertionResults: assertionResults,
-		DurationMs:       time.Since(startTime).Milliseconds(),
+		assertionCtx: extractors.NewValueResponseContext(target),
+		DurationMs:   time.Since(startTime).Milliseconds(),
 	}
 
-	log.Info().
+	log.Debug().
 		Str("nodeID", n.GetID()).
-		Int("assertionCount", len(assertionResults)).
-		Int("outputCount", len(outputs)).
 		Int64("durationMs", result.DurationMs).
-		Msg("Assert node executed successfully")
+		Msg("Assert node resolved target; engine pass will evaluate assertions")
 
 	return result, nil
 }
@@ -151,34 +138,6 @@ func (n *AssertNode) resolveTarget(ctx ExecutionContext) any {
 	return resolved
 }
 
-// createErrorResult builds a failed AssertExecutionResult carrying the assertions
-// evaluated so far.
-func (n *AssertNode) createErrorResult(
-	inputs map[string]any,
-	assertionResults []AssertionResult,
-	err error,
-	duration time.Duration,
-) AnyExecutionResult {
-	errMsg := err.Error()
-	errCode := "ASSERT_FAILED"
-
-	return &AssertExecutionResult{
-		BaseExecutionResult: BaseExecutionResult{
-			NodeID:      n.GetID(),
-			DisplayName: n.GetDisplayName(),
-			NodeType:    TypeAssert,
-			Inputs:      inputs,
-			Outputs:     nil,
-			Error:       err,
-			ErrorMsg:    &errMsg,
-			ErrorCode:   &errCode,
-			ExecutedAt:  time.Now(),
-		},
-		AssertionResults: assertionResults,
-		DurationMs:       duration.Milliseconds(),
-	}
-}
-
 // mapOf returns a shallow copy of m so the asserted value is decoupled from the
 // live inputs map, defaulting to an empty map when nil.
 func mapOf(m map[string]any) map[string]any {
@@ -186,32 +145,3 @@ func mapOf(m map[string]any) map[string]any {
 	maps.Copy(out, m)
 	return out
 }
-
-// valueResponseContext adapts an in-memory value to the extractors.ResponseContext
-// surface so jsonPath/body/header/statusCode extractors run against derived data
-// rather than an HTTP response. The shared concreteResponseContext panics on a nil
-// *http.Response, so assert/branch/sse-style nodes use this lightweight stand-in.
-type valueResponseContext struct {
-	raw    []byte
-	parsed any
-}
-
-func newValueResponseContext(value any) *valueResponseContext {
-	raw, _ := json.Marshal(value)
-	return &valueResponseContext{raw: raw, parsed: value}
-}
-
-func (c *valueResponseContext) HasCapability(capability string) bool {
-	switch capability {
-	case "body", "parsed_body":
-		return true
-	}
-	return false
-}
-
-func (c *valueResponseContext) GetParsedBody() any      { return c.parsed }
-func (c *valueResponseContext) GetRawBody() []byte      { return c.raw }
-func (c *valueResponseContext) GetBody() io.Reader      { return bytes.NewReader(c.raw) }
-func (c *valueResponseContext) GetStatus() int          { return 0 }
-func (c *valueResponseContext) GetHeader(string) string { return "" }
-func (c *valueResponseContext) Headers() http.Header    { return http.Header{} }

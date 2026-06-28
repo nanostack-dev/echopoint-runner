@@ -1816,7 +1816,10 @@ func TestFlowEngine_Execute_AssertNodeFailureSkipsDownstream(t *testing.T) {
 	require.Len(t, assertRes.AssertionResults, 1)
 	assert.False(t, assertRes.AssertionResults[0].Passed)
 	require.NotNil(t, assertRes.ErrorCode)
-	assert.Equal(t, "ASSERT_FAILED", *assertRes.ErrorCode)
+	// The engine-level assertion pass owns failure classification now, so an assert
+	// miss surfaces the unified ASSERTION_FAILED code (was the node-local
+	// ASSERT_FAILED before the assert node was thinned onto the shared seam).
+	assert.Equal(t, "ASSERTION_FAILED", *assertRes.ErrorCode)
 
 	// The downstream node never runs: the assert failure aborts the flow, so the
 	// node wired after it is recorded as skipped.

@@ -139,9 +139,9 @@ type AssertExecutionResult struct {
 	BaseExecutionResult
 
 	// AssertionResults now lives on the embedded BaseExecutionResult so the
-	// engine-level assertion pass fills it uniformly; the wire shape (the
-	// "assertion_results" tag) is unchanged.
-
+	// engine-level assertion pass fills it uniformly (wire tag "assertion_results"
+	// unchanged).
+	//
 	// assertionCtx is the ResponseContext the engine's assertion/output pass
 	// evaluates against. It is built during Execute from the resolved target
 	// value and exposed via AssertionContext(); it is never serialized.
