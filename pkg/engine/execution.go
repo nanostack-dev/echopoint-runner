@@ -26,6 +26,11 @@ type executionState struct {
 	failedNodes     map[string]bool
 	skippedNodes    map[string]bool
 	firstFailedName string
+	// deadEdges records, per routing node (source ID), the set of successor IDs
+	// the source routed AWAY from. A successor whose every predecessor edge is
+	// dead (or whose predecessors were all skipped/failed) is itself skipped,
+	// cascading the routing decision through the untaken subtree.
+	deadEdges map[string]map[string]bool
 }
 
 type nodeRunResult struct {
@@ -47,6 +52,7 @@ func (engine *FlowEngine) executeNodes(
 		startTime:       startTime,
 		failedNodes:     make(map[string]bool),
 		skippedNodes:    make(map[string]bool),
+		deadEdges:       make(map[string]map[string]bool),
 	}
 
 	state.allOutputs[""] = initialInputs
@@ -77,11 +83,87 @@ func (engine *FlowEngine) runOnSuccessPhase(state *executionState) {
 			return
 		}
 
-		completed := engine.runReadyNodes(ready, state)
+		// Partition ready nodes into those that should run and those whose every
+		// live predecessor edge was routed away by a branch (fully dead). Dead
+		// nodes are skipped — which decrements THEIR successors — so the skip
+		// cascades through the untaken subtree on subsequent iterations.
+		toRun := make([]node.AnyNode, 0, len(ready))
+		toSkip := make([]node.AnyNode, 0)
+		for _, readyNode := range ready {
+			// A node is skipped (rather than run) when it is fully dead OR when one
+			// of its data inputs references the output of a node that was skipped
+			// via routing/dead-edge. The latter is a cross-arm diamond join: the
+			// join is reachable from a taken arm but templates an output from a
+			// routed-away arm. Running it would hard-fail validateInputs and error
+			// the whole flow; skipping it instead yields a graceful
+			// dependency_skipped outcome.
+			if engine.isFullyDead(readyNode, state) ||
+				engine.inputsReferenceSkippedNode(readyNode, state) {
+				toSkip = append(toSkip, readyNode)
+				continue
+			}
+			toRun = append(toRun, readyNode)
+		}
+
+		for _, deadNode := range toSkip {
+			engine.recordSkippedNode(deadNode, state, true)
+		}
+
+		if len(toRun) == 0 {
+			// Progress was still made when nodes were skipped; loop again to pick
+			// up the cascade. Only stop when nothing is ready at all.
+			if len(toSkip) > 0 {
+				continue
+			}
+			return
+		}
+
+		completed := engine.runReadyNodes(toRun, state)
 		if engine.recordOnSuccessResults(completed, state) {
 			return
 		}
 	}
+}
+
+// isFullyDead reports whether a node can never run because routing/skip/failure
+// eliminated all of its incoming paths. A node is fully dead when it has at
+// least one predecessor AND every predecessor p satisfies: the edge p -> n was
+// routed away (deadEdges), or p was skipped, or p failed. Root nodes (no
+// predecessors) are never dead.
+func (engine *FlowEngine) isFullyDead(n node.AnyNode, state *executionState) bool {
+	predecessors := engine.nodeEdgeSource[n]
+	if len(predecessors) == 0 {
+		return false
+	}
+	nodeID := n.GetID()
+	for _, predecessor := range predecessors {
+		predID := predecessor.GetID()
+		edgeDead := state.deadEdges[predID][nodeID]
+		if edgeDead || state.skippedNodes[predID] || state.failedNodes[predID] {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+// inputsReferenceSkippedNode reports whether any of n's InputSchema data-refs
+// point to a source node that was skipped (via routing/dead-edge). Such a source
+// produced no output, so running n would hard-fail validateInputs and error the
+// whole flow. We skip n instead, letting describeSkipCause classify it as
+// dependency_skipped. Refs to initial inputs (empty source) and refs to nodes
+// that produced output are ignored, so nodes with all inputs available still run.
+func (engine *FlowEngine) inputsReferenceSkippedNode(n node.AnyNode, state *executionState) bool {
+	for _, inputKey := range n.InputSchema() {
+		sourceNodeID, _, err := parseDataRef(inputKey)
+		if err != nil || sourceNodeID == "" {
+			continue
+		}
+		if state.skippedNodes[sourceNodeID] {
+			return true
+		}
+	}
+	return false
 }
 
 func (engine *FlowEngine) runAlwaysPhase(state *executionState) {
@@ -117,6 +199,13 @@ func (engine *FlowEngine) recordOnSuccessResults(completed []nodeRunResult, stat
 		if resultWithOutputs := nodeResult.result; resultWithOutputs != nil {
 			engine.propagateNodeOutputs(nodeResult.node, resultWithOutputs, state)
 		}
+
+		// A routing node (e.g. branch) selects a subset of its successors; record
+		// the untaken successor edges as dead so their subtrees get skipped. This
+		// runs before markNodeComplete so successor input-counts stay consistent.
+		if nodeResult.err == nil {
+			engine.recordRoutingDecision(nodeResult.node, nodeResult.result, state)
+		}
 	}
 
 	for _, nodeResult := range completed {
@@ -124,6 +213,45 @@ func (engine *FlowEngine) recordOnSuccessResults(completed []nodeRunResult, stat
 	}
 
 	return mainPhaseFailed
+}
+
+// recordRoutingDecision inspects a completed node's result for spi.RoutingResult
+// and, when present, marks every successor edge the node routed AWAY from as
+// dead. The engine then skips successors whose every incoming path is dead. The
+// node is still marked complete normally so all successors are decremented and
+// the scheduler's input counts stay consistent.
+func (engine *FlowEngine) recordRoutingDecision(
+	n node.AnyNode,
+	result node.AnyExecutionResult,
+	state *executionState,
+) {
+	routing, ok := result.(spi.RoutingResult)
+	if !ok {
+		return
+	}
+
+	taken := make(map[string]bool)
+	for _, target := range routing.RoutedTargets() {
+		taken[target] = true
+	}
+
+	nodeID := n.GetID()
+	for _, successor := range engine.nodeEdgeOutput[n] {
+		successorID := successor.GetID()
+		if taken[successorID] {
+			continue
+		}
+		if state.deadEdges[nodeID] == nil {
+			state.deadEdges[nodeID] = make(map[string]bool)
+		}
+		state.deadEdges[nodeID][successorID] = true
+	}
+
+	log.Debug().
+		Str("flowName", engine.flow.Name).
+		Str("nodeID", nodeID).
+		Strs("routedTargets", routing.RoutedTargets()).
+		Msg("Recorded routing decision; untaken successor edges marked dead")
 }
 
 func (engine *FlowEngine) recordAlwaysResults(completed []nodeRunResult, state *executionState) {
