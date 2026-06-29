@@ -15,7 +15,7 @@ type CompositeAssertion struct {
 	Operator      any                     `json:"-"`             // The actual operator instance (for future use)
 	ExtractorType string                  `json:"extractorType"` // jsonPath, xmlPath, statusCode, header, body
 	ExtractorData any                     `json:"extractorData"` // Configuration for the extractor
-	OperatorType  string                  `json:"operatorType"`  // equals, contains, greaterThan, etc.
+	OperatorType  operators.OperatorType  `json:"operatorType"`  // equals, contains, greaterThan, etc.
 	OperatorData  any                     `json:"operatorData"`  // Configuration for the operator
 	ExpectedValue any                     `json:"-"`             // Resolved expected value (operator_data.value)
 }
@@ -47,8 +47,14 @@ func (ca *CompositeAssertion) UnmarshalJSON(data []byte) error {
 	}
 
 	ca.ExtractorType = firstNonEmpty(w.ExtractorType, w.ExtractorTypeCamel)
-	ca.OperatorType = firstNonEmpty(w.OperatorType, w.OperatorTypeCamel)
+	ca.OperatorType = operators.OperatorType(firstNonEmpty(w.OperatorType, w.OperatorTypeCamel))
 	extractorData := firstRaw(w.ExtractorData, w.ExtractorDataCamel)
+
+	// Reject an unknown operator at decode time (mirroring the extractor
+	// registry) instead of failing deep inside Evaluate during execution.
+	if ca.OperatorType != "" && !operators.IsKnown(ca.OperatorType) {
+		return fmt.Errorf("unknown assertion operator %q", ca.OperatorType)
+	}
 
 	// Build the extractor. Prefer a nested "extractor" object; otherwise
 	// synthesize one from extractor_type + extractor_data (a flat {type, ...data}).
@@ -110,7 +116,7 @@ func synthesizeExtractorJSON(extractorType string, extractorData json.RawMessage
 func (ca *CompositeAssertion) Evaluate(ctx extractors.ResponseContext) AssertionResult {
 	res := AssertionResult{
 		Extractor: ca.ExtractorType,
-		Operator:  ca.OperatorType,
+		Operator:  string(ca.OperatorType),
 		Expected:  ca.ExpectedValue,
 	}
 	if ca.Extractor == nil {
@@ -124,7 +130,7 @@ func (ca *CompositeAssertion) Evaluate(ctx extractors.ResponseContext) Assertion
 	}
 	res.Actual = actual
 
-	passed, err := operators.Compare(operators.OperatorType(ca.OperatorType), actual, ca.ExpectedValue)
+	passed, err := operators.Compare(ca.OperatorType, actual, ca.ExpectedValue)
 	if err != nil {
 		res.Error = err.Error()
 		return res
