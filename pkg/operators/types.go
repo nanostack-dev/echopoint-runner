@@ -1,14 +1,8 @@
 package operators
 
-// Operator defines the interface for all validation operators.
-type Operator interface {
-	// Validate checks if the actual value passes the operator's validation logic
-	Validate(actual any) (bool, error)
-
-	// GetType returns the operator type identifier
-	GetType() OperatorType
-}
-
+// OperatorType is the wire identifier for an assertion operator. Each value has
+// one registered Comparator (see registry.go); the constants below are the
+// built-ins.
 type OperatorType string
 
 const (
@@ -26,14 +20,4 @@ const (
 	OperatorTypeGreaterThanOrEqual OperatorType = "greaterThanOrEqual"
 	OperatorTypeLessThanOrEqual    OperatorType = "lessThanOrEqual"
 	OperatorTypeBetween            OperatorType = "between"
-)
-
-// ValueType represents the type of value an operator can work with.
-type ValueType string
-
-const (
-	ValueTypeString  ValueType = "string"
-	ValueTypeNumber  ValueType = "number"
-	ValueTypeBoolean ValueType = "boolean"
-	ValueTypeAny     ValueType = "any"
 )

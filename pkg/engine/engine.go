@@ -164,17 +164,17 @@ func NewFlowEngine(flowInstance flow.Flow, options *Options) (*FlowEngine, error
 		Msg("Flow engine initialized successfully")
 
 	return &FlowEngine{
-		flowInstance,
-		nodeEdgeOutput,
-		nodeEdgeSource,
-		nodeEdgeInput,
-		nodeMap,
-		observer,
-		nilIfNoModuleResolverFromOptions(options),
-		cloneStringSlice(moduleCallStackFromOptions(options)),
-		dynamicVarsFromOptions(options),
-		ctxFromOptions(options),
-		middlewareFromOptions(options),
+		flow:            flowInstance,
+		nodeEdgeOutput:  nodeEdgeOutput,
+		nodeEdgeSource:  nodeEdgeSource,
+		nodeEdgeInput:   nodeEdgeInput,
+		nodeMap:         nodeMap,
+		observer:        observer,
+		moduleResolver:  nilIfNoModuleResolverFromOptions(options),
+		moduleCallStack: cloneStringSlice(moduleCallStackFromOptions(options)),
+		dynamicVars:     dynamicVarsFromOptions(options),
+		ctx:             ctxFromOptions(options),
+		middleware:      middlewareFromOptions(options),
 	}, nil
 }
 
