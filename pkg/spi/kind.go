@@ -6,9 +6,10 @@ type Kind string
 
 // Built-in node kinds.
 const (
-	KindRequest Kind = "request"
-	KindDelay   Kind = "delay"
-	KindModule  Kind = "module"
+	KindRequest     Kind = "request"
+	KindDelay       Kind = "delay"
+	KindModule      Kind = "module"
+	KindSetVariable Kind = "set_variable"
 )
 
 // RunWhen controls whether a node runs only on the success path or also after
