@@ -3,6 +3,7 @@ package node
 import (
 	"time"
 
+	"github.com/nanostack-dev/echopoint-runner/pkg/extractors"
 	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 )
 
@@ -93,11 +94,25 @@ type RequestExecutionResult struct {
 	ResponseBody       []byte              `json:"response_body,omitempty"`
 	ResponseBodyParsed any                 `json:"response_body_parsed,omitempty"`
 
-	// AssertionResults records every assertion evaluated on this node (pass or fail).
-	AssertionResults []AssertionResult `json:"assertion_results,omitempty"`
+	// AssertionResults now lives on the embedded BaseExecutionResult so the
+	// engine-level assertion pass fills it uniformly; the wire shape (the
+	// "assertion_results" tag) is unchanged.
+
+	// assertionCtx is the ResponseContext the engine's assertion/output pass
+	// evaluates against. It is built during Execute (on a successful HTTP
+	// exchange) and exposed via AssertionContext(); it is never serialized.
+	assertionCtx extractors.ResponseContext
 
 	// Timing
 	DurationMs int64 `json:"duration_ms"`
+}
+
+// AssertionContext exposes the ResponseContext the engine-level assertion/output
+// pass evaluates against. It satisfies AssertionContextProvider; a nil context
+// (e.g. an error result built before the HTTP exchange completed) signals the
+// engine to skip the pass.
+func (r *RequestExecutionResult) AssertionContext() extractors.ResponseContext {
+	return r.assertionCtx
 }
 
 // DelayExecutionResult stores delay node execution data.

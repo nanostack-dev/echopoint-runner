@@ -35,14 +35,14 @@ func TestNodeFinishedPayload_CarriesFlatEngineResult(t *testing.T) {
 			DisplayName: "Ping",
 			NodeType:    node.TypeRequest,
 			Outputs:     map[string]any{"id": "prd_1"},
+			AssertionResults: []node.AssertionResult{
+				{Index: 0, Extractor: "statusCode", Operator: "equals", Expected: "200", Actual: 200, Passed: true},
+			},
 		},
 		RequestMethod:      "GET",
 		RequestURL:         "https://example.test/x",
 		ResponseStatusCode: 200,
-		AssertionResults: []node.AssertionResult{
-			{Index: 0, Extractor: "statusCode", Operator: "equals", Expected: "200", Actual: 200, Passed: true},
-		},
-		DurationMs: 12,
+		DurationMs:         12,
 	}
 
 	m := toMap(t, nodeFinishedPayload{NodeID: "ping", Success: &succeeded, Result: result})

@@ -117,9 +117,12 @@ func (n *RequestNode) Execute(ctx ExecutionContext) (AnyExecutionResult, error) 
 	return n.processResponse(ctx.Inputs, url, headers, body, resp, respBody, startTime)
 }
 
-// processResponse runs assertions, extracts and validates outputs, and builds the
-// final result for a completed HTTP exchange. Any of the three failure points
-// produces a response-backed error result carrying the assertions evaluated so far.
+// processResponse builds the success result for a completed HTTP exchange and
+// attaches the ResponseContext its assertions and outputs evaluate against. It no
+// longer runs assertions/outputs itself: the engine-level pass drives those
+// uniformly via AssertionContextProvider (see engine.applyAssertionsAndOutputs),
+// so retry middleware can re-run the node on an assertion failure. Transport
+// failures are handled earlier in Execute, before any context exists.
 func (n *RequestNode) processResponse(
 	inputs map[string]any,
 	url string,
@@ -132,49 +135,28 @@ func (n *RequestNode) processResponse(
 	parsedBody := n.parseResponseBody(resp.Header.Get("Content-Type"), respBody)
 	respCtx := extractors.NewResponseContext(resp, respBody, parsedBody)
 
-	assertionResults, assertErr := n.runAssertions(respCtx)
-	errResult := func(err error) (AnyExecutionResult, error) {
-		return n.createResponseBackedErrorResult(
-			inputs, url, headers, body, resp, respBody, parsedBody, assertionResults, err, time.Since(startTime),
-		), err
-	}
-	if assertErr != nil {
-		return errResult(assertErr)
-	}
-
-	outputs, err := n.extractOutputs(respCtx)
-	if err != nil {
-		return errResult(err)
-	}
-
-	if validateErr := n.validateOutput(outputs); validateErr != nil {
-		return errResult(validateErr)
-	}
-
 	result := n.createSuccessResult(
-		inputs, outputs, url, headers, body, resp, respBody, parsedBody, assertionResults, startTime,
+		inputs, url, headers, body, resp, respBody, parsedBody, respCtx, startTime,
 	)
 
 	log.Info().
 		Str("nodeID", n.GetID()).
-		Int("outputCount", len(outputs)).
 		Int("statusCode", resp.StatusCode).
 		Int64("durationMs", result.DurationMs).
-		Msg("Request node executed successfully")
+		Msg("Request node HTTP exchange completed; deferring assertions/outputs to engine pass")
 
 	return result, nil
 }
 
 func (n *RequestNode) createSuccessResult(
 	inputs map[string]any,
-	outputs map[string]any,
 	url string,
 	headers map[string]string,
 	body any,
 	resp *http.Response,
 	respBody []byte,
 	parsedBody any,
-	assertionResults []AssertionResult,
+	respCtx extractors.ResponseContext,
 	startTime time.Time,
 ) *RequestExecutionResult {
 	return &RequestExecutionResult{
@@ -183,7 +165,7 @@ func (n *RequestNode) createSuccessResult(
 			DisplayName: n.GetDisplayName(),
 			NodeType:    TypeRequest,
 			Inputs:      inputs,
-			Outputs:     outputs,
+			Outputs:     map[string]any{},
 			ExecutedAt:  time.Now(),
 		},
 		RequestMethod:      n.Data.Method,
@@ -194,7 +176,7 @@ func (n *RequestNode) createSuccessResult(
 		ResponseHeaders:    resp.Header,
 		ResponseBody:       respBody,
 		ResponseBodyParsed: parsedBody,
-		AssertionResults:   assertionResults,
+		assertionCtx:       respCtx,
 		DurationMs:         time.Since(startTime).Milliseconds(),
 	}
 }
