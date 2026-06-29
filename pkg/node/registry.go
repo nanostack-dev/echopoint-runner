@@ -45,6 +45,12 @@ func applyRunWhenDefault(base *BaseNode) {
 
 //nolint:gochecknoinits // register built-in node kinds at package load
 func init() {
+	registerCoreNodeKinds()
+	registerFlowNodeKinds()
+}
+
+// registerCoreNodeKinds registers the original primitive node kinds.
+func registerCoreNodeKinds() {
 	RegisterNodeKind(TypeRequest,
 		func(data []byte) (AnyNode, error) {
 			var n RequestNode
@@ -84,6 +90,10 @@ func init() {
 			return &ModuleExecutionResult{BaseExecutionResult: base}
 		},
 	)
+}
+
+// registerFlowNodeKinds registers the flow-authoring node kinds.
+func registerFlowNodeKinds() {
 	RegisterNodeKind(TypeSetVariable,
 		func(data []byte) (AnyNode, error) {
 			var n SetVariableNode

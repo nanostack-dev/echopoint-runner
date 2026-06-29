@@ -89,7 +89,7 @@ func (n *LoopNode) InputSchema() []string {
 func (n *LoopNode) aggregateOutputs() []Output {
 	return []Output{
 		{Name: "results", Extractor: extractors.JSONPathExtractor{Path: "$.results"}},
-		{Name: "count", Extractor: extractors.JSONPathExtractor{Path: "$.count"}},
+		{Name: outputKeyCount, Extractor: extractors.JSONPathExtractor{Path: "$.count"}},
 	}
 }
 
@@ -198,8 +198,8 @@ func (n *LoopNode) Execute(ctx ExecutionContext) (AnyExecutionResult, error) {
 	}
 
 	outputs := map[string]any{
-		"results": results,
-		"count":   len(results),
+		"results":      results,
+		outputKeyCount: len(results),
 	}
 
 	log.Info().
