@@ -1646,3 +1646,186 @@ func TestFlowEngine_Execute_ModuleNodeRejectsIndirectCycleBeforeSideEffects(t *t
 	assert.Empty(t, result.ExecutionResults)
 	assert.Empty(t, result.FinalOutputs)
 }
+
+// TestFlowEngine_Execute_AssertNodeExplicitTargetOverUpstreamOutput verifies the
+// EXPLICIT-target path end-to-end: an assert node wired downstream of a request
+// node via a real edge, with target "{{{create-resource.payload}}}", asserts over
+// the propagated upstream output. The assert node's InputSchema surfaces the ref
+// so the engine populates ctx.Inputs and the template resolves to the upstream
+// value — the node passes and the flow succeeds.
+func TestFlowEngine_Execute_AssertNodeExplicitTargetOverUpstreamOutput(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"active","id":"u-42"}`))
+	}))
+	defer server.Close()
+
+	flowJSON := []byte(`{
+		"name": "Assert Over Upstream",
+		"version": "1.0",
+		"nodes": [
+			{
+				"id": "create-resource",
+				"display_name": "Create Resource",
+				"type": "request",
+				"data": {
+					"method": "POST",
+					"url": "` + server.URL + `/create",
+					"timeout": 1000
+				},
+				"outputs": [
+					{"name": "payload", "extractor": {"type": "jsonPath", "path": "$"}}
+				]
+			},
+			{
+				"id": "verify",
+				"display_name": "Verify Upstream",
+				"type": "assert",
+				"data": {"target": "{{{create-resource.payload}}}"},
+				"assertions": [
+					{
+						"extractor_type": "jsonPath",
+						"extractor_data": {"path": "$.status"},
+						"operator_type": "equals",
+						"operator_data": {"value": "active"}
+					}
+				]
+			}
+		],
+		"edges": [
+			{"id": "e1", "source": "create-resource", "target": "verify", "type": "success"}
+		]
+	}`)
+
+	parsed, err := flow.ParseFromJSON(flowJSON)
+	require.NoError(t, err)
+
+	result, err := engine.ExecuteFlowDefinition(*parsed, map[string]any{}, &engine.ExecuteOptions{})
+	require.NoError(t, err)
+	require.True(t, result.Success)
+
+	assertRes := node.MustAs[*node.AssertExecutionResult](result.ExecutionResults["verify"])
+	require.Len(t, assertRes.AssertionResults, 1)
+	assert.True(t, assertRes.AssertionResults[0].Passed)
+}
+
+// TestFlowEngine_Execute_AssertNodeOmittedTargetOverFlowInputs verifies the
+// omitted-target default end-to-end: an assert node with NO target in a flow that
+// has initial inputs asserts over ctx.FlowInputs. The assert node's InputSchema is
+// empty (no target template), so the engine assembles an empty ctx.Inputs; the
+// node must fall back to FlowInputs for the assertion to see the initial inputs.
+func TestFlowEngine_Execute_AssertNodeOmittedTargetOverFlowInputs(t *testing.T) {
+	flowJSON := []byte(`{
+		"name": "Assert Over Flow Inputs",
+		"version": "1.0",
+		"nodes": [
+			{
+				"id": "verify",
+				"display_name": "Verify Flow Inputs",
+				"type": "assert",
+				"data": {},
+				"assertions": [
+					{
+						"extractor_type": "jsonPath",
+						"extractor_data": {"path": "$.userId"},
+						"operator_type": "equals",
+						"operator_data": {"value": "u-123"}
+					}
+				]
+			}
+		],
+		"edges": []
+	}`)
+
+	parsed, err := flow.ParseFromJSONWithOptions(flowJSON, flow.ParseOptions{
+		AllowedInitialInputKeys: []string{"userId"},
+	})
+	require.NoError(t, err)
+
+	result, err := engine.ExecuteFlowDefinition(
+		*parsed,
+		map[string]any{"userId": "u-123"},
+		&engine.ExecuteOptions{},
+	)
+	require.NoError(t, err)
+	require.True(t, result.Success)
+
+	assertRes := node.MustAs[*node.AssertExecutionResult](result.ExecutionResults["verify"])
+	require.Len(t, assertRes.AssertionResults, 1)
+	assert.True(t, assertRes.AssertionResults[0].Passed)
+}
+
+// TestFlowEngine_Execute_AssertNodeFailureSkipsDownstream verifies a failing
+// assertion in a real flow: the assert node fails, the flow is not Success, and a
+// node wired downstream of the assert node is skipped.
+func TestFlowEngine_Execute_AssertNodeFailureSkipsDownstream(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer server.Close()
+
+	flowJSON := []byte(`{
+		"name": "Assert Failure Skips Downstream",
+		"version": "1.0",
+		"nodes": [
+			{
+				"id": "verify",
+				"display_name": "Verify Flow Inputs",
+				"type": "assert",
+				"data": {},
+				"assertions": [
+					{
+						"extractor_type": "jsonPath",
+						"extractor_data": {"path": "$.userId"},
+						"operator_type": "equals",
+						"operator_data": {"value": "expected"}
+					}
+				]
+			},
+			{
+				"id": "downstream",
+				"display_name": "Downstream Request",
+				"type": "request",
+				"data": {
+					"method": "POST",
+					"url": "` + server.URL + `/downstream",
+					"timeout": 1000
+				}
+			}
+		],
+		"edges": [
+			{"id": "e1", "source": "verify", "target": "downstream", "type": "success"}
+		]
+	}`)
+
+	parsed, err := flow.ParseFromJSONWithOptions(flowJSON, flow.ParseOptions{
+		AllowedInitialInputKeys: []string{"userId"},
+	})
+	require.NoError(t, err)
+
+	result, err := engine.ExecuteFlowDefinition(
+		*parsed,
+		map[string]any{"userId": "actual"},
+		&engine.ExecuteOptions{},
+	)
+	require.Error(t, err)
+	require.False(t, result.Success)
+
+	assertRes := node.MustAs[*node.AssertExecutionResult](result.ExecutionResults["verify"])
+	require.Len(t, assertRes.AssertionResults, 1)
+	assert.False(t, assertRes.AssertionResults[0].Passed)
+	require.NotNil(t, assertRes.ErrorCode)
+	// The engine-level assertion pass owns failure classification now, so an assert
+	// miss surfaces the unified ASSERTION_FAILED code (was the node-local
+	// ASSERT_FAILED before the assert node was thinned onto the shared seam).
+	assert.Equal(t, "ASSERTION_FAILED", *assertRes.ErrorCode)
+
+	// The downstream node never runs: the assert failure aborts the flow, so the
+	// node wired after it is recorded as skipped.
+	require.Contains(t, result.ExecutionResults, "downstream")
+	downstreamResult, ok := result.ExecutionResults["downstream"].(*node.RequestExecutionResult)
+	require.True(t, ok)
+	require.NotNil(t, downstreamResult.SkipReason, "downstream node must be skipped after assert failure")
+	assert.Equal(t, "aborted_after_failure", *downstreamResult.SkipReason)
+}
