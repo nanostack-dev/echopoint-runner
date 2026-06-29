@@ -186,28 +186,3 @@ func (tr *TemplateResolver) resolveSlice(s []any) ([]any, error) {
 
 	return resolved, nil
 }
-
-// ResolveTemplatesInRequest is a convenience function for RequestNode to resolve templates.
-func ResolveTemplatesInRequest(
-	url string, headers map[string]string, body any, inputs map[string]any,
-) (string, map[string]string, any, error) {
-	resolver := NewTemplateResolver(inputs)
-
-	// Resolve URL
-	resolvedURL := resolver.resolveString(url)
-
-	// Resolve headers
-	resolvedHeaders := make(map[string]string)
-	for key, headerVal := range headers {
-		resolved := resolver.resolveString(headerVal)
-		resolvedHeaders[key] = resolved
-	}
-
-	// Resolve body
-	resolvedBody, err := resolver.Resolve(body)
-	if err != nil {
-		return "", nil, nil, fmt.Errorf("error resolving body: %w", err)
-	}
-
-	return resolvedURL, resolvedHeaders, resolvedBody, nil
-}

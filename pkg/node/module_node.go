@@ -30,15 +30,6 @@ func AsModuleNode(candidate AnyNode) (*ModuleNode, bool) {
 	return moduleNode, ok
 }
 
-// MustAsModuleNode casts an AnyNode to a ModuleNode, panicking if it fails.
-func MustAsModuleNode(candidate AnyNode) *ModuleNode {
-	moduleNode, ok := AsModuleNode(candidate)
-	if !ok {
-		panic("expected ModuleNode but got different type")
-	}
-	return moduleNode
-}
-
 func (n *ModuleNode) GetData() ModuleData {
 	return n.Data
 }

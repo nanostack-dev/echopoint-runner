@@ -47,15 +47,6 @@ func AsLoopNode(candidate AnyNode) (*LoopNode, bool) {
 	return loopNode, ok
 }
 
-// MustAsLoopNode casts an AnyNode to a LoopNode, panicking if it fails.
-func MustAsLoopNode(candidate AnyNode) *LoopNode {
-	loopNode, ok := AsLoopNode(candidate)
-	if !ok {
-		panic("expected LoopNode but got different type")
-	}
-	return loopNode
-}
-
 func (n *LoopNode) GetData() LoopData {
 	return n.Data
 }

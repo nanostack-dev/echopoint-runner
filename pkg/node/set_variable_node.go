@@ -31,16 +31,6 @@ func AsSetVariableNode(candidate AnyNode) (*SetVariableNode, bool) {
 	return setVariableNode, ok
 }
 
-// MustAsSetVariableNode casts an AnyNode to a SetVariableNode, panicking if it fails.
-// Use this when you're certain the node is a SetVariableNode.
-func MustAsSetVariableNode(candidate AnyNode) *SetVariableNode {
-	setVariableNode, ok := AsSetVariableNode(candidate)
-	if !ok {
-		panic("expected SetVariableNode but got different type")
-	}
-	return setVariableNode
-}
-
 func (n *SetVariableNode) GetData() SetVariableData {
 	return n.Data
 }

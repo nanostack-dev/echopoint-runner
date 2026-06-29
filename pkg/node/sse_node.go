@@ -82,16 +82,6 @@ func AsSseNode(node AnyNode) (*SseNode, bool) {
 	return sseNode, ok
 }
 
-// MustAsSseNode casts an AnyNode to an SseNode, panicking if it fails.
-// Use this when you're certain the node is an SseNode.
-func MustAsSseNode(node AnyNode) *SseNode {
-	sseNode, ok := AsSseNode(node)
-	if !ok {
-		panic("expected SseNode but got different type")
-	}
-	return sseNode
-}
-
 func (n *SseNode) GetData() SseData {
 	return n.Data
 }

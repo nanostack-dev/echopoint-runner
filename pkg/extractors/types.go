@@ -2,7 +2,6 @@ package extractors
 
 import (
 	"errors"
-	"io"
 	"net/http"
 
 	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
@@ -45,18 +44,8 @@ type HeaderAccessor interface {
 	Headers() http.Header
 }
 
-// BodyReader provides access to the response body as a stream.
-type BodyReader interface {
-	GetBody() io.Reader
-}
-
 // ParsedBodyReader provides access to pre-parsed body (JSON, XML, etc.)
 type ParsedBodyReader interface {
 	GetParsedBody() any
 	GetRawBody() []byte
-}
-
-// TimingInfo provides access to response timing information.
-type TimingInfo interface {
-	GetDuration() any // Can be used for future timing metrics
 }
