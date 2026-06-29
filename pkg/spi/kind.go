@@ -10,6 +10,7 @@ const (
 	KindDelay       Kind = "delay"
 	KindModule      Kind = "module"
 	KindSetVariable Kind = "set_variable"
+	KindLoop        Kind = "loop"
 )
 
 // RunWhen controls whether a node runs only on the success path or also after
