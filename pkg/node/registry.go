@@ -123,4 +123,17 @@ func init() {
 			return &PollExecutionResult{BaseExecutionResult: base}
 		},
 	)
+	RegisterNodeKind(TypeAssert,
+		func(data []byte) (AnyNode, error) {
+			var n AssertNode
+			if err := json.Unmarshal(data, &n); err != nil {
+				return nil, err
+			}
+			applyRunWhenDefault(&n.BaseNode)
+			return &n, nil
+		},
+		func(base BaseExecutionResult) AnyExecutionResult {
+			return &AssertExecutionResult{BaseExecutionResult: base}
+		},
+	)
 }

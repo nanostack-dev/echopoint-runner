@@ -12,6 +12,7 @@ const (
 	KindSetVariable Kind = "set_variable"
 	KindLoop        Kind = "loop"
 	KindPoll        Kind = "poll"
+	KindAssert      Kind = "assert"
 )
 
 // RunWhen controls whether a node runs only on the success path or also after
