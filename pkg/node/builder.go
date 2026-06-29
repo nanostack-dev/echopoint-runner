@@ -96,14 +96,6 @@ func (n *DelayNode) Always() *DelayNode {
 	return n
 }
 
-// NewModule starts a module node that executes the referenced child flow.
-func NewModule(id, flowID string) *ModuleNode {
-	return &ModuleNode{
-		BaseNode: BaseNode{ID: id, NodeType: TypeModule},
-		Data:     ModuleData{FlowID: flowID},
-	}
-}
-
 // DisplayName sets the module node's name.
 func (n *ModuleNode) DisplayName(name string) *ModuleNode {
 	n.BaseNode.DisplayName = name

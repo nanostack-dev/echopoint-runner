@@ -1,9 +1,7 @@
 package extractors
 
 import (
-	"bytes"
 	"encoding/json"
-	"io"
 	"net/http"
 )
 
@@ -18,7 +16,7 @@ type valueResponseContext struct {
 
 // NewValueResponseContext builds a ResponseContext backed by an arbitrary value.
 // The value is exposed as the parsed body (GetParsedBody) and its JSON encoding
-// as the raw body (GetRawBody / GetBody). Status is 0 and headers are empty —
+// as the raw body (GetRawBody). Status is 0 and headers are empty —
 // only the body / parsed_body capabilities are advertised, which is what the
 // jsonPath and body extractors need.
 func NewValueResponseContext(value any) ResponseContext {
@@ -54,11 +52,6 @@ func (rc *valueResponseContext) GetHeader(string) string { return "" }
 // Headers returns an empty header set.
 func (rc *valueResponseContext) Headers() http.Header { return http.Header{} }
 
-// GetBody returns a reader over the JSON-encoded value.
-func (rc *valueResponseContext) GetBody() io.Reader {
-	return bytes.NewReader(rc.rawBody)
-}
-
 // GetParsedBody returns the underlying value as the parsed body.
 func (rc *valueResponseContext) GetParsedBody() any { return rc.value }
 
@@ -72,5 +65,4 @@ var (
 	_ StatusReader     = (*valueResponseContext)(nil)
 	_ HeaderAccessor   = (*valueResponseContext)(nil)
 	_ ParsedBodyReader = (*valueResponseContext)(nil)
-	_ BodyReader       = (*valueResponseContext)(nil)
 )

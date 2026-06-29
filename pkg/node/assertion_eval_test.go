@@ -25,7 +25,6 @@ func (c fakeCtx) GetHeader(string) string   { return "" }
 func (c fakeCtx) Headers() http.Header      { return http.Header{} }
 func (c fakeCtx) GetParsedBody() any        { return c.parsed }
 func (c fakeCtx) GetRawBody() []byte        { return c.raw }
-func (c fakeCtx) GetDuration() any          { return nil }
 
 var _ extractors.ResponseContext = fakeCtx{}
 

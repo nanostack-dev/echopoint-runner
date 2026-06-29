@@ -48,18 +48,3 @@ func InitLogger(level zerolog.Level, format Format) {
 func SetDebugLogging() {
 	InitLogger(zerolog.DebugLevel, HUMAN)
 }
-
-// SetInfoLogging sets logging to info level in human-readable format.
-func SetInfoLogging() {
-	InitLogger(zerolog.InfoLevel, HUMAN)
-}
-
-// SetDebugLoggingJSON enables debug level logging in JSON format.
-func SetDebugLoggingJSON() {
-	InitLogger(zerolog.DebugLevel, JSON)
-}
-
-// SetInfoLoggingJSON sets logging to info level in JSON format (production-ready).
-func SetInfoLoggingJSON() {
-	InitLogger(zerolog.InfoLevel, JSON)
-}

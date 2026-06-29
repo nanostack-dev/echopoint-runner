@@ -91,15 +91,3 @@ func (si *SchemaInference) InferRequestNodeOutputSchema(outputs []Output) []stri
 	}
 	return result
 }
-
-// InferDelayNodeInputSchema infers input schema from DelayNode (typically empty or passthrough).
-func (si *SchemaInference) InferDelayNodeInputSchema(_ DelayData) []string {
-	// DelayNode doesn't need inputs
-	return []string{}
-}
-
-// InferDelayNodeOutputSchema infers output schema from DelayNode (typically empty).
-func (si *SchemaInference) InferDelayNodeOutputSchema(_ DelayData) []string {
-	// DelayNode typically doesn't produce outputs
-	return []string{}
-}

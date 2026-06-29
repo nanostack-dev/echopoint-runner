@@ -68,18 +68,10 @@ func (rc *concreteResponseContext) Headers() http.Header {
 	return rc.resp.Header
 }
 
-func (rc *concreteResponseContext) GetBody() io.Reader {
-	// Return a reader over the raw body (already consumed from response)
-	return io.NopCloser(io.NopCloser(io.Reader(nil)))
-}
 func (rc *concreteResponseContext) GetParsedBody() any {
 	return rc.parsedBody
 }
 
 func (rc *concreteResponseContext) GetRawBody() []byte {
 	return rc.rawBody
-}
-func (rc *concreteResponseContext) GetDuration() any {
-	// Placeholder for future timing information
-	return nil
 }

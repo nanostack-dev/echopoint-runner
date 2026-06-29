@@ -45,16 +45,6 @@ func AsRequestNode(node AnyNode) (*RequestNode, bool) {
 	return reqNode, ok
 }
 
-// MustAsRequestNode casts an AnyNode to a RequestNode, panicking if it fails
-// Use this when you're certain the node is a RequestNode.
-func MustAsRequestNode(node AnyNode) *RequestNode {
-	reqNode, ok := AsRequestNode(node)
-	if !ok {
-		panic("expected RequestNode but got different type")
-	}
-	return reqNode
-}
-
 func (n *RequestNode) GetData() RequestData {
 	return n.Data
 }
