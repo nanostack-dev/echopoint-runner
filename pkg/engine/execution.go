@@ -377,7 +377,16 @@ func applyAssertionsAndOutputs(
 		failer.MergeOutputs(produced)
 	}
 
-	if validateErr := node.ValidateOutputs(n.OutputSchema(), produced); validateErr != nil {
+	// Validate the OutputSchema against the result's full output set after the
+	// merge, not just the freshly-extracted map: nodes whose outputs are produced
+	// in Execute (e.g. set-variable) rather than by extractors expose them on the
+	// result, and ExtractOutputs returns nothing for them. For extractor nodes
+	// (request) the merged set equals the produced set, so behavior is unchanged.
+	effectiveOutputs := produced
+	if outputs := res.GetOutputs(); len(outputs) > 0 {
+		effectiveOutputs = outputs
+	}
+	if validateErr := node.ValidateOutputs(n.OutputSchema(), effectiveOutputs); validateErr != nil {
 		if failer != nil {
 			failer.Fail(validateErr, "OUTPUT_VALIDATION_FAILED")
 		}
