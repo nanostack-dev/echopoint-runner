@@ -21,6 +21,19 @@ type AnyResult interface {
 	isExecutionResult()
 }
 
+// RoutingResult is implemented by node results that select which successor
+// edges are taken; the engine skips the untaken successors' subtrees. A routing
+// node (e.g. the branch node) returns the IDs of the successor nodes it routed
+// TO; the engine treats every other successor edge as dead and cascades the skip
+// through that subtree.
+type RoutingResult interface {
+	AnyResult
+	// RoutedTargets returns the successor node IDs this result routes execution
+	// to. An empty slice means no successor was chosen (every successor edge is
+	// dead).
+	RoutedTargets() []string
+}
+
 // BaseExecutionResult provides common fields for all execution results. Its JSON
 // tags are a wire contract consumed by echopoint.
 type BaseExecutionResult struct {

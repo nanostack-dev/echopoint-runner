@@ -50,7 +50,74 @@ func validateFlowReferences(parsedFlow *Flow, options ParseOptions) error {
 		availableNodeOutputs[nodeID] = buildOutputSet(currentNode.OutputSchema())
 	}
 
+	if err := validateBranchTargets(parsedFlow); err != nil {
+		return err
+	}
+
 	return nil
+}
+
+// validateBranchTargets ensures every branch case.Target and Default names a
+// real successor of the branch (an edge branch->target exists). A target that is
+// not a successor edge would silently dead-edge every real successor at runtime,
+// skipping the whole downstream subtree while the flow still reports Success.
+// Catching it at parse time turns that silent misroute into a clear error.
+func validateBranchTargets(parsedFlow *Flow) error {
+	successorsBySource := make(map[string]map[string]struct{}, len(parsedFlow.Edges))
+	for _, currentEdge := range parsedFlow.Edges {
+		source := strings.TrimSpace(currentEdge.Source)
+		target := strings.TrimSpace(currentEdge.Target)
+		if source == "" || target == "" {
+			continue
+		}
+		if successorsBySource[source] == nil {
+			successorsBySource[source] = make(map[string]struct{})
+		}
+		successorsBySource[source][target] = struct{}{}
+	}
+
+	for _, currentNode := range parsedFlow.Nodes {
+		branchNode, ok := node.AsBranchNode(currentNode)
+		if !ok {
+			continue
+		}
+		branchID := branchNode.GetID()
+		successors := successorsBySource[branchID]
+
+		data := branchNode.GetData()
+		for _, branchCase := range data.Cases {
+			if err := validateBranchTarget(branchID, branchCase.Target, successors); err != nil {
+				return err
+			}
+		}
+		if err := validateBranchTarget(branchID, data.Default, successors); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func validateBranchTarget(
+	branchID string,
+	target string,
+	successors map[string]struct{},
+) error {
+	trimmedTarget := strings.TrimSpace(target)
+	if trimmedTarget == "" {
+		return nil
+	}
+	if _, ok := successors[trimmedTarget]; ok {
+		return nil
+	}
+	return fmt.Errorf(
+		"branch node %s: routing target '%s' is not a successor node "+
+			"(no edge %s->%s exists)",
+		branchID,
+		trimmedTarget,
+		branchID,
+		trimmedTarget,
+	)
 }
 
 func validateNodeReferences(

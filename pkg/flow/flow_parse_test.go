@@ -1,7 +1,9 @@
 package flow_test
 
 import (
+	"fmt"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/nanostack-dev/echopoint-runner/internal/logger"
@@ -575,5 +577,80 @@ func TestParseFromJSON_ExtractorFactory(t *testing.T) {
 	)
 }
 
-// Import statement for httpextractors (add to imports if not present)
-// This is handled by the test code above
+// branchFlowJSON builds a single-branch flow whose branch routes case "a" to
+// caseTarget and otherwise to defTarget, with the given success edges from the
+// branch. It lets the BUG 2 tests vary targets vs. real successor edges.
+func branchFlowJSON(caseTarget, defTarget string, branchSuccessors ...string) []byte {
+	edgeDefs := make([]string, 0, len(branchSuccessors))
+	for _, target := range branchSuccessors {
+		edgeDefs = append(edgeDefs, fmt.Sprintf(
+			`{"id": "router->%s", "source": "router", "target": "%s", "type": "success"}`,
+			target, target,
+		))
+	}
+	edges := strings.Join(edgeDefs, ",")
+	defaultClause := ""
+	if defTarget != "" {
+		defaultClause = fmt.Sprintf(`, "default": %q`, defTarget)
+	}
+	return []byte(`{
+		"version": "1.0",
+		"name": "Branch target validation",
+		"initialInputs": {"route": "a"},
+		"nodes": [
+			{
+				"id": "router",
+				"type": "branch",
+				"data": {
+					"target": "{{route}}",
+					"cases": [
+						{
+							"when": {
+								"extractor_type": "body",
+								"extractor_data": {},
+								"operator_type": "equals",
+								"operator_data": {"value": "a"}
+							},
+							"target": "` + caseTarget + `"
+						}
+					]` + defaultClause + `
+				}
+			},
+			{"id": "nodeA", "type": "branch", "data": {"cases": []}},
+			{"id": "nodeB", "type": "branch", "data": {"cases": []}}
+		],
+		"edges": [` + edges + `]
+	}`)
+}
+
+// BUG 2: a branch case.Target that is not a real successor edge of the branch
+// must fail flow validation at parse time, rather than silently dead-edging
+// every real successor and reporting Success with the whole subtree skipped.
+func TestParseFromJSON_RejectsBranchCaseTargetWithoutSuccessorEdge(t *testing.T) {
+	// router has a real edge to nodeA, but case routes to "nodeB" (no edge).
+	flowResult, err := flow.ParseFromJSON(branchFlowJSON("nodeB", "", "nodeA"))
+	require.Error(t, err)
+	assert.Nil(t, flowResult)
+	assert.Contains(t, err.Error(), "router")
+	assert.Contains(t, err.Error(), "nodeB")
+	assert.Contains(t, err.Error(), "successor")
+}
+
+// BUG 2: a branch Default target that is not a real successor edge must also
+// fail flow validation at parse time.
+func TestParseFromJSON_RejectsBranchDefaultTargetWithoutSuccessorEdge(t *testing.T) {
+	// router edges to nodeA; case routes to nodeA but default routes to nodeB.
+	flowResult, err := flow.ParseFromJSON(branchFlowJSON("nodeA", "nodeB", "nodeA"))
+	require.Error(t, err)
+	assert.Nil(t, flowResult)
+	assert.Contains(t, err.Error(), "router")
+	assert.Contains(t, err.Error(), "nodeB")
+}
+
+// A branch whose case + default targets all correspond to real successor edges
+// parses cleanly.
+func TestParseFromJSON_AcceptsBranchTargetsWithSuccessorEdges(t *testing.T) {
+	flowResult, err := flow.ParseFromJSON(branchFlowJSON("nodeA", "nodeB", "nodeA", "nodeB"))
+	require.NoError(t, err)
+	require.NotNil(t, flowResult)
+}
