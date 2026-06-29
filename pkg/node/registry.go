@@ -110,4 +110,17 @@ func init() {
 			return &LoopExecutionResult{BaseExecutionResult: base}
 		},
 	)
+	RegisterNodeKind(TypePoll,
+		func(data []byte) (AnyNode, error) {
+			var n PollNode
+			if err := json.Unmarshal(data, &n); err != nil {
+				return nil, err
+			}
+			applyRunWhenDefault(&n.BaseNode)
+			return &n, nil
+		},
+		func(base BaseExecutionResult) AnyExecutionResult {
+			return &PollExecutionResult{BaseExecutionResult: base}
+		},
+	)
 }
