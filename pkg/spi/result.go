@@ -2,6 +2,7 @@ package spi
 
 import (
 	"fmt"
+	"maps"
 	"time"
 )
 
@@ -35,6 +36,12 @@ type BaseExecutionResult struct {
 	SkipReason    *string        `json:"skip_reason,omitempty"`
 	MissingInputs []string       `json:"missing_inputs,omitempty"`
 	ExecutedAt    time.Time      `json:"executed_at"`
+
+	// AssertionResults records every assertion evaluated on this node (pass or
+	// fail). It lives on the shared base so the engine-level assertion pass fills
+	// it uniformly for every node kind. The JSON tag is a wire contract consumed
+	// by echopoint.
+	AssertionResults []AssertionResult `json:"assertion_results,omitempty"`
 }
 
 // GetNodeID returns the node ID.
@@ -59,6 +66,44 @@ func (b *BaseExecutionResult) GetError() error { return b.Error }
 func (b *BaseExecutionResult) GetExecutedAt() time.Time { return b.ExecutedAt }
 
 func (b *BaseExecutionResult) isExecutionResult() {}
+
+// SetAssertionResults records the evaluated assertions on the result. Used by the
+// engine-level assertion pass so every node kind reports them uniformly.
+func (b *BaseExecutionResult) SetAssertionResults(results []AssertionResult) {
+	b.AssertionResults = results
+}
+
+// Fail marks the result as failed: it stores the Go error and surfaces a
+// user-facing message and stable code on the wire. A nil err is ignored.
+func (b *BaseExecutionResult) Fail(err error, code string) {
+	if err == nil {
+		return
+	}
+	b.Error = err
+	msg := err.Error()
+	b.ErrorMsg = &msg
+	// A classified UserError carries a clean message and a stable code; surface
+	// those instead of the raw error string / supplied code.
+	if userErr, ok := AsUserError(err); ok {
+		b.ErrorMsg = &userErr.Message
+		b.ErrorCode = &userErr.Code
+		return
+	}
+	c := code
+	b.ErrorCode = &c
+}
+
+// MergeOutputs copies the given outputs into the result's Outputs map, lazily
+// initializing it. Existing keys are overwritten.
+func (b *BaseExecutionResult) MergeOutputs(outputs map[string]any) {
+	if len(outputs) == 0 {
+		return
+	}
+	if b.Outputs == nil {
+		b.Outputs = make(map[string]any, len(outputs))
+	}
+	maps.Copy(b.Outputs, outputs)
+}
 
 // AssertionResult records the outcome of evaluating a single node assertion,
 // captured whether it passed or failed so the full result can be reported.
