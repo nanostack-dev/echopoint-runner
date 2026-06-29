@@ -50,15 +50,6 @@ func AsBranchNode(candidate AnyNode) (*BranchNode, bool) {
 	return branchNode, ok
 }
 
-// MustAsBranchNode casts an AnyNode to a BranchNode, panicking if it fails.
-func MustAsBranchNode(candidate AnyNode) *BranchNode {
-	branchNode, ok := AsBranchNode(candidate)
-	if !ok {
-		panic("expected BranchNode but got different type")
-	}
-	return branchNode
-}
-
 // GetData returns the branch configuration.
 func (n *BranchNode) GetData() BranchData {
 	return n.Data

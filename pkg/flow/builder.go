@@ -29,12 +29,6 @@ func (b *Builder) Version(version string) *Builder {
 	return b
 }
 
-// Description sets the flow description.
-func (b *Builder) Description(description string) *Builder {
-	b.flow.Description = description
-	return b
-}
-
 // Input declares an initial input (a default; launch inputs override it).
 func (b *Builder) Input(key string, value any) *Builder {
 	if b.flow.InitialInputs == nil {
@@ -53,11 +47,6 @@ func (b *Builder) Add(n node.AnyNode) *Builder {
 // Edge connects source -> target on the success path.
 func (b *Builder) Edge(source, target string) *Builder {
 	return b.edge(source, target, edge.TypeSuccess)
-}
-
-// FailureEdge connects source -> target on the failure path.
-func (b *Builder) FailureEdge(source, target string) *Builder {
-	return b.edge(source, target, edge.TypeFailure)
 }
 
 func (b *Builder) edge(source, target string, edgeType edge.Type) *Builder {

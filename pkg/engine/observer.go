@@ -51,44 +51,6 @@ func (NoopObserver) NodeStarted(NodeStartedEvent)   {}
 func (NoopObserver) NodeFinished(NodeFinishedEvent) {}
 func (NoopObserver) FlowFinished(FlowFinishedEvent) {}
 
-type MultiObserver []ExecutionObserver
-
-func (m MultiObserver) FlowStarted(evt FlowStartedEvent) {
-	for _, observer := range m {
-		if observer == nil {
-			continue
-		}
-		observer.FlowStarted(evt)
-	}
-}
-
-func (m MultiObserver) NodeStarted(evt NodeStartedEvent) {
-	for _, observer := range m {
-		if observer == nil {
-			continue
-		}
-		observer.NodeStarted(evt)
-	}
-}
-
-func (m MultiObserver) NodeFinished(evt NodeFinishedEvent) {
-	for _, observer := range m {
-		if observer == nil {
-			continue
-		}
-		observer.NodeFinished(evt)
-	}
-}
-
-func (m MultiObserver) FlowFinished(evt FlowFinishedEvent) {
-	for _, observer := range m {
-		if observer == nil {
-			continue
-		}
-		observer.FlowFinished(evt)
-	}
-}
-
 type synchronizedObserver struct {
 	inner ExecutionObserver
 	mu    sync.Mutex

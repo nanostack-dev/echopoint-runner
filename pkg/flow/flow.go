@@ -21,14 +21,6 @@ type ParseOptions struct {
 	AllowUnknownInitialInputs bool
 }
 
-func ParseFromMap(data map[string]any) (*Flow, error) {
-	jsonData, err := json.Marshal(data)
-	if err != nil {
-		return nil, err
-	}
-	return ParseFromJSON(jsonData)
-}
-
 func ParseFromJSON(data []byte) (*Flow, error) {
 	return ParseFromJSONWithOptions(data, ParseOptions{})
 }

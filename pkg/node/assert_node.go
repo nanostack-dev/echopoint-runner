@@ -48,16 +48,6 @@ func AsAssertNode(node AnyNode) (*AssertNode, bool) {
 	return assertNode, ok
 }
 
-// MustAsAssertNode casts an AnyNode to an AssertNode, panicking if it fails.
-// Use this when you're certain the node is an AssertNode.
-func MustAsAssertNode(node AnyNode) *AssertNode {
-	assertNode, ok := AsAssertNode(node)
-	if !ok {
-		panic("expected AssertNode but got different type")
-	}
-	return assertNode
-}
-
 // GetData returns the node's typed data.
 func (n *AssertNode) GetData() AssertData {
 	return n.Data
