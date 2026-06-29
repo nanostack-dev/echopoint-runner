@@ -22,6 +22,59 @@ func TestCompare_BuiltIns(t *testing.T) {
 	}
 }
 
+// TestEquals_IsStringEquality pins the lenient coercion contract: equals (and
+// the other string operators) compare stringified forms, so cross-type values
+// with the same string form are equal. This is intentional, not type-aware
+// equality — changing it is a behavior change visible to existing flows.
+func TestEquals_IsStringEquality(t *testing.T) {
+	cases := []struct {
+		name           string
+		actual, expect any
+		want           bool
+	}{
+		{"int actual vs string expect", 200, "200", true},
+		{"float actual vs string expect", 200.0, "200", true},
+		{"bool actual vs string expect", true, "true", true},
+		{"string vs string equal", "ok", "ok", true},
+		{"different values", 200, "404", false},
+		{"int vs string mismatch", 1, "one", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := operators.Compare(operators.OperatorTypeEquals, tc.actual, tc.expect)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tc.want {
+				t.Errorf("equals(%v, %v) = %v, want %v", tc.actual, tc.expect, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestIsKnown_MatchesComparators guards that IsKnown reports exactly the set of
+// registered operators (so decode-time validation rejects neither more nor less
+// than Compare does at runtime).
+func TestIsKnown_MatchesComparators(t *testing.T) {
+	builtins := []operators.OperatorType{
+		operators.OperatorTypeEquals, operators.OperatorTypeNotEquals,
+		operators.OperatorTypeContains, operators.OperatorTypeNotContains,
+		operators.OperatorTypeStartsWith, operators.OperatorTypeEndsWith,
+		operators.OperatorTypeRegex, operators.OperatorTypeEmpty,
+		operators.OperatorTypeNotEmpty, operators.OperatorTypeGreaterThan,
+		operators.OperatorTypeLessThan, operators.OperatorTypeGreaterThanOrEqual,
+		operators.OperatorTypeLessThanOrEqual, operators.OperatorTypeBetween,
+	}
+	for _, op := range builtins {
+		if !operators.IsKnown(op) {
+			t.Errorf("IsKnown(%q) = false, want true (it is a built-in)", op)
+		}
+	}
+	if operators.IsKnown("definitelyNotAnOperator") {
+		t.Error("IsKnown should be false for an unregistered operator")
+	}
+}
+
 func TestRegister_AddsOperator(t *testing.T) {
 	const custom operators.OperatorType = "isFortyTwo"
 	operators.Register(custom, func(actual, _ any) (bool, error) {

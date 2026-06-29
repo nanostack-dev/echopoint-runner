@@ -68,12 +68,27 @@ func Register(operatorType OperatorType, comparator Comparator) {
 
 // Compare applies the registered comparator for operatorType, returning an error
 // when the operator is unknown.
+//
+// Coercion contract: comparisons are lenient. equals/notEquals/contains and the
+// other string operators compare the stringified forms (toString), so the
+// integer 200 and the string "200" are equal; the numeric operators
+// (greaterThan/between/...) coerce both sides via toFloat. This matches the wire,
+// which delivers expected values as strings. It is a deliberate, tested contract,
+// not type-aware equality.
 func Compare(operatorType OperatorType, actual, expected any) (bool, error) {
 	comparator, ok := comparators[operatorType]
 	if !ok {
 		return false, fmt.Errorf("unknown assertion operator %q", operatorType)
 	}
 	return comparator(actual, expected)
+}
+
+// IsKnown reports whether operatorType has a registered comparator. Callers use
+// it to reject an unknown operator at flow-decode time (mirroring the extractor
+// registry) instead of failing deep inside Compare during execution.
+func IsKnown(operatorType OperatorType) bool {
+	_, ok := comparators[operatorType]
+	return ok
 }
 
 // between reports whether actual lies within an inclusive [min, max] range. The
