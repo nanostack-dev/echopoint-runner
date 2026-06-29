@@ -18,7 +18,7 @@ func ClassifyRequestErrorForTest(rawURL string, err error) *spi.UserError {
 // that every assertion outcome is recorded.
 func RunAssertionsForTest(
 	n *RequestNode, ctx extractors.ResponseContext,
-) ([]AssertionResult, error) {
+) ([]spi.AssertionResult, error) {
 	return n.runAssertions(ctx)
 }
 
@@ -33,7 +33,7 @@ func ProcessResponseForTest(
 	resp *http.Response,
 	respBody []byte,
 	startTime time.Time,
-) (AnyExecutionResult, error) {
+) (spi.AnyResult, error) {
 	return n.processResponse(inputs, url, headers, body, resp, respBody, startTime)
 }
 
@@ -55,7 +55,7 @@ func CreateResponseBackedErrorResultForTest(
 	parsedBody any,
 	err error,
 	duration time.Duration,
-) AnyExecutionResult {
+) spi.AnyResult {
 	return n.createResponseBackedErrorResult(
 		inputs, url, headers, body, resp, respBody, parsedBody, nil, err, duration,
 	)

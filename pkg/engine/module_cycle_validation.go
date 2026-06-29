@@ -10,7 +10,7 @@ import (
 	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 )
 
-func validateModuleGraph(root flow.Flow, resolver node.ModuleResolver, callStack []string) error {
+func validateModuleGraph(root flow.Flow, resolver spi.ModuleResolver, callStack []string) error {
 	if resolver == nil {
 		return nil
 	}
@@ -21,7 +21,7 @@ func validateModuleGraph(root flow.Flow, resolver node.ModuleResolver, callStack
 
 func validateModuleReferences(
 	current flow.Flow,
-	resolver node.ModuleResolver,
+	resolver spi.ModuleResolver,
 	parsedFlows map[string]flow.Flow,
 	callStack []string,
 ) error {
@@ -73,7 +73,7 @@ func detectModuleCycle(callStack []string, targetFlowID string) error {
 
 func resolveModuleFlow(
 	flowID string,
-	resolver node.ModuleResolver,
+	resolver spi.ModuleResolver,
 	parsedFlows map[string]flow.Flow,
 ) (flow.Flow, error) {
 	if cached, ok := parsedFlows[flowID]; ok {

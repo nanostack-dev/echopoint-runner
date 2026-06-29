@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/nanostack-dev/echopoint-runner/pkg/node"
+	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -49,7 +50,7 @@ func sseNode(t *testing.T, url string, data node.SseData, assertions ...node.Com
 		BaseNode: node.BaseNode{
 			ID:          "sse1",
 			DisplayName: "Stream",
-			NodeType:    node.TypeSse,
+			NodeType:    spi.KindSse,
 			Assertions:  assertions,
 		},
 		Data: data,
@@ -64,8 +65,8 @@ func TestSseNode_DecodeViaUnmarshalNode(t *testing.T) {
 	}`
 	n, err := node.UnmarshalNode([]byte(raw))
 	require.NoError(t, err)
-	require.Equal(t, node.TypeSse, n.GetType())
-	require.Equal(t, node.RunWhenOnSuccess, n.GetRunWhen())
+	require.Equal(t, spi.KindSse, n.GetType())
+	require.Equal(t, spi.RunWhenOnSuccess, n.GetRunWhen())
 
 	sse, ok := node.AsSseNode(n)
 	require.True(t, ok)
@@ -87,10 +88,10 @@ func TestSseNode_CollectsEventsWithPassingAssertion(t *testing.T) {
 		mkAssertion(t, "jsonPath", "$.status", "equals", "ok"),
 	)
 
-	res, err := n.Execute(node.ExecutionContext{Inputs: map[string]any{}})
+	res, err := n.Execute(spi.ExecutionContext{Inputs: map[string]any{}})
 	require.NoError(t, err)
 
-	sseRes := node.MustAs[*node.SseExecutionResult](res)
+	sseRes := spi.MustAs[*node.SseExecutionResult](res)
 	assert.Equal(t, 3, sseRes.EventCount)
 	assert.Len(t, sseRes.Events, 3)
 	// 3 events x 1 assertion each = 3 recorded assertion results.
@@ -122,10 +123,10 @@ func TestSseNode_FailingAssertionStopsAfterEvent(t *testing.T) {
 		mkAssertion(t, "jsonPath", "$.status", "equals", "ok"),
 	)
 
-	res, err := n.Execute(node.ExecutionContext{Inputs: map[string]any{}})
+	res, err := n.Execute(spi.ExecutionContext{Inputs: map[string]any{}})
 	require.Error(t, err)
 
-	sseRes := node.MustAs[*node.SseExecutionResult](res)
+	sseRes := spi.MustAs[*node.SseExecutionResult](res)
 	// Stopped after event index 1 (the second event), so 2 events captured.
 	assert.Equal(t, 2, sseRes.EventCount)
 	assert.Equal(t, "assertion_failure", sseRes.StopReason)
@@ -149,10 +150,10 @@ func TestSseNode_FailingAssertionContinuesWhenStopDisabled(t *testing.T) {
 		mkAssertion(t, "jsonPath", "$.status", "equals", "ok"),
 	)
 
-	res, err := n.Execute(node.ExecutionContext{Inputs: map[string]any{}})
+	res, err := n.Execute(spi.ExecutionContext{Inputs: map[string]any{}})
 	require.NoError(t, err)
 
-	sseRes := node.MustAs[*node.SseExecutionResult](res)
+	sseRes := spi.MustAs[*node.SseExecutionResult](res)
 	assert.Equal(t, 3, sseRes.EventCount)
 	assert.Equal(t, "eof", sseRes.StopReason)
 	assert.False(t, sseRes.AssertionResults[1].Passed)
@@ -168,10 +169,10 @@ func TestSseNode_MaxEventsStopsEarly(t *testing.T) {
 
 	n := sseNode(t, srv.URL, node.SseData{TimeoutMs: 2000, MaxEvents: 2})
 
-	res, err := n.Execute(node.ExecutionContext{Inputs: map[string]any{}})
+	res, err := n.Execute(spi.ExecutionContext{Inputs: map[string]any{}})
 	require.NoError(t, err)
 
-	sseRes := node.MustAs[*node.SseExecutionResult](res)
+	sseRes := spi.MustAs[*node.SseExecutionResult](res)
 	assert.Equal(t, 2, sseRes.EventCount)
 	assert.Equal(t, "max_events", sseRes.StopReason)
 }
@@ -185,10 +186,10 @@ func TestSseNode_CompletionEventStopsStream(t *testing.T) {
 
 	n := sseNode(t, srv.URL, node.SseData{TimeoutMs: 2000, CompletionEvent: "done"})
 
-	res, err := n.Execute(node.ExecutionContext{Inputs: map[string]any{}})
+	res, err := n.Execute(spi.ExecutionContext{Inputs: map[string]any{}})
 	require.NoError(t, err)
 
-	sseRes := node.MustAs[*node.SseExecutionResult](res)
+	sseRes := spi.MustAs[*node.SseExecutionResult](res)
 	assert.Equal(t, 2, sseRes.EventCount)
 	assert.Equal(t, "completion_event", sseRes.StopReason)
 	last, ok := sseRes.Events[1].(map[string]any)
@@ -207,13 +208,13 @@ func TestSseNode_TimeoutReturnsOnDeadline(t *testing.T) {
 	n := sseNode(t, srv.URL, node.SseData{TimeoutMs: 50})
 
 	start := time.Now()
-	res, err := n.Execute(node.ExecutionContext{Inputs: map[string]any{}})
+	res, err := n.Execute(spi.ExecutionContext{Inputs: map[string]any{}})
 	elapsed := time.Since(start)
 
 	require.NoError(t, err)
 	assert.Less(t, elapsed, 2*time.Second, "node must return promptly on deadline")
 
-	sseRes := node.MustAs[*node.SseExecutionResult](res)
+	sseRes := spi.MustAs[*node.SseExecutionResult](res)
 	assert.Equal(t, "timeout", sseRes.StopReason)
 }
 
@@ -225,10 +226,10 @@ func TestSseNode_NonOKStatusErrors(t *testing.T) {
 
 	n := sseNode(t, srv.URL, node.SseData{TimeoutMs: 2000})
 
-	res, err := n.Execute(node.ExecutionContext{Inputs: map[string]any{}})
+	res, err := n.Execute(spi.ExecutionContext{Inputs: map[string]any{}})
 	require.Error(t, err)
 
-	sseRes := node.MustAs[*node.SseExecutionResult](res)
+	sseRes := spi.MustAs[*node.SseExecutionResult](res)
 	require.NotNil(t, sseRes.ErrorCode)
 	assert.Equal(t, "SSE_FAILED", *sseRes.ErrorCode)
 	assert.Contains(t, err.Error(), "503")
@@ -248,7 +249,7 @@ func TestSseNode_TemplatedURLAndHeaders(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	n := &node.SseNode{
-		BaseNode: node.BaseNode{ID: "sse1", DisplayName: "Stream", NodeType: node.TypeSse},
+		BaseNode: node.BaseNode{ID: "sse1", DisplayName: "Stream", NodeType: spi.KindSse},
 		Data: node.SseData{
 			URL:       srv.URL + "/{{path}}",
 			TimeoutMs: 2000,
@@ -259,7 +260,7 @@ func TestSseNode_TemplatedURLAndHeaders(t *testing.T) {
 	// InputSchema should infer the template variables from URL and headers.
 	assert.ElementsMatch(t, []string{"path", "token"}, n.InputSchema())
 
-	res, err := n.Execute(node.ExecutionContext{Inputs: map[string]any{
+	res, err := n.Execute(spi.ExecutionContext{Inputs: map[string]any{
 		"path":  "events",
 		"token": "secret",
 	}})
@@ -267,7 +268,7 @@ func TestSseNode_TemplatedURLAndHeaders(t *testing.T) {
 
 	assert.Equal(t, "Bearer secret", gotAuth)
 	assert.Equal(t, "text/event-stream", gotAccept)
-	sseRes := node.MustAs[*node.SseExecutionResult](res)
+	sseRes := spi.MustAs[*node.SseExecutionResult](res)
 	assert.Equal(t, 1, sseRes.EventCount)
 }
 
@@ -279,10 +280,10 @@ func TestSseNode_NonJSONDataFallsBackToString(t *testing.T) {
 
 	n := sseNode(t, srv.URL, node.SseData{TimeoutMs: 2000})
 
-	res, err := n.Execute(node.ExecutionContext{Inputs: map[string]any{}})
+	res, err := n.Execute(spi.ExecutionContext{Inputs: map[string]any{}})
 	require.NoError(t, err)
 
-	sseRes := node.MustAs[*node.SseExecutionResult](res)
+	sseRes := spi.MustAs[*node.SseExecutionResult](res)
 	require.Equal(t, 2, sseRes.EventCount)
 	assert.Equal(t, "hello world", sseRes.Events[0])
 	assert.Equal(t, "plain text", sseRes.Events[1])
@@ -296,10 +297,10 @@ func TestSseNode_MultiLineDataAndComments(t *testing.T) {
 
 	n := sseNode(t, srv.URL, node.SseData{TimeoutMs: 2000})
 
-	res, err := n.Execute(node.ExecutionContext{Inputs: map[string]any{}})
+	res, err := n.Execute(spi.ExecutionContext{Inputs: map[string]any{}})
 	require.NoError(t, err)
 
-	sseRes := node.MustAs[*node.SseExecutionResult](res)
+	sseRes := spi.MustAs[*node.SseExecutionResult](res)
 	require.Equal(t, 1, sseRes.EventCount)
 	assert.Equal(t, "line1\nline2", sseRes.Events[0])
 }

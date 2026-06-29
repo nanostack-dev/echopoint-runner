@@ -16,7 +16,7 @@ type executionState struct {
 	allOutputs      map[string]map[string]any
 	remainingInputs map[node.AnyNode]int
 	executedCount   int
-	result          *node.FlowExecutionResult
+	result          *spi.FlowExecutionResult
 	startTime       time.Time
 	mainFailed      bool
 	// failedNodes / skippedNodes track node IDs by terminal state so a skipped
@@ -35,13 +35,13 @@ type executionState struct {
 
 type nodeRunResult struct {
 	node   node.AnyNode
-	result node.AnyExecutionResult
+	result spi.AnyResult
 	err    error
 }
 
 func (engine *FlowEngine) executeNodes(
 	initialInputs map[string]any,
-	result *node.FlowExecutionResult,
+	result *spi.FlowExecutionResult,
 	startTime time.Time,
 ) error {
 	state := &executionState{
@@ -78,7 +78,7 @@ func (engine *FlowEngine) executeNodes(
 
 func (engine *FlowEngine) runOnSuccessPhase(state *executionState) {
 	for {
-		ready := engine.readyNodes(state.remainingInputs, node.RunWhenOnSuccess)
+		ready := engine.readyNodes(state.remainingInputs, spi.RunWhenOnSuccess)
 		if len(ready) == 0 {
 			return
 		}
@@ -168,7 +168,7 @@ func (engine *FlowEngine) inputsReferenceSkippedNode(n node.AnyNode, state *exec
 
 func (engine *FlowEngine) runAlwaysPhase(state *executionState) {
 	for {
-		ready := engine.readyNodes(state.remainingInputs, node.RunWhenAlways)
+		ready := engine.readyNodes(state.remainingInputs, spi.RunWhenAlways)
 		if len(ready) == 0 {
 			if !engine.skipFrontierAlwaysNodes(state) {
 				return
@@ -222,7 +222,7 @@ func (engine *FlowEngine) recordOnSuccessResults(completed []nodeRunResult, stat
 // the scheduler's input counts stay consistent.
 func (engine *FlowEngine) recordRoutingDecision(
 	n node.AnyNode,
-	result node.AnyExecutionResult,
+	result spi.AnyResult,
 	state *executionState,
 ) {
 	routing, ok := result.(spi.RoutingResult)
@@ -273,7 +273,7 @@ func (engine *FlowEngine) recordAlwaysResults(completed []nodeRunResult, state *
 	}
 }
 
-func (engine *FlowEngine) readyNodes(remainingInputs map[node.AnyNode]int, phase node.RunWhen) []node.AnyNode {
+func (engine *FlowEngine) readyNodes(remainingInputs map[node.AnyNode]int, phase spi.RunWhen) []node.AnyNode {
 	ready := make([]node.AnyNode, 0, len(remainingInputs))
 	if len(remainingInputs) == 1 {
 		for nodeKey, inputCount := range remainingInputs {
@@ -298,7 +298,7 @@ func (engine *FlowEngine) runReadyNodes(
 	ready []node.AnyNode,
 	state *executionState,
 ) []nodeRunResult {
-	views := make([]node.OutputView, len(ready))
+	views := make([]spi.OutputView, len(ready))
 	for i := range ready {
 		views[i] = node.NewOutputView(state.allOutputs)
 	}
@@ -317,7 +317,7 @@ func (engine *FlowEngine) runReadyNodes(
 	wg.Add(len(ready))
 
 	for i, readyNode := range ready {
-		go func(index int, n node.AnyNode, outputView node.OutputView) {
+		go func(index int, n node.AnyNode, outputView spi.OutputView) {
 			defer wg.Done()
 
 			result, err := engine.runNode(n, outputView, state)
@@ -335,9 +335,9 @@ func (engine *FlowEngine) runReadyNodes(
 
 func (engine *FlowEngine) runNode(
 	n node.AnyNode,
-	outputView node.OutputView,
+	outputView spi.OutputView,
 	state *executionState,
-) (node.AnyExecutionResult, error) {
+) (spi.AnyResult, error) {
 	nodeID := n.GetID()
 	displayName := n.GetDisplayName()
 	nodeType := n.GetType()
@@ -350,7 +350,7 @@ func (engine *FlowEngine) runNode(
 		Msg("Preparing node execution")
 
 	if err := engine.validateInputs(n, outputView); err != nil {
-		if n.GetRunWhen() == node.RunWhenAlways {
+		if n.GetRunWhen() == spi.RunWhenAlways {
 			state.skippedNodes[nodeID] = true
 			skipped := engine.createSkippedNodeResult(n, err, state)
 			engine.observer.NodeFinished(NodeFinishedEvent{
@@ -444,7 +444,7 @@ func (engine *FlowEngine) runNode(
 // retry middleware still re-runs the node when an assertion fails — the assertion
 // failure is part of the executed unit, not a post-chain step.
 func evalExecutor(n node.AnyNode) NodeExecutor {
-	return func(ec node.ExecutionContext) (node.AnyExecutionResult, error) {
+	return func(ec spi.ExecutionContext) (spi.AnyResult, error) {
 		res, execErr := n.Execute(ec)
 		if execErr != nil || res == nil {
 			return res, execErr
@@ -465,8 +465,8 @@ func evalExecutor(n node.AnyNode) NodeExecutor {
 // schema validation run only after all assertions pass; produced outputs are
 // merged into the result.
 func applyAssertionsAndOutputs(
-	n node.AnyNode, res node.AnyExecutionResult,
-) (node.AnyExecutionResult, error) {
+	n node.AnyNode, res spi.AnyResult,
+) (spi.AnyResult, error) {
 	provider, ok := res.(node.AssertionContextProvider)
 	if !ok {
 		return res, nil
@@ -526,7 +526,7 @@ func applyAssertionsAndOutputs(
 
 func (engine *FlowEngine) propagateNodeOutputs(
 	n node.AnyNode,
-	result node.AnyExecutionResult,
+	result spi.AnyResult,
 	state *executionState,
 ) {
 	outputs := result.GetOutputs()
@@ -554,9 +554,9 @@ func (engine *FlowEngine) propagateNodeOutputs(
 // flow's context, module resolver/executor, and dynamic vars.
 func (engine *FlowEngine) buildExecutionContext(
 	inputs map[string]any,
-	outputView node.OutputView,
-) node.ExecutionContext {
-	return node.ExecutionContext{
+	outputView spi.OutputView,
+) spi.ExecutionContext {
+	return spi.ExecutionContext{
 		Ctx:            engine.ctx,
 		Inputs:         inputs,
 		FlowInputs:     outputView.Node(""),
@@ -593,7 +593,7 @@ func (engine *FlowEngine) markNodeFailed(n node.AnyNode, state *executionState) 
 // real upstream was skipped stay blocked (and get skipped) rather than running.
 func (engine *FlowEngine) skipBlockedOnSuccessNodes(state *executionState) {
 	for _, currentNode := range engine.flow.Nodes {
-		if currentNode.GetRunWhen() != node.RunWhenOnSuccess {
+		if currentNode.GetRunWhen() != spi.RunWhenOnSuccess {
 			continue
 		}
 		if _, exists := state.remainingInputs[currentNode]; !exists {
@@ -669,7 +669,7 @@ func (engine *FlowEngine) finalizeExecution(state *executionState) error {
 func (engine *FlowEngine) skipFrontierAlwaysNodes(state *executionState) bool {
 	toSkip := make([]node.AnyNode, 0)
 	for _, currentNode := range engine.flow.Nodes {
-		if currentNode.GetRunWhen() != node.RunWhenAlways {
+		if currentNode.GetRunWhen() != spi.RunWhenAlways {
 			continue
 		}
 		if _, exists := state.remainingInputs[currentNode]; !exists {
@@ -700,7 +700,7 @@ func (engine *FlowEngine) hasRemainingAlwaysPredecessor(
 		if _, exists := state.remainingInputs[predecessor]; !exists {
 			continue
 		}
-		if predecessor.GetRunWhen() == node.RunWhenAlways {
+		if predecessor.GetRunWhen() == spi.RunWhenAlways {
 			return true
 		}
 	}

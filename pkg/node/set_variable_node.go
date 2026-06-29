@@ -5,6 +5,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 	"github.com/rs/zerolog/log"
 )
 
@@ -56,7 +57,7 @@ func (n *SetVariableNode) OutputSchema() []string {
 // Execute resolves every configured variable template against the node inputs
 // and dynamic variables, returning the resolved values as the node outputs. No
 // HTTP call or external side effect is performed.
-func (n *SetVariableNode) Execute(ctx ExecutionContext) (AnyExecutionResult, error) {
+func (n *SetVariableNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 	startTime := time.Now()
 
 	log.Debug().
@@ -81,10 +82,10 @@ func (n *SetVariableNode) Execute(ctx ExecutionContext) (AnyExecutionResult, err
 	}
 
 	result := &SetVariableExecutionResult{
-		BaseExecutionResult: BaseExecutionResult{
+		BaseExecutionResult: spi.BaseExecutionResult{
 			NodeID:      n.GetID(),
 			DisplayName: n.GetDisplayName(),
-			NodeType:    TypeSetVariable,
+			NodeType:    spi.KindSetVariable,
 			Inputs:      ctx.Inputs,
 			Outputs:     outputs,
 			ExecutedAt:  time.Now(),
@@ -105,15 +106,15 @@ func (n *SetVariableNode) createErrorResult(
 	inputs map[string]any,
 	err error,
 	startedAt time.Time,
-) AnyExecutionResult {
+) spi.AnyResult {
 	errMsg := err.Error()
 	errCode := "SET_VARIABLE_FAILED"
 
 	return &SetVariableExecutionResult{
-		BaseExecutionResult: BaseExecutionResult{
+		BaseExecutionResult: spi.BaseExecutionResult{
 			NodeID:      n.GetID(),
 			DisplayName: n.GetDisplayName(),
-			NodeType:    TypeSetVariable,
+			NodeType:    spi.KindSetVariable,
 			Inputs:      inputs,
 			Outputs:     nil,
 			Error:       err,

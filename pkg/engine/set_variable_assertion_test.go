@@ -7,6 +7,7 @@ import (
 	"github.com/nanostack-dev/echopoint-runner/pkg/engine"
 	"github.com/nanostack-dev/echopoint-runner/pkg/flow"
 	"github.com/nanostack-dev/echopoint-runner/pkg/node"
+	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -36,7 +37,7 @@ func newSetVariableAssertionNode(
 		BaseNode: node.BaseNode{
 			ID:          "set1",
 			DisplayName: "Set Variables",
-			NodeType:    node.TypeSetVariable,
+			NodeType:    spi.KindSetVariable,
 			Assertions:  assertions,
 		},
 		Data: node.SetVariableData{Variables: vars},

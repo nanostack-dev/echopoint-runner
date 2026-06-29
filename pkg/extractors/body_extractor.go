@@ -1,6 +1,7 @@
 package extractors
 
 import (
+	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 	"github.com/rs/zerolog/log"
 )
 
@@ -12,26 +13,26 @@ type BodyExtractor struct {
 
 func (e BodyExtractor) Extract(ctx ResponseContext) (any, error) {
 	log.Debug().
-		Str("extractorType", string(ExtractorTypeBody)).
+		Str("extractorType", string(spi.ExtractorTypeBody)).
 		Msg("Starting body extraction")
 
 	// Try to get parsed body first (most common case)
 	if pbr, ok := ctx.(ParsedBodyReader); ok {
 		body := pbr.GetParsedBody()
 		log.Debug().
-			Str("extractorType", string(ExtractorTypeBody)).
+			Str("extractorType", string(spi.ExtractorTypeBody)).
 			Msg("Body extracted successfully")
 		return body, nil
 	}
 
 	// If no parsed body, return nil with error
 	log.Error().
-		Str("extractorType", string(ExtractorTypeBody)).
+		Str("extractorType", string(spi.ExtractorTypeBody)).
 		Err(ErrNotImplemented).
 		Msg("Failed to extract body: ParsedBodyReader not supported")
 	return nil, ErrNotImplemented
 }
 
-func (e BodyExtractor) GetType() ExtractorType {
-	return ExtractorTypeBody
+func (e BodyExtractor) GetType() spi.ExtractorType {
+	return spi.ExtractorTypeBody
 }

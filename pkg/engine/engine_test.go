@@ -20,9 +20,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type staticModuleResolver map[string]node.ResolvedModuleFlow
+type staticModuleResolver map[string]spi.ResolvedModuleFlow
 
-func (r staticModuleResolver) ResolveFlow(flowID string) (node.ResolvedModuleFlow, bool) {
+func (r staticModuleResolver) ResolveFlow(flowID string) (spi.ResolvedModuleFlow, bool) {
 	resolved, ok := r[flowID]
 	return resolved, ok
 }
@@ -37,8 +37,8 @@ func init() {
 // MockNode is a test node that tracks execution (for legacy tests).
 type MockNode struct {
 	id          string
-	nodeType    node.Type
-	runWhen     node.RunWhen
+	nodeType    spi.Kind
+	runWhen     spi.RunWhen
 	executed    bool
 	shouldPass  bool
 	shouldError bool
@@ -52,13 +52,13 @@ func (n *MockNode) GetDisplayName() string {
 	return n.id
 }
 
-func (n *MockNode) GetType() node.Type {
+func (n *MockNode) GetType() spi.Kind {
 	return n.nodeType
 }
 
-func (n *MockNode) GetRunWhen() node.RunWhen {
+func (n *MockNode) GetRunWhen() spi.RunWhen {
 	if n.runWhen == "" {
-		return node.RunWhenOnSuccess
+		return spi.RunWhenOnSuccess
 	}
 	return n.runWhen
 }
@@ -79,7 +79,7 @@ func (n *MockNode) GetOutputs() []node.Output {
 	return []node.Output{}
 }
 
-func (n *MockNode) Execute(_ node.ExecutionContext) (node.AnyExecutionResult, error) {
+func (n *MockNode) Execute(_ spi.ExecutionContext) (spi.AnyResult, error) {
 	n.executed = true
 
 	outputs := map[string]any{}
@@ -89,7 +89,7 @@ func (n *MockNode) Execute(_ node.ExecutionContext) (node.AnyExecutionResult, er
 		err = errors.New("mock error")
 		errMsg := err.Error()
 		errCode := "MOCK_ERROR"
-		return &node.BaseExecutionResult{
+		return &spi.BaseExecutionResult{
 			NodeID:      n.id,
 			DisplayName: n.id,
 			NodeType:    n.nodeType,
@@ -102,7 +102,7 @@ func (n *MockNode) Execute(_ node.ExecutionContext) (node.AnyExecutionResult, er
 		}, err
 	}
 
-	return &node.BaseExecutionResult{
+	return &spi.BaseExecutionResult{
 		NodeID:      n.id,
 		DisplayName: n.id,
 		NodeType:    n.nodeType,
@@ -117,8 +117,8 @@ func (n *MockNode) Execute(_ node.ExecutionContext) (node.AnyExecutionResult, er
 // DataContractMockNode implements the full data contract interface for testing.
 type DataContractMockNode struct {
 	id          string
-	nodeType    node.Type
-	runWhen     node.RunWhen
+	nodeType    spi.Kind
+	runWhen     spi.RunWhen
 	inputDeps   []string
 	outputKeys  []string
 	outputs     map[string]any
@@ -134,13 +134,13 @@ func (n *DataContractMockNode) GetDisplayName() string {
 	return n.id
 }
 
-func (n *DataContractMockNode) GetType() node.Type {
+func (n *DataContractMockNode) GetType() spi.Kind {
 	return n.nodeType
 }
 
-func (n *DataContractMockNode) GetRunWhen() node.RunWhen {
+func (n *DataContractMockNode) GetRunWhen() spi.RunWhen {
 	if n.runWhen == "" {
-		return node.RunWhenOnSuccess
+		return spi.RunWhenOnSuccess
 	}
 	return n.runWhen
 }
@@ -153,7 +153,7 @@ func (n *DataContractMockNode) OutputSchema() []string {
 	return n.outputKeys
 }
 
-func (n *DataContractMockNode) Execute(ctx node.ExecutionContext) (node.AnyExecutionResult, error) {
+func (n *DataContractMockNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 	now := time.Now()
 	n.executedAt = &now
 
@@ -163,7 +163,7 @@ func (n *DataContractMockNode) Execute(ctx node.ExecutionContext) (node.AnyExecu
 			err := errors.New("missing required input: " + dep)
 			errMsg := err.Error()
 			errCode := "MISSING_INPUT"
-			return &node.BaseExecutionResult{
+			return &spi.BaseExecutionResult{
 				NodeID:      n.id,
 				DisplayName: n.id,
 				NodeType:    n.nodeType,
@@ -182,7 +182,7 @@ func (n *DataContractMockNode) Execute(ctx node.ExecutionContext) (node.AnyExecu
 		err := errors.New("intentional error in " + n.id)
 		errMsg := err.Error()
 		errCode := "INTENTIONAL_ERROR"
-		return &node.BaseExecutionResult{
+		return &spi.BaseExecutionResult{
 			NodeID:     n.id,
 			NodeType:   n.nodeType,
 			RunWhen:    n.GetRunWhen(),
@@ -195,7 +195,7 @@ func (n *DataContractMockNode) Execute(ctx node.ExecutionContext) (node.AnyExecu
 		}, err
 	}
 
-	return &node.BaseExecutionResult{
+	return &spi.BaseExecutionResult{
 		NodeID:      n.id,
 		DisplayName: n.id,
 		NodeType:    n.nodeType,
@@ -217,7 +217,7 @@ func (n *DataContractMockNode) GetOutputs() []node.Output {
 func newDataContractMockNode(id string, inputDeps, outputKeys []string) *DataContractMockNode {
 	return &DataContractMockNode{
 		id:         id,
-		nodeType:   node.TypeRequest,
+		nodeType:   spi.KindRequest,
 		inputDeps:  inputDeps,
 		outputKeys: outputKeys,
 		outputs:    make(map[string]any),
@@ -248,8 +248,8 @@ func (o *testObserver) FlowFinished(evt engine.FlowFinishedEvent) {
 }
 
 func TestNewFlowEngine_Success(t *testing.T) {
-	node1 := &MockNode{id: "node1", nodeType: node.TypeRequest, shouldPass: true}
-	node2 := &MockNode{id: "node2", nodeType: node.TypeRequest, shouldPass: true}
+	node1 := &MockNode{id: "node1", nodeType: spi.KindRequest, shouldPass: true}
+	node2 := &MockNode{id: "node2", nodeType: spi.KindRequest, shouldPass: true}
 
 	flowInstance := flow.Flow{
 		Name:        "Test Flow",
@@ -268,7 +268,7 @@ func TestNewFlowEngine_Success(t *testing.T) {
 }
 
 func TestNewFlowEngine_SourceNodeNotFound(t *testing.T) {
-	node1 := &MockNode{id: "node1", nodeType: node.TypeRequest, shouldPass: true}
+	node1 := &MockNode{id: "node1", nodeType: spi.KindRequest, shouldPass: true}
 
 	flowInstance := flow.Flow{
 		Name:  "Test Flow",
@@ -287,7 +287,7 @@ func TestNewFlowEngine_SourceNodeNotFound(t *testing.T) {
 }
 
 func TestNewFlowEngine_TargetNodeNotFound(t *testing.T) {
-	node1 := &MockNode{id: "node1", nodeType: node.TypeRequest, shouldPass: true}
+	node1 := &MockNode{id: "node1", nodeType: spi.KindRequest, shouldPass: true}
 
 	flowInstance := flow.Flow{
 		Name:  "Test Flow",
@@ -306,9 +306,9 @@ func TestNewFlowEngine_TargetNodeNotFound(t *testing.T) {
 }
 
 func TestFlowEngine_Execute_LinearFlow(t *testing.T) {
-	node1 := &MockNode{id: "node1", nodeType: node.TypeRequest, shouldPass: true}
-	node2 := &MockNode{id: "node2", nodeType: node.TypeRequest, shouldPass: true}
-	node3 := &MockNode{id: "node3", nodeType: node.TypeRequest, shouldPass: true}
+	node1 := &MockNode{id: "node1", nodeType: spi.KindRequest, shouldPass: true}
+	node2 := &MockNode{id: "node2", nodeType: spi.KindRequest, shouldPass: true}
+	node3 := &MockNode{id: "node3", nodeType: spi.KindRequest, shouldPass: true}
 
 	flowInstance := flow.Flow{
 		Name:  "Linear Flow",
@@ -333,9 +333,9 @@ func TestFlowEngine_Execute_LinearFlow(t *testing.T) {
 }
 
 func TestFlowEngine_Execute_ParallelFlow(t *testing.T) {
-	node1 := &MockNode{id: "node1", nodeType: node.TypeRequest, shouldPass: true}
-	node2 := &MockNode{id: "node2", nodeType: node.TypeRequest, shouldPass: true}
-	node3 := &MockNode{id: "node3", nodeType: node.TypeRequest, shouldPass: true}
+	node1 := &MockNode{id: "node1", nodeType: spi.KindRequest, shouldPass: true}
+	node2 := &MockNode{id: "node2", nodeType: spi.KindRequest, shouldPass: true}
+	node3 := &MockNode{id: "node3", nodeType: spi.KindRequest, shouldPass: true}
 
 	flowInstance := flow.Flow{
 		Name:  "Parallel Flow",
@@ -371,9 +371,9 @@ func TestFlowEngine_Execute_ParallelFlow(t *testing.T) {
 }
 
 func TestFlowEngine_Execute_BranchingFlow(t *testing.T) {
-	node1 := &MockNode{id: "node1", nodeType: node.TypeRequest, shouldPass: true}
-	node2 := &MockNode{id: "node2", nodeType: node.TypeRequest, shouldPass: true}
-	node3 := &MockNode{id: "node3", nodeType: node.TypeRequest, shouldPass: true}
+	node1 := &MockNode{id: "node1", nodeType: spi.KindRequest, shouldPass: true}
+	node2 := &MockNode{id: "node2", nodeType: spi.KindRequest, shouldPass: true}
+	node3 := &MockNode{id: "node3", nodeType: spi.KindRequest, shouldPass: true}
 
 	flowInstance := flow.Flow{
 		Name:  "Branching Flow",
@@ -398,9 +398,9 @@ func TestFlowEngine_Execute_BranchingFlow(t *testing.T) {
 }
 
 func TestFlowEngine_Execute_NodeFailsWithError(t *testing.T) {
-	node1 := &MockNode{id: "node1", nodeType: node.TypeRequest, shouldPass: true}
-	node2 := &MockNode{id: "node2", nodeType: node.TypeRequest, shouldError: true}
-	node3 := &MockNode{id: "node3", nodeType: node.TypeRequest, shouldPass: true}
+	node1 := &MockNode{id: "node1", nodeType: spi.KindRequest, shouldPass: true}
+	node2 := &MockNode{id: "node2", nodeType: spi.KindRequest, shouldError: true}
+	node3 := &MockNode{id: "node3", nodeType: spi.KindRequest, shouldPass: true}
 
 	flowInstance := flow.Flow{
 		Name:  "Error Flow",
@@ -491,7 +491,7 @@ func TestFlowEngine_Execute_AlwaysNodeRunsAfterMainFailure(t *testing.T) {
 	fail := newDataContractMockNode("fail", []string{"create.resourceId"}, nil)
 	fail.shouldError = true
 	cleanup := newDataContractMockNode("cleanup", []string{"create.resourceId"}, nil)
-	cleanup.runWhen = node.RunWhenAlways
+	cleanup.runWhen = spi.RunWhenAlways
 
 	flowInstance := flow.Flow{
 		Name:  "Always After Failure",
@@ -521,7 +521,7 @@ func TestFlowEngine_Execute_AlwaysNodeSkippedWhenInputsMissing(t *testing.T) {
 	fail := newDataContractMockNode("fail", nil, nil)
 	fail.shouldError = true
 	cleanup := newDataContractMockNode("cleanup", []string{"create.resourceId"}, nil)
-	cleanup.runWhen = node.RunWhenAlways
+	cleanup.runWhen = spi.RunWhenAlways
 
 	flowInstance := flow.Flow{
 		Name:    "Always Skipped",
@@ -575,14 +575,14 @@ func TestFlowEngine_Execute_AlwaysCleanupChainContinuesAfterIntermediateSkip(t *
 		},
 		nil,
 	)
-	deleteAPIKey.runWhen = node.RunWhenAlways
+	deleteAPIKey.runWhen = spi.RunWhenAlways
 
 	deleteProduct := newDataContractMockNode(
 		"step-delete-product",
 		[]string{"step-login.accessToken", "step-create-product.productId"},
 		nil,
 	)
-	deleteProduct.runWhen = node.RunWhenAlways
+	deleteProduct.runWhen = spi.RunWhenAlways
 
 	flowInstance := flow.Flow{
 		Name: "Platform API Key CRUD Cleanup",
@@ -657,14 +657,14 @@ func TestFlowEngine_Execute_AlwaysCleanupJoinRunsAfterUpstreamCleanupIsSkipped(t
 		[]string{"step-create-product.productId"},
 		nil,
 	)
-	deleteRole.runWhen = node.RunWhenAlways
+	deleteRole.runWhen = spi.RunWhenAlways
 
 	deleteProduct := newDataContractMockNode(
 		"step-delete-product",
 		[]string{"step-create-product.productId"},
 		nil,
 	)
-	deleteProduct.runWhen = node.RunWhenAlways
+	deleteProduct.runWhen = spi.RunWhenAlways
 
 	flowInstance := flow.Flow{
 		Name: "Cleanup Join After Skipped Upstream Cleanup",
@@ -732,8 +732,8 @@ func TestFlowEngine_Execute_NoNodes(t *testing.T) {
 }
 
 func TestFlowEngine_Execute_CycleDetection(t *testing.T) {
-	node1 := &MockNode{id: "node1", nodeType: node.TypeRequest, shouldPass: true}
-	node2 := &MockNode{id: "node2", nodeType: node.TypeRequest, shouldPass: true}
+	node1 := &MockNode{id: "node1", nodeType: spi.KindRequest, shouldPass: true}
+	node2 := &MockNode{id: "node2", nodeType: spi.KindRequest, shouldPass: true}
 
 	flowInstance := flow.Flow{
 		Name:  "Cyclic Flow",
@@ -756,8 +756,8 @@ func TestFlowEngine_Execute_CycleDetection(t *testing.T) {
 }
 
 func TestFlowEngine_Execute_WithObserver(t *testing.T) {
-	node1 := &MockNode{id: "node1", nodeType: node.TypeRequest, shouldPass: true}
-	node2 := &MockNode{id: "node2", nodeType: node.TypeRequest, shouldPass: true}
+	node1 := &MockNode{id: "node1", nodeType: spi.KindRequest, shouldPass: true}
+	node2 := &MockNode{id: "node2", nodeType: spi.KindRequest, shouldPass: true}
 
 	observer := &testObserver{}
 
@@ -1043,19 +1043,19 @@ func TestFlowEngine_Execute_ModuleNodeExportsNestedOutputs(t *testing.T) {
 	result, err := engine.ExecuteFlowDefinition(*parentFlow, map[string]any{
 		"customerId": "cust-123",
 		"currency":   "gbp",
-	}, &engine.ExecuteOptions{
+	}, &engine.Options{
 		ModuleResolver: resolver,
 	})
 	require.NoError(t, err)
 	require.True(t, result.Success)
 
-	chargeResult := node.MustAs[*node.ModuleExecutionResult](result.ExecutionResults["charge-customer"])
+	chargeResult := spi.MustAs[*node.ModuleExecutionResult](result.ExecutionResults["charge-customer"])
 	assert.Equal(t, "flow-charge", chargeResult.FlowID)
 	assert.Equal(t, "cust-123", chargeResult.GetInputs()["customerId"])
 	assert.Equal(t, "gbp", chargeResult.GetInputs()["currency"])
 	assert.Contains(t, chargeResult.ChildFinalOutputs, "create-charge.chargeId")
 
-	notifyResult := node.MustAs[*node.ModuleExecutionResult](result.ExecutionResults["notify-customer"])
+	notifyResult := spi.MustAs[*node.ModuleExecutionResult](result.ExecutionResults["notify-customer"])
 	assert.Equal(t, chargeResult.GetOutputs()["chargeId"], notifyResult.GetInputs()["charge-customer.chargeId"])
 	assert.Equal(t, chargeResult.GetOutputs()["status"], notifyResult.GetInputs()["charge-customer.status"])
 
@@ -1136,13 +1136,13 @@ func TestFlowEngine_Execute_ModuleNodeInheritsInputsAndAppliesOverrides(t *testi
 		"retryCount":    2,
 		"requestId":     "req-123",
 		"tokenOverride": "bound-token",
-	}, &engine.ExecuteOptions{
+	}, &engine.Options{
 		ModuleResolver: resolver,
 	})
 	require.NoError(t, err)
 	require.True(t, result.Success)
 
-	moduleResult := node.MustAs[*node.ModuleExecutionResult](result.ExecutionResults["run-module"])
+	moduleResult := spi.MustAs[*node.ModuleExecutionResult](result.ExecutionResults["run-module"])
 
 	assert.Equal(t, "req-123", moduleResult.GetInputs()["requestId"])
 	assert.Equal(t, "bound-token", moduleResult.GetInputs()["tokenOverride"])
@@ -1193,14 +1193,14 @@ func TestFlowEngine_Execute_ModuleNodeFailsWhenChildOutputBindingMissing(t *test
 		},
 	}
 
-	result, err := engine.ExecuteFlowDefinition(*parentFlow, map[string]any{}, &engine.ExecuteOptions{
+	result, err := engine.ExecuteFlowDefinition(*parentFlow, map[string]any{}, &engine.Options{
 		ModuleResolver: resolver,
 	})
 	require.Error(t, err)
 	require.False(t, result.Success)
 	assert.Contains(t, err.Error(), "module output \"missing\" references unavailable child output")
 
-	moduleResult := node.MustAs[*node.ModuleExecutionResult](result.ExecutionResults["module-step"])
+	moduleResult := spi.MustAs[*node.ModuleExecutionResult](result.ExecutionResults["module-step"])
 	require.Error(t, moduleResult.GetError())
 	assert.Equal(t, "flow-child", moduleResult.FlowID)
 }
@@ -1245,26 +1245,26 @@ func TestFlowEngine_Execute_ModuleNodeTrimsFlowID(t *testing.T) {
 		},
 	}
 
-	result, err := engine.ExecuteFlowDefinition(*parentFlow, map[string]any{}, &engine.ExecuteOptions{
+	result, err := engine.ExecuteFlowDefinition(*parentFlow, map[string]any{}, &engine.Options{
 		ModuleResolver: resolver,
 	})
 	require.NoError(t, err)
 	require.True(t, result.Success)
 
-	moduleResult := node.MustAs[*node.ModuleExecutionResult](result.ExecutionResults["module-step"])
+	moduleResult := spi.MustAs[*node.ModuleExecutionResult](result.ExecutionResults["module-step"])
 	assert.Equal(t, "flow-child", moduleResult.FlowID)
 	assert.Empty(t, moduleResult.GetOutputs())
 	assert.Empty(t, moduleResult.ChildFinalOutputs)
 }
 
 func TestFlowExecutionResultToPayload_IncludesModuleExecutionResult(t *testing.T) {
-	result := &node.FlowExecutionResult{
-		ExecutionResults: map[string]node.AnyExecutionResult{
+	result := &spi.FlowExecutionResult{
+		ExecutionResults: map[string]spi.AnyResult{
 			"charge-customer": &node.ModuleExecutionResult{
-				BaseExecutionResult: node.BaseExecutionResult{
+				BaseExecutionResult: spi.BaseExecutionResult{
 					NodeID:      "charge-customer",
 					DisplayName: "Charge Customer",
-					NodeType:    node.TypeModule,
+					NodeType:    spi.KindModule,
 					Inputs: map[string]any{
 						"customerId": "cust-123",
 					},
@@ -1295,7 +1295,7 @@ func TestFlowExecutionResultToPayload_IncludesModuleExecutionResult(t *testing.T
 	require.True(t, ok)
 	modulePayload, ok := executionResults["charge-customer"].(map[string]any)
 	require.True(t, ok)
-	assert.Equal(t, string(node.TypeModule), modulePayload["node_type"])
+	assert.Equal(t, string(spi.KindModule), modulePayload["node_type"])
 	assert.Equal(t, "flow-charge", modulePayload["flow_id"])
 	assert.Contains(t, modulePayload, "child_final_outputs")
 
@@ -1355,7 +1355,7 @@ func TestFlowEngine_Execute_ModuleFlowParseFailureIsUserError(t *testing.T) {
 		},
 	}
 
-	result, err := engine.ExecuteFlowDefinition(*parentFlow, map[string]any{}, &engine.ExecuteOptions{
+	result, err := engine.ExecuteFlowDefinition(*parentFlow, map[string]any{}, &engine.Options{
 		ModuleResolver: resolver,
 	})
 	require.Error(t, err)
@@ -1413,7 +1413,7 @@ func TestFlowEngine_Execute_ModuleNodeRejectsDirectCycle(t *testing.T) {
 		},
 	}
 
-	result, err := engine.ExecuteFlowDefinition(*parentFlow, map[string]any{}, &engine.ExecuteOptions{
+	result, err := engine.ExecuteFlowDefinition(*parentFlow, map[string]any{}, &engine.Options{
 		ModuleResolver: resolver,
 	})
 	require.Error(t, err)
@@ -1454,7 +1454,7 @@ func TestFlowEngine_Execute_ModuleReferenceNotFoundIsUserError(t *testing.T) {
 	// Resolver that knows about no referenced flows: the module reference dangles.
 	resolver := staticModuleResolver{}
 
-	result, err := engine.ExecuteFlowDefinition(*parentFlow, map[string]any{}, &engine.ExecuteOptions{
+	result, err := engine.ExecuteFlowDefinition(*parentFlow, map[string]any{}, &engine.Options{
 		ModuleResolver: resolver,
 	})
 	require.Error(t, err)
@@ -1526,7 +1526,7 @@ func TestFlowEngine_Execute_ModuleNodeRejectsIndirectCycle(t *testing.T) {
 		"flow-b": {FlowDefinition: flowBJSON},
 	}
 
-	result, err := engine.ExecuteFlowDefinition(*parentFlow, map[string]any{}, &engine.ExecuteOptions{
+	result, err := engine.ExecuteFlowDefinition(*parentFlow, map[string]any{}, &engine.Options{
 		ModuleResolver: resolver,
 	})
 	require.Error(t, err)
@@ -1632,7 +1632,7 @@ func TestFlowEngine_Execute_ModuleNodeRejectsIndirectCycleBeforeSideEffects(t *t
 		"flow-b": {FlowDefinition: flowBJSON},
 	}
 
-	result, err := engine.ExecuteFlowDefinition(*parentFlow, map[string]any{}, &engine.ExecuteOptions{
+	result, err := engine.ExecuteFlowDefinition(*parentFlow, map[string]any{}, &engine.Options{
 		ModuleResolver: resolver,
 	})
 	require.Error(t, err)
@@ -1700,11 +1700,11 @@ func TestFlowEngine_Execute_AssertNodeExplicitTargetOverUpstreamOutput(t *testin
 	parsed, err := flow.ParseFromJSON(flowJSON)
 	require.NoError(t, err)
 
-	result, err := engine.ExecuteFlowDefinition(*parsed, map[string]any{}, &engine.ExecuteOptions{})
+	result, err := engine.ExecuteFlowDefinition(*parsed, map[string]any{}, &engine.Options{})
 	require.NoError(t, err)
 	require.True(t, result.Success)
 
-	assertRes := node.MustAs[*node.AssertExecutionResult](result.ExecutionResults["verify"])
+	assertRes := spi.MustAs[*node.AssertExecutionResult](result.ExecutionResults["verify"])
 	require.Len(t, assertRes.AssertionResults, 1)
 	assert.True(t, assertRes.AssertionResults[0].Passed)
 }
@@ -1745,12 +1745,12 @@ func TestFlowEngine_Execute_AssertNodeOmittedTargetOverFlowInputs(t *testing.T) 
 	result, err := engine.ExecuteFlowDefinition(
 		*parsed,
 		map[string]any{"userId": "u-123"},
-		&engine.ExecuteOptions{},
+		&engine.Options{},
 	)
 	require.NoError(t, err)
 	require.True(t, result.Success)
 
-	assertRes := node.MustAs[*node.AssertExecutionResult](result.ExecutionResults["verify"])
+	assertRes := spi.MustAs[*node.AssertExecutionResult](result.ExecutionResults["verify"])
 	require.Len(t, assertRes.AssertionResults, 1)
 	assert.True(t, assertRes.AssertionResults[0].Passed)
 }
@@ -1807,12 +1807,12 @@ func TestFlowEngine_Execute_AssertNodeFailureSkipsDownstream(t *testing.T) {
 	result, err := engine.ExecuteFlowDefinition(
 		*parsed,
 		map[string]any{"userId": "actual"},
-		&engine.ExecuteOptions{},
+		&engine.Options{},
 	)
 	require.Error(t, err)
 	require.False(t, result.Success)
 
-	assertRes := node.MustAs[*node.AssertExecutionResult](result.ExecutionResults["verify"])
+	assertRes := spi.MustAs[*node.AssertExecutionResult](result.ExecutionResults["verify"])
 	require.Len(t, assertRes.AssertionResults, 1)
 	assert.False(t, assertRes.AssertionResults[0].Passed)
 	require.NotNil(t, assertRes.ErrorCode)

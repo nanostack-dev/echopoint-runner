@@ -4,16 +4,18 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
+
+	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 )
 
 //nolint:gochecknoglobals
 var (
-	extractorRegistry = make(map[ExtractorType]func([]byte) (AnyExtractor, error))
+	extractorRegistry = make(map[spi.ExtractorType]func([]byte) (AnyExtractor, error))
 	registryMutex     sync.RWMutex
 )
 
 // RegisterExtractor registers a factory function for an extractor type.
-func RegisterExtractor(extType ExtractorType, factory func([]byte) (AnyExtractor, error)) {
+func RegisterExtractor(extType spi.ExtractorType, factory func([]byte) (AnyExtractor, error)) {
 	registryMutex.Lock()
 	defer registryMutex.Unlock()
 	extractorRegistry[extType] = factory
@@ -24,7 +26,7 @@ func RegisterExtractor(extType ExtractorType, factory func([]byte) (AnyExtractor
 // package — so this is a pure lookup with no per-type switch to edit.
 func UnmarshalExtractor(data []byte) (AnyExtractor, error) {
 	var peek struct {
-		Type ExtractorType `json:"type"`
+		Type spi.ExtractorType `json:"type"`
 	}
 
 	if err := json.Unmarshal(data, &peek); err != nil {

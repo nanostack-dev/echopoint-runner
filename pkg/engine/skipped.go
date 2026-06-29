@@ -6,13 +6,14 @@ import (
 	"time"
 
 	"github.com/nanostack-dev/echopoint-runner/pkg/node"
+	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 )
 
 func (engine *FlowEngine) createSkippedNodeResult(
 	n node.AnyNode,
 	validationErr error,
 	state *executionState,
-) node.AnyExecutionResult {
+) spi.AnyResult {
 	skipReason, errorMessage, missingInputs := engine.describeSkipCause(n, state)
 	if validationErr != nil && validationErr.Error() != "" && skipReason == skipReasonNotReachable {
 		// Preserve a validator-supplied message when we have nothing better.
@@ -20,7 +21,7 @@ func (engine *FlowEngine) createSkippedNodeResult(
 	}
 	errorCode := "NODE_SKIPPED"
 
-	base := node.BaseExecutionResult{
+	base := spi.BaseExecutionResult{
 		NodeID:        n.GetID(),
 		DisplayName:   n.GetDisplayName(),
 		NodeType:      n.GetType(),
@@ -154,7 +155,7 @@ func (engine *FlowEngine) nodeDisplayName(nodeID string) string {
 	return nodeID
 }
 
-func (engine *FlowEngine) collectMissingInputs(n node.AnyNode, outputView node.OutputView) []string {
+func (engine *FlowEngine) collectMissingInputs(n node.AnyNode, outputView spi.OutputView) []string {
 	missing := []string{}
 	for _, inputKey := range n.InputSchema() {
 		sourceNodeID, outputKey, err := parseDataRef(inputKey)

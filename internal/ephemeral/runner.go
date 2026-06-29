@@ -8,8 +8,8 @@ import (
 	"github.com/nanostack-dev/echopoint-runner/internal/controlplane"
 	"github.com/nanostack-dev/echopoint-runner/pkg/dynamicvars"
 	flowpkg "github.com/nanostack-dev/echopoint-runner/pkg/flow"
-	"github.com/nanostack-dev/echopoint-runner/pkg/node"
 	"github.com/nanostack-dev/echopoint-runner/pkg/runner"
+	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 	"github.com/rs/zerolog/log"
 )
 
@@ -110,7 +110,7 @@ func failedResult(startedAt time.Time, errorMsg string, errorCode *string) Resul
 	}
 }
 
-func toPayload(result *node.FlowExecutionResult) (*map[string]any, error) {
+func toPayload(result *spi.FlowExecutionResult) (*map[string]any, error) {
 	payload, err := controlplane.FlowExecutionResultToPayload(result)
 	if err != nil {
 		return nil, err

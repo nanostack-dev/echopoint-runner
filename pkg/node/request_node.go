@@ -35,7 +35,7 @@ type RequestNode struct {
 	Data RequestData `json:"data"`
 
 	// dynamic resolves {{$name}} variables; set per execution, not serialized.
-	dynamic DynamicResolver
+	dynamic spi.DynamicResolver
 }
 
 // AsRequestNode safely casts an AnyNode to a RequestNode
@@ -69,7 +69,7 @@ func (n *RequestNode) OutputSchema() []string {
 	return si.InferRequestNodeOutputSchema(n.GetOutputs())
 }
 
-func (n *RequestNode) Execute(ctx ExecutionContext) (AnyExecutionResult, error) {
+func (n *RequestNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 	startTime := time.Now()
 	n.dynamic = ctx.DynamicVars
 
@@ -121,7 +121,7 @@ func (n *RequestNode) processResponse(
 	resp *http.Response,
 	respBody []byte,
 	startTime time.Time,
-) (AnyExecutionResult, error) {
+) (spi.AnyResult, error) {
 	parsedBody := n.parseResponseBody(resp.Header.Get("Content-Type"), respBody)
 	respCtx := extractors.NewResponseContext(resp, respBody, parsedBody)
 
@@ -150,10 +150,10 @@ func (n *RequestNode) createSuccessResult(
 	startTime time.Time,
 ) *RequestExecutionResult {
 	return &RequestExecutionResult{
-		BaseExecutionResult: BaseExecutionResult{
+		BaseExecutionResult: spi.BaseExecutionResult{
 			NodeID:      n.GetID(),
 			DisplayName: n.GetDisplayName(),
-			NodeType:    TypeRequest,
+			NodeType:    spi.KindRequest,
 			Inputs:      inputs,
 			Outputs:     map[string]any{},
 			ExecutedAt:  time.Now(),
@@ -176,7 +176,7 @@ func (n *RequestNode) createErrorResult(
 	inputs map[string]any,
 	err error,
 	duration time.Duration,
-) AnyExecutionResult {
+) spi.AnyResult {
 	errMsg := err.Error()
 	errCode := "REQUEST_FAILED"
 	// A classified UserError carries a clean, user-facing message and a stable
@@ -187,10 +187,10 @@ func (n *RequestNode) createErrorResult(
 	}
 
 	return &RequestExecutionResult{
-		BaseExecutionResult: BaseExecutionResult{
+		BaseExecutionResult: spi.BaseExecutionResult{
 			NodeID:      n.GetID(),
 			DisplayName: n.GetDisplayName(),
-			NodeType:    TypeRequest,
+			NodeType:    spi.KindRequest,
 			Inputs:      inputs,
 			Outputs:     nil,
 			Error:       err,
@@ -210,10 +210,10 @@ func (n *RequestNode) createResponseBackedErrorResult(
 	resp *http.Response,
 	respBody []byte,
 	parsedBody any,
-	assertionResults []AssertionResult,
+	assertionResults []spi.AssertionResult,
 	err error,
 	duration time.Duration,
-) AnyExecutionResult {
+) spi.AnyResult {
 	result := n.createErrorResult(inputs, err, duration)
 	reqResult, ok := result.(*RequestExecutionResult)
 	if !ok {

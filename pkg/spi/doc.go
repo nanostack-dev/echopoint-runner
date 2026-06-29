@@ -6,10 +6,9 @@
 //
 // spi depends on nothing inside echopoint-runner (only the standard library), so
 // it sits at the bottom of the import graph: pkg/node, pkg/extractors,
-// pkg/executionevents and pkg/engine all depend on spi, never the reverse. Those
-// packages re-export the spi types as back-compat aliases (e.g.
-// node.Type = spi.Kind), so existing call sites and the generated client keep
-// compiling while spi remains the single source of truth for the contract.
+// pkg/executionevents and pkg/engine all depend on spi, never the reverse. These
+// contract types are referenced directly as spi.* throughout the runner; spi is
+// the single source of truth, with no re-export or alias layer in between.
 //
 // The JSON struct tags and enum string values in this package are a cross-repo
 // contract; changing them is a breaking wire change.

@@ -18,9 +18,9 @@ import (
 
 type Options struct {
 	Observer        ExecutionObserver
-	ModuleResolver  node.ModuleResolver
+	ModuleResolver  spi.ModuleResolver
 	ModuleCallStack []string
-	DynamicVars     node.DynamicResolver
+	DynamicVars     spi.DynamicResolver
 	// Ctx is the request-scoped context propagated to every node execution for
 	// cancellation/deadlines. Nil is treated as context.Background().
 	Ctx context.Context
@@ -35,15 +35,15 @@ type FlowEngine struct {
 	nodeEdgeInput   map[node.AnyNode]int
 	nodeMap         map[string]node.AnyNode
 	observer        ExecutionObserver
-	moduleResolver  node.ModuleResolver
+	moduleResolver  spi.ModuleResolver
 	moduleCallStack []string
-	dynamicVars     node.DynamicResolver
+	dynamicVars     spi.DynamicResolver
 	ctx             context.Context
 	middleware      []Middleware
 }
 
 type moduleExecutor struct {
-	resolver  node.ModuleResolver
+	resolver  spi.ModuleResolver
 	callStack []string
 	ctx       context.Context
 }
@@ -55,7 +55,7 @@ type moduleExecutor struct {
 // debug — the same way it treats input-validation failures — instead of error,
 // which would otherwise inflate error metrics and trip error-rate alerts on a
 // user's invalid flow definition.
-func (e moduleExecutor) ExecuteModule(request node.ModuleExecutionRequest) (*node.FlowExecutionResult, error) {
+func (e moduleExecutor) ExecuteModule(request spi.ModuleExecutionRequest) (*spi.FlowExecutionResult, error) {
 	trimmedFlowID := strings.TrimSpace(request.FlowID)
 	if trimmedFlowID == "" {
 		return nil, spi.NewUserError("MODULE_FLOW_ID_REQUIRED", "module flow_id is required", nil)
@@ -76,7 +76,7 @@ func (e moduleExecutor) ExecuteModule(request node.ModuleExecutionRequest) (*nod
 		return nil, spi.NewUserError("MODULE_FLOW_PARSE_FAILED", "parse module flow", err)
 	}
 
-	return ExecuteFlowDefinition(*parsedFlow, request.Inputs, &ExecuteOptions{
+	return ExecuteFlowDefinition(*parsedFlow, request.Inputs, &Options{
 		ModuleResolver:  e.resolver,
 		ModuleCallStack: append(append([]string{}, e.callStack...), trimmedFlowID),
 		Ctx:             e.ctx,
@@ -195,35 +195,9 @@ func ctxFromOptions(options *Options) context.Context {
 	return context.Background()
 }
 
-// ctxFromExecuteOptions returns the context from execute options, defaulting to
-// context.Background() when unset.
-func ctxFromExecuteOptions(options *ExecuteOptions) context.Context {
-	if options != nil && options.Ctx != nil {
-		return options.Ctx
-	}
-	return context.Background()
-}
-
-// middlewareFromExecuteOptions returns the middleware chain from execute options,
-// or nil.
-func middlewareFromExecuteOptions(options *ExecuteOptions) []Middleware {
-	if options == nil {
-		return nil
-	}
-	return options.Middleware
-}
-
 // dynamicVarsFromOptions returns the dynamic-variable resolver from engine
 // options, or nil.
-func dynamicVarsFromOptions(options *Options) node.DynamicResolver {
-	if options == nil {
-		return nil
-	}
-	return options.DynamicVars
-}
-
-// dynamicVarsFromExecuteOptions returns the resolver from execute options, or nil.
-func dynamicVarsFromExecuteOptions(options *ExecuteOptions) node.DynamicResolver {
+func dynamicVarsFromOptions(options *Options) spi.DynamicResolver {
 	if options == nil {
 		return nil
 	}
@@ -231,9 +205,9 @@ func dynamicVarsFromExecuteOptions(options *ExecuteOptions) node.DynamicResolver
 }
 
 func (engine *FlowEngine) Execute(initialInputs map[string]any) (
-	*node.FlowExecutionResult, error,
+	*spi.FlowExecutionResult, error,
 ) {
-	return ExecuteFlowDefinition(engine.flow, initialInputs, &ExecuteOptions{
+	return ExecuteFlowDefinition(engine.flow, initialInputs, &Options{
 		Observer:        engine.observer,
 		ModuleResolver:  engine.moduleResolver,
 		ModuleCallStack: cloneStringSlice(engine.moduleCallStack),
@@ -243,34 +217,22 @@ func (engine *FlowEngine) Execute(initialInputs map[string]any) (
 	})
 }
 
-type ExecuteOptions struct {
-	Observer        ExecutionObserver
-	ModuleResolver  node.ModuleResolver
-	ModuleCallStack []string
-	DynamicVars     node.DynamicResolver
-	// Ctx is the request-scoped context propagated to node execution. Nil is
-	// treated as context.Background().
-	Ctx context.Context
-	// Middleware wraps each node's execution (retry/timeout/tracing). Outermost first.
-	Middleware []Middleware
-}
-
 func ExecuteFlowDefinition(
 	flowInstance flow.Flow,
 	initialInputs map[string]any,
-	options *ExecuteOptions,
-) (*node.FlowExecutionResult, error) {
+	options *Options,
+) (*spi.FlowExecutionResult, error) {
 	startTime := time.Now()
-	result := &node.FlowExecutionResult{
-		ExecutionResults: make(map[string]node.AnyExecutionResult),
+	result := &spi.FlowExecutionResult{
+		ExecutionResults: make(map[string]spi.AnyResult),
 		FinalOutputs:     make(map[string]any),
 		Success:          false,
 	}
 
 	if validateErr := validateModuleGraph(
 		flowInstance,
-		nilIfNoModuleResolver(options),
-		moduleCallStack(options),
+		nilIfNoModuleResolverFromOptions(options),
+		moduleCallStackFromOptions(options),
 	); validateErr != nil {
 		errMsg := validateErr.Error()
 		errCode := "FLOW_VALIDATION_FAILED"
@@ -281,18 +243,7 @@ func ExecuteFlowDefinition(
 		return result, validateErr
 	}
 
-	observer := ExecutionObserver(NoopObserver{})
-	if options != nil && options.Observer != nil {
-		observer = options.Observer
-	}
-	flowEngine, err := NewFlowEngine(flowInstance, &Options{
-		Observer:        observer,
-		ModuleResolver:  nilIfNoModuleResolver(options),
-		ModuleCallStack: moduleCallStack(options),
-		DynamicVars:     dynamicVarsFromExecuteOptions(options),
-		Ctx:             ctxFromExecuteOptions(options),
-		Middleware:      middlewareFromExecuteOptions(options),
-	})
+	flowEngine, err := NewFlowEngine(flowInstance, options)
 	if err != nil {
 		return nil, err
 	}
@@ -349,25 +300,11 @@ func ExecuteFlowDefinition(
 	return result, nil
 }
 
-func nilIfNoModuleResolver(options *ExecuteOptions) node.ModuleResolver {
+func nilIfNoModuleResolverFromOptions(options *Options) spi.ModuleResolver {
 	if options == nil {
 		return nil
 	}
 	return options.ModuleResolver
-}
-
-func nilIfNoModuleResolverFromOptions(options *Options) node.ModuleResolver {
-	if options == nil {
-		return nil
-	}
-	return options.ModuleResolver
-}
-
-func moduleCallStack(options *ExecuteOptions) []string {
-	if options == nil {
-		return nil
-	}
-	return cloneStringSlice(options.ModuleCallStack)
 }
 
 func moduleCallStackFromOptions(options *Options) []string {
@@ -401,7 +338,7 @@ func sortedInputKeys(inputs map[string]any) []string {
 
 // validateInputs checks that all required inputs for a node are available in allOutputs.
 func (engine *FlowEngine) validateInputs(
-	nodeToExecute node.AnyNode, allOutputs node.OutputView,
+	nodeToExecute node.AnyNode, allOutputs spi.OutputView,
 ) error {
 	for _, inputKey := range nodeToExecute.InputSchema() {
 		sourceNodeID, outputKey, err := parseDataRef(inputKey)
@@ -449,7 +386,7 @@ func (engine *FlowEngine) validateInputs(
 
 // assembleInputs gathers inputs for a node from previous outputs.
 func (engine *FlowEngine) assembleInputs(
-	nodeToExecute node.AnyNode, allOutputs node.OutputView,
+	nodeToExecute node.AnyNode, allOutputs spi.OutputView,
 ) map[string]any {
 	inputs := make(map[string]any)
 

@@ -12,7 +12,7 @@ import (
 
 	"github.com/nanostack-dev/echopoint-runner/pkg/engine"
 	"github.com/nanostack-dev/echopoint-runner/pkg/flow"
-	"github.com/nanostack-dev/echopoint-runner/pkg/node"
+	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 )
 
 // Options configures a Run. Use the With* helpers; the zero value runs with a
@@ -20,7 +20,7 @@ import (
 type Options struct {
 	Observer        engine.ExecutionObserver
 	ReferencedFlows flow.ReferencedFlowRegistry
-	DynamicVars     node.DynamicResolver
+	DynamicVars     spi.DynamicResolver
 	ModuleCallStack []string
 	Ctx             context.Context
 	Middleware      []engine.Middleware
@@ -42,7 +42,7 @@ func WithReferencedFlows(refs flow.ReferencedFlowRegistry) Option {
 }
 
 // WithDynamicVars enables {{$name}} dynamic variable resolution.
-func WithDynamicVars(d node.DynamicResolver) Option {
+func WithDynamicVars(d spi.DynamicResolver) Option {
 	return func(o *Options) { o.DynamicVars = d }
 }
 
@@ -68,13 +68,13 @@ func WithMiddleware(middleware ...engine.Middleware) Option {
 // (inputs win), resolves referenced flows into the module resolver, and runs the
 // engine. The returned result is the single source of truth; callers serialize
 // it as their transport requires.
-func Run(flowDef flow.Flow, inputs map[string]any, opts ...Option) (*node.FlowExecutionResult, error) {
+func Run(flowDef flow.Flow, inputs map[string]any, opts ...Option) (*spi.FlowExecutionResult, error) {
 	options := Options{Observer: engine.NoopObserver{}}
 	for _, opt := range opts {
 		opt(&options)
 	}
 
-	return engine.ExecuteFlowDefinition(flowDef, MergeInputs(flowDef.InitialInputs, inputs), &engine.ExecuteOptions{
+	return engine.ExecuteFlowDefinition(flowDef, MergeInputs(flowDef.InitialInputs, inputs), &engine.Options{
 		Observer:        options.Observer,
 		ModuleResolver:  ModuleResolver(options.ReferencedFlows),
 		ModuleCallStack: options.ModuleCallStack,
@@ -94,25 +94,25 @@ func MergeInputs(base, override map[string]any) map[string]any {
 }
 
 type referencedFlowResolver struct {
-	flows map[string]node.ResolvedModuleFlow
+	flows map[string]spi.ResolvedModuleFlow
 }
 
-func (r referencedFlowResolver) ResolveFlow(flowID string) (node.ResolvedModuleFlow, bool) {
+func (r referencedFlowResolver) ResolveFlow(flowID string) (spi.ResolvedModuleFlow, bool) {
 	resolved, ok := r.flows[flowID]
 	return resolved, ok
 }
 
-// ModuleResolver builds a node.ModuleResolver from referenced flows. Returns nil
+// ModuleResolver builds a spi.ModuleResolver from referenced flows. Returns nil
 // when there are none, which the engine treats as "no module targets". This is
 // the single implementation; it replaces the copies that lived in the cloud,
 // self-hosted, and ephemeral transports.
-func ModuleResolver(refs flow.ReferencedFlowRegistry) node.ModuleResolver {
+func ModuleResolver(refs flow.ReferencedFlowRegistry) spi.ModuleResolver {
 	if len(refs) == 0 {
 		return nil
 	}
-	resolved := make(map[string]node.ResolvedModuleFlow, len(refs))
+	resolved := make(map[string]spi.ResolvedModuleFlow, len(refs))
 	for flowID, ref := range refs {
-		resolved[flowID] = node.ResolvedModuleFlow{
+		resolved[flowID] = spi.ResolvedModuleFlow{
 			FlowDefinition: ref.FlowDefinition,
 			InputOverrides: cloneInputs(ref.InputOverrides),
 		}

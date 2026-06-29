@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/nanostack-dev/echopoint-runner/pkg/engine"
-	"github.com/nanostack-dev/echopoint-runner/pkg/node"
+	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 )
 
 // Retry re-runs a node up to attempts times while it returns an error, stopping
@@ -15,9 +15,9 @@ func Retry(attempts int) engine.Middleware {
 		attempts = 1
 	}
 	return func(next engine.NodeExecutor) engine.NodeExecutor {
-		return func(ec node.ExecutionContext) (node.AnyExecutionResult, error) {
+		return func(ec spi.ExecutionContext) (spi.AnyResult, error) {
 			var (
-				result node.AnyExecutionResult
+				result spi.AnyResult
 				err    error
 			)
 			for range attempts {
@@ -39,7 +39,7 @@ func Retry(attempts int) engine.Middleware {
 // the deadline elapses.
 func Timeout(d time.Duration) engine.Middleware {
 	return func(next engine.NodeExecutor) engine.NodeExecutor {
-		return func(ec node.ExecutionContext) (node.AnyExecutionResult, error) {
+		return func(ec spi.ExecutionContext) (spi.AnyResult, error) {
 			ctx, cancel := context.WithTimeout(ec.Context(), d)
 			defer cancel()
 			ec.Ctx = ctx

@@ -6,6 +6,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/nanostack-dev/echopoint-runner/pkg/extractors"
+	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 )
 
 // AssertionContextProvider is the optional interface a node RESULT implements to
@@ -24,8 +25,8 @@ type AssertionContextProvider interface {
 // every node delegates to it.
 func EvaluateAssertions(
 	assertions []CompositeAssertion, rc extractors.ResponseContext,
-) ([]AssertionResult, error) {
-	results := make([]AssertionResult, 0, len(assertions))
+) ([]spi.AssertionResult, error) {
+	results := make([]spi.AssertionResult, 0, len(assertions))
 	for i := range assertions {
 		res := assertions[i].Evaluate(rc)
 		res.Index = i
@@ -79,7 +80,7 @@ func ValidateOutputs(outputSchema []string, produced map[string]any) error {
 // so existing request-node test seams and call sites stay behavior-identical.
 func (n *RequestNode) runAssertions(
 	rc extractors.ResponseContext,
-) ([]AssertionResult, error) {
+) ([]spi.AssertionResult, error) {
 	assertions := n.GetAssertions()
 	log.Debug().
 		Str("nodeID", n.GetID()).

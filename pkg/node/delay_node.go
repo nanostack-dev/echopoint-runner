@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 	"github.com/rs/zerolog/log"
 )
 
@@ -29,7 +30,7 @@ func (n *DelayNode) OutputSchema() []string {
 }
 
 // Execute sleeps for the specified duration and returns a DelayExecutionResult.
-func (n *DelayNode) Execute(ctx ExecutionContext) (AnyExecutionResult, error) {
+func (n *DelayNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 	startTime := time.Now()
 	delayMs := n.Data.Duration
 
@@ -79,10 +80,10 @@ func (n *DelayNode) Execute(ctx ExecutionContext) (AnyExecutionResult, error) {
 	}
 
 	result := &DelayExecutionResult{
-		BaseExecutionResult: BaseExecutionResult{
+		BaseExecutionResult: spi.BaseExecutionResult{
 			NodeID:      n.GetID(),
 			DisplayName: n.GetDisplayName(),
-			NodeType:    TypeDelay,
+			NodeType:    spi.KindDelay,
 			Inputs:      ctx.Inputs,
 			Outputs:     outputs,
 			ExecutedAt:  time.Now(),

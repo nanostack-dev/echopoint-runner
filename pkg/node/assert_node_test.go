@@ -6,6 +6,7 @@ import (
 	"github.com/nanostack-dev/echopoint-runner/pkg/engine"
 	"github.com/nanostack-dev/echopoint-runner/pkg/flow"
 	node "github.com/nanostack-dev/echopoint-runner/pkg/node"
+	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -21,16 +22,16 @@ import (
 // execution error (non-nil when an assertion fails).
 func runAssertFlow(
 	t *testing.T, flowJSON []byte, inputKeys []string, inputs map[string]any,
-) (*node.FlowExecutionResult, *node.AssertExecutionResult, error) {
+) (*spi.FlowExecutionResult, *node.AssertExecutionResult, error) {
 	t.Helper()
 	parsed, err := flow.ParseFromJSONWithOptions(flowJSON, flow.ParseOptions{
 		AllowedInitialInputKeys: inputKeys,
 	})
 	require.NoError(t, err)
 
-	result, execErr := engine.ExecuteFlowDefinition(*parsed, inputs, &engine.ExecuteOptions{})
+	result, execErr := engine.ExecuteFlowDefinition(*parsed, inputs, &engine.Options{})
 	require.NotNil(t, result)
-	assertRes := node.MustAs[*node.AssertExecutionResult](result.ExecutionResults["verify"])
+	assertRes := spi.MustAs[*node.AssertExecutionResult](result.ExecutionResults["verify"])
 	return result, assertRes, execErr
 }
 
@@ -233,8 +234,8 @@ func TestAssertNode_DecodeViaUnmarshalNode(t *testing.T) {
 
 	n, err := node.UnmarshalNode([]byte(wire))
 	require.NoError(t, err)
-	assert.Equal(t, node.TypeAssert, n.GetType())
-	assert.Equal(t, node.RunWhenOnSuccess, n.GetRunWhen(), "run_when defaults to on_success")
+	assert.Equal(t, spi.KindAssert, n.GetType())
+	assert.Equal(t, spi.RunWhenOnSuccess, n.GetRunWhen(), "run_when defaults to on_success")
 
 	assertNode, ok := node.AsAssertNode(n)
 	require.True(t, ok)
@@ -244,8 +245,8 @@ func TestAssertNode_DecodeViaUnmarshalNode(t *testing.T) {
 	assert.Equal(t, []string{"flow.body"}, assertNode.InputSchema())
 
 	// Skipped result factory is registered for the kind.
-	skipped, ok := node.NewSkippedResult(node.TypeAssert, node.BaseExecutionResult{NodeID: "assert-decode"})
+	skipped, ok := node.NewSkippedResult(spi.KindAssert, spi.BaseExecutionResult{NodeID: "assert-decode"})
 	require.True(t, ok)
-	_, ok = node.As[*node.AssertExecutionResult](skipped)
+	_, ok = spi.As[*node.AssertExecutionResult](skipped)
 	assert.True(t, ok)
 }
