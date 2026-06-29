@@ -149,4 +149,17 @@ func init() {
 			return &BranchExecutionResult{BaseExecutionResult: base}
 		},
 	)
+	RegisterNodeKind(TypeSse,
+		func(data []byte) (AnyNode, error) {
+			var n SseNode
+			if err := json.Unmarshal(data, &n); err != nil {
+				return nil, err
+			}
+			applyRunWhenDefault(&n.BaseNode)
+			return &n, nil
+		},
+		func(base BaseExecutionResult) AnyExecutionResult {
+			return &SseExecutionResult{BaseExecutionResult: base}
+		},
+	)
 }

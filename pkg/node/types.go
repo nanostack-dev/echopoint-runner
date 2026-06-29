@@ -56,6 +56,7 @@ const (
 	TypePoll        = spi.KindPoll
 	TypeAssert      = spi.KindAssert
 	TypeBranch      = spi.KindBranch
+	TypeSse         = spi.KindSse
 )
 
 // RunWhen is re-exported from spi. Alias kept for back-compat.
@@ -242,6 +243,32 @@ type BranchExecutionResult struct {
 // this branch routed execution to.
 func (r *BranchExecutionResult) RoutedTargets() []string {
 	return r.RoutedTargetIDs
+}
+
+// SseExecutionResult stores SSE (Server-Sent Events) node execution data.
+type SseExecutionResult struct {
+	BaseExecutionResult
+
+	// RequestMethod and RequestURL capture the resolved connection details.
+	RequestMethod string `json:"request_method"`
+	RequestURL    string `json:"request_url"`
+
+	// Events holds every dispatched event's parsed data (JSON when the data was
+	// valid JSON, otherwise the raw string), in arrival order.
+	Events []any `json:"events"`
+	// EventCount is len(Events).
+	EventCount int `json:"event_count"`
+
+	// AssertionResults (every assertion evaluated across all events, pass or
+	// fail, with Index repurposed to carry the event index) is inherited from the
+	// embedded BaseExecutionResult so the wire shape stays uniform across nodes.
+
+	// StopReason records why streaming stopped (max_events, completion_event,
+	// timeout, eof, assertion_failure).
+	StopReason string `json:"stop_reason,omitempty"`
+
+	// Timing
+	DurationMs int64 `json:"duration_ms"`
 }
 
 // As safely casts an AnyExecutionResult to a concrete result type T

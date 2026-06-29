@@ -14,6 +14,7 @@ const (
 	KindPoll        Kind = "poll"
 	KindAssert      Kind = "assert"
 	KindBranch      Kind = "branch"
+	KindSse         Kind = "sse"
 )
 
 // RunWhen controls whether a node runs only on the success path or also after
