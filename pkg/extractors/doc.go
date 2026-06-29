@@ -3,7 +3,7 @@
 // code, a header.
 //
 // One typed extractor per type behind the AnyExtractor interface, dispatched
-// through a registry: RegisterExtractor binds an ExtractorType to a factory that
+// through a registry: RegisterExtractor binds an spi.ExtractorType to a factory that
 // decodes the extractor's JSON config into its concrete struct, and
 // UnmarshalExtractor peeks the wire "type" field to pick the factory. Adding an
 // extractor = a new struct + RegisterExtractor from an init() — no switch to

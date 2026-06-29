@@ -1,12 +1,14 @@
 package node
 
+import "github.com/nanostack-dev/echopoint-runner/pkg/spi"
+
 // Fluent constructors for building nodes in Go (tests, the CLI, embedded users)
 // instead of hand-writing JSON. Each returns the concrete node, which satisfies
 // AnyNode, so they compose with flow.Builder.
 
 // NewRequest starts a request node with the given id.
 func NewRequest(id string) *RequestNode {
-	return &RequestNode{BaseNode: BaseNode{ID: id, NodeType: TypeRequest}}
+	return &RequestNode{BaseNode: BaseNode{ID: id, NodeType: spi.KindRequest}}
 }
 
 // DisplayName sets the human-readable name.
@@ -72,14 +74,14 @@ func (n *RequestNode) Output(output Output) *RequestNode {
 
 // Always marks the node to run in the cleanup phase even after a main-phase failure.
 func (n *RequestNode) Always() *RequestNode {
-	n.BaseNode.RunWhen = RunWhenAlways
+	n.BaseNode.RunWhen = spi.RunWhenAlways
 	return n
 }
 
 // NewDelay starts a delay node that waits durationMs milliseconds.
 func NewDelay(id string, durationMs int) *DelayNode {
 	return &DelayNode{
-		BaseNode: BaseNode{ID: id, NodeType: TypeDelay},
+		BaseNode: BaseNode{ID: id, NodeType: spi.KindDelay},
 		Data:     DelayData{Duration: durationMs},
 	}
 }
@@ -92,7 +94,7 @@ func (n *DelayNode) DisplayName(name string) *DelayNode {
 
 // Always marks the delay to run in the cleanup phase.
 func (n *DelayNode) Always() *DelayNode {
-	n.BaseNode.RunWhen = RunWhenAlways
+	n.BaseNode.RunWhen = spi.RunWhenAlways
 	return n
 }
 

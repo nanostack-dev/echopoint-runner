@@ -10,6 +10,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/nanostack-dev/echopoint-runner/pkg/extractors"
+	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 )
 
 // LoopData configures a foreach loop node.
@@ -18,7 +19,7 @@ type LoopData struct {
 	// iterated over and the body sub-flow is run once per element.
 	Items any `json:"items"`
 	// Body is an inline flow definition ({"nodes":[...],"edges":[...]}) executed
-	// once per iteration via the shared ModuleExecutor.
+	// once per iteration via the shared spi.ModuleExecutor.
 	Body json.RawMessage `json:"body"`
 	// ItemVar is the FlowInputs key the current item is injected under (default "item").
 	ItemVar string `json:"item_var"`
@@ -119,7 +120,7 @@ func (n *LoopNode) OutputSchema() []string {
 // Execute resolves the items array and runs the body sub-flow once per item,
 // injecting item/index into the child flow inputs and aggregating per-iteration
 // final outputs into a results array.
-func (n *LoopNode) Execute(ctx ExecutionContext) (AnyExecutionResult, error) {
+func (n *LoopNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 	startTime := time.Now()
 
 	if ctx.ModuleExecutor == nil {
@@ -160,7 +161,7 @@ func (n *LoopNode) Execute(ctx ExecutionContext) (AnyExecutionResult, error) {
 		childInputs[n.itemVar()] = item
 		childInputs[n.indexVar()] = i
 
-		res, iterErr := ctx.ModuleExecutor.ExecuteModule(ModuleExecutionRequest{
+		res, iterErr := ctx.ModuleExecutor.ExecuteModule(spi.ModuleExecutionRequest{
 			FlowID:         n.GetID() + "#iter",
 			FlowDefinition: n.Data.Body,
 			Inputs:         childInputs,
@@ -200,10 +201,10 @@ func (n *LoopNode) Execute(ctx ExecutionContext) (AnyExecutionResult, error) {
 		Msg("Loop node executed successfully")
 
 	return &LoopExecutionResult{
-		BaseExecutionResult: BaseExecutionResult{
+		BaseExecutionResult: spi.BaseExecutionResult{
 			NodeID:      n.GetID(),
 			DisplayName: n.GetDisplayName(),
-			NodeType:    TypeLoop,
+			NodeType:    spi.KindLoop,
 			Inputs:      ctx.Inputs,
 			Outputs:     outputs,
 			ExecutedAt:  time.Now(),
@@ -237,15 +238,15 @@ func (n *LoopNode) createErrorResult(
 	err error,
 	startedAt time.Time,
 	iterations int,
-) AnyExecutionResult {
+) spi.AnyResult {
 	errMsg := err.Error()
 	errCode := "LOOP_FAILED"
 
 	return &LoopExecutionResult{
-		BaseExecutionResult: BaseExecutionResult{
+		BaseExecutionResult: spi.BaseExecutionResult{
 			NodeID:      n.GetID(),
 			DisplayName: n.GetDisplayName(),
-			NodeType:    TypeLoop,
+			NodeType:    spi.KindLoop,
 			Inputs:      inputs,
 			Outputs:     nil,
 			Error:       err,

@@ -12,6 +12,7 @@ import (
 	httpextractors "github.com/nanostack-dev/echopoint-runner/pkg/extractors/http"
 	"github.com/nanostack-dev/echopoint-runner/pkg/flow"
 	"github.com/nanostack-dev/echopoint-runner/pkg/node"
+	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -44,7 +45,7 @@ func TestSimpleParseFromJson(t *testing.T) {
 
 			assert.Equal(t, "req-1", reqNode.GetID(), "request node 1 id should match")
 			assert.Equal(
-				t, node.TypeRequest, reqNode.GetType(), "request node 1 type should be request",
+				t, spi.KindRequest, reqNode.GetType(), "request node 1 type should be request",
 			)
 
 			data := reqNode.GetData()
@@ -105,7 +106,7 @@ func TestSimpleParseFromJson(t *testing.T) {
 
 			assert.Equal(t, "req-success", reqNode.GetID(), "success node id should match")
 			assert.Equal(
-				t, node.TypeRequest, reqNode.GetType(), "success node type should be request",
+				t, spi.KindRequest, reqNode.GetType(), "success node type should be request",
 			)
 
 			data := reqNode.GetData()
@@ -139,7 +140,7 @@ func TestSimpleParseFromJson(t *testing.T) {
 
 			assert.Equal(t, "req-error", reqNode.GetID(), "error node id should match")
 			assert.Equal(
-				t, node.TypeRequest, reqNode.GetType(), "error node type should be request",
+				t, spi.KindRequest, reqNode.GetType(), "error node type should be request",
 			)
 
 			data := reqNode.GetData()

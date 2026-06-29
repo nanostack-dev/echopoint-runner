@@ -9,6 +9,7 @@ import (
 
 	"github.com/nanostack-dev/echopoint-runner/pkg/extractors"
 	"github.com/nanostack-dev/echopoint-runner/pkg/node"
+	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 )
 
 // fakeCtx implements the ResponseContext capability interfaces used by the
@@ -258,7 +259,7 @@ func TestAssertionResults_SerializeInPayload(t *testing.T) {
 	}
 	// Mirror how the result is held: an interface value carrying the concrete type.
 	var held any = &node.RequestExecutionResult{
-		BaseExecutionResult: node.BaseExecutionResult{AssertionResults: results},
+		BaseExecutionResult: spi.BaseExecutionResult{AssertionResults: results},
 	}
 	encoded, err := json.Marshal(held)
 	if err != nil {

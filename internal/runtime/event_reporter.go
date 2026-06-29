@@ -9,7 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/nanostack-dev/echopoint-runner/internal/controlplane"
 	"github.com/nanostack-dev/echopoint-runner/pkg/engine"
-	"github.com/nanostack-dev/echopoint-runner/pkg/executionevents"
+	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 	"github.com/rs/zerolog/log"
 )
 
@@ -100,7 +100,7 @@ func (r *jobEventReporter) LastSequencePtr() *int64 {
 
 func (r *jobEventReporter) FlowStarted(evt engine.FlowStartedEvent) {
 	r.flowName = evt.FlowName
-	if err := r.enqueue(string(executionevents.FlowStarted), flowStartedPayload{
+	if err := r.enqueue(string(spi.EventFlowStarted), flowStartedPayload{
 		ExecutionID: r.executionID.String(),
 		FlowName:    evt.FlowName,
 		Timestamp:   evt.StartedAt.Format(time.RFC3339),
@@ -110,7 +110,7 @@ func (r *jobEventReporter) FlowStarted(evt engine.FlowStartedEvent) {
 }
 
 func (r *jobEventReporter) NodeStarted(evt engine.NodeStartedEvent) {
-	if err := r.enqueue(string(executionevents.NodeStarted), nodeStartedPayload{
+	if err := r.enqueue(string(spi.EventNodeStarted), nodeStartedPayload{
 		NodeID:      evt.NodeID,
 		DisplayName: evt.DisplayName,
 		NodeType:    string(evt.NodeType),
@@ -136,12 +136,12 @@ func (r *jobEventReporter) NodeFinished(evt engine.NodeFinishedEvent) {
 	// too, so assertion results and response detail survive.
 	payload.Result = evt.Result
 
-	eventType := executionevents.NodeCompleted
+	eventType := spi.EventNodeCompleted
 	if evt.Result != nil && evt.Result.GetError() == nil {
 		succeeded := true
 		payload.Success = &succeeded
 	} else {
-		eventType = executionevents.NodeFailed
+		eventType = spi.EventNodeFailed
 		if evt.Result != nil && evt.Result.GetError() != nil {
 			payload.Error = evt.Result.GetError().Error()
 		} else {
@@ -227,7 +227,7 @@ func (r *jobEventReporter) enqueue(eventType string, payload any) error {
 	r.nextSequence++
 	event := controlplane.RunnerProgressEvent{
 		Sequence: r.nextSequence,
-		Type:     executionevents.Type(eventType),
+		Type:     spi.EventType(eventType),
 		Payload:  payload,
 	}
 	r.pending = append(r.pending, event)

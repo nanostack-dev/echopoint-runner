@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/nanostack-dev/echopoint-runner/pkg/node"
+	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 )
 
 func jsonResponse(status int, body string) (*http.Response, []byte) {
@@ -25,14 +26,14 @@ func jsonResponse(status int, body string) (*http.Response, []byte) {
 // error. processResponse itself no longer runs assertions — the engine drives
 // them — so these node-level tests exercise that exact pass against a request
 // result without standing up a full flow.
-func applyEnginePass(n *node.RequestNode, res node.AnyExecutionResult) error {
+func applyEnginePass(n *node.RequestNode, res spi.AnyResult) error {
 	provider, ok := res.(node.AssertionContextProvider)
 	if !ok {
 		return nil
 	}
 	rc := provider.AssertionContext()
 	failer := res.(interface {
-		SetAssertionResults([]node.AssertionResult)
+		SetAssertionResults([]spi.AssertionResult)
 		Fail(error, string)
 		MergeOutputs(map[string]any)
 	})
@@ -71,7 +72,7 @@ func TestProcessResponse_SuccessRecordsAssertions(t *testing.T) {
 	if passErr := applyEnginePass(n, result); passErr != nil {
 		t.Fatalf("unexpected engine-pass err: %v", passErr)
 	}
-	req, ok := node.As[*node.RequestExecutionResult](result)
+	req, ok := spi.As[*node.RequestExecutionResult](result)
 	if !ok {
 		t.Fatalf("expected a request result, got %T", result)
 	}
@@ -96,7 +97,7 @@ func TestProcessResponse_AssertionFailureIsResponseBacked(t *testing.T) {
 	if passErr := applyEnginePass(n, result); passErr == nil {
 		t.Fatal("expected the failing assertion to fail the node via the engine pass")
 	}
-	req, ok := node.As[*node.RequestExecutionResult](result)
+	req, ok := spi.As[*node.RequestExecutionResult](result)
 	if !ok {
 		t.Fatalf("expected a response-backed request result, got %T", result)
 	}

@@ -3,12 +3,12 @@ package engine
 import (
 	"slices"
 
-	"github.com/nanostack-dev/echopoint-runner/pkg/node"
+	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 )
 
 // NodeExecutor runs a single node and returns its result. It is the unit that
 // Middleware wraps.
-type NodeExecutor func(node.ExecutionContext) (node.AnyExecutionResult, error)
+type NodeExecutor func(spi.ExecutionContext) (spi.AnyResult, error)
 
 // Middleware wraps a NodeExecutor to add cross-cutting behavior — retry,
 // timeout, tracing, circuit-breaking — without baking it into node code. The

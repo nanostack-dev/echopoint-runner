@@ -13,6 +13,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/nanostack-dev/echopoint-runner/pkg/extractors"
+	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 )
 
 const (
@@ -72,7 +73,7 @@ type SseNode struct {
 	Data SseData `json:"data"`
 
 	// dynamic resolves {{$name}} variables; set per execution, not serialized.
-	dynamic DynamicResolver
+	dynamic spi.DynamicResolver
 }
 
 // AsSseNode safely casts an AnyNode to an SseNode.
@@ -134,7 +135,7 @@ func (n *SseNode) stopOnAssertionFailure() bool {
 // Execute connects to the SSE endpoint and consumes events until a stop
 // condition is met. On any failure it returns a populated result plus the error
 // so the engine records a failed node.
-func (n *SseNode) Execute(ctx ExecutionContext) (AnyExecutionResult, error) {
+func (n *SseNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 	startTime := time.Now()
 	n.dynamic = ctx.DynamicVars
 
@@ -251,7 +252,7 @@ type sseParser struct {
 	eventName        string
 	haveData         bool
 	events           []any
-	assertionResults []AssertionResult
+	assertionResults []spi.AssertionResult
 }
 
 // feed processes one stream line. It returns a stop reason (empty when the
@@ -333,7 +334,7 @@ func contextDone(ctx context.Context) bool {
 // assertion failure with stop_on_assertion_failure).
 func (n *SseNode) consume(
 	ctx context.Context, body io.Reader,
-) ([]any, []AssertionResult, string, error) {
+) ([]any, []spi.AssertionResult, string, error) {
 	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, 0, sseScannerInitBytes), sseScannerBufferBytes)
 
@@ -376,7 +377,7 @@ func (n *SseNode) consume(
 // so callers can attribute the assertion to the event that produced it.
 // Evaluation stops at the first failing/erroring assertion (which IS recorded)
 // and the error is returned.
-func (n *SseNode) evaluateEventAssertions(parsed any, eventIndex int) ([]AssertionResult, error) {
+func (n *SseNode) evaluateEventAssertions(parsed any, eventIndex int) ([]spi.AssertionResult, error) {
 	assertions := n.GetAssertions()
 	if len(assertions) == 0 {
 		return nil, nil
@@ -428,7 +429,7 @@ func (n *SseNode) createSuccessResult(
 	inputs map[string]any,
 	method, url string,
 	events []any,
-	assertionResults []AssertionResult,
+	assertionResults []spi.AssertionResult,
 	stopReason string,
 	startTime time.Time,
 ) *SseExecutionResult {
@@ -443,10 +444,10 @@ func (n *SseNode) createSuccessResult(
 	}
 
 	return &SseExecutionResult{
-		BaseExecutionResult: BaseExecutionResult{
+		BaseExecutionResult: spi.BaseExecutionResult{
 			NodeID:           n.GetID(),
 			DisplayName:      n.GetDisplayName(),
-			NodeType:         TypeSse,
+			NodeType:         spi.KindSse,
 			Inputs:           inputs,
 			Outputs:          outputs,
 			ExecutedAt:       time.Now(),
@@ -465,11 +466,11 @@ func (n *SseNode) createErrorResult(
 	inputs map[string]any,
 	method, url string,
 	events []any,
-	assertionResults []AssertionResult,
+	assertionResults []spi.AssertionResult,
 	stopReason string,
 	err error,
 	startTime time.Time,
-) AnyExecutionResult {
+) spi.AnyResult {
 	errMsg := err.Error()
 	errCode := "SSE_FAILED"
 
@@ -481,10 +482,10 @@ func (n *SseNode) createErrorResult(
 		Msg("SSE node execution failed")
 
 	return &SseExecutionResult{
-		BaseExecutionResult: BaseExecutionResult{
+		BaseExecutionResult: spi.BaseExecutionResult{
 			NodeID:           n.GetID(),
 			DisplayName:      n.GetDisplayName(),
-			NodeType:         TypeSse,
+			NodeType:         spi.KindSse,
 			Inputs:           inputs,
 			Outputs:          nil,
 			Error:            err,

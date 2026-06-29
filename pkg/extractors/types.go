@@ -9,20 +9,8 @@ import (
 
 type AnyExtractor interface {
 	Extract(ctx ResponseContext) (any, error)
-	GetType() ExtractorType
+	GetType() spi.ExtractorType
 }
-
-// ExtractorType is re-exported from spi (the L0 contract). Alias kept for back-compat.
-type ExtractorType = spi.ExtractorType
-
-// Built-in extractor types (re-exported from spi).
-const (
-	ExtractorTypeJSONPath   = spi.ExtractorTypeJSONPath
-	ExtractorTypeXMLPath    = spi.ExtractorTypeXMLPath
-	ExtractorTypeStatusCode = spi.ExtractorTypeStatusCode
-	ExtractorTypeHeader     = spi.ExtractorTypeHeader
-	ExtractorTypeBody       = spi.ExtractorTypeBody
-)
 
 var ErrNotImplemented = errors.New("extractor not implemented")
 

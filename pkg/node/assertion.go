@@ -7,16 +7,14 @@ import (
 	"github.com/nanostack-dev/echopoint-runner/pkg/extractors"
 	_ "github.com/nanostack-dev/echopoint-runner/pkg/extractors/http" // Register HTTP extractors in init()
 	"github.com/nanostack-dev/echopoint-runner/pkg/operators"
+	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 )
 
 // CompositeAssertion combines an extractor with an operator for validation.
 type CompositeAssertion struct {
 	Extractor     extractors.AnyExtractor `json:"-"`             // The actual extractor instance
-	Operator      any                     `json:"-"`             // The actual operator instance (for future use)
 	ExtractorType string                  `json:"extractorType"` // jsonPath, xmlPath, statusCode, header, body
-	ExtractorData any                     `json:"extractorData"` // Configuration for the extractor
 	OperatorType  operators.OperatorType  `json:"operatorType"`  // equals, contains, greaterThan, etc.
-	OperatorData  any                     `json:"operatorData"`  // Configuration for the operator
 	ExpectedValue any                     `json:"-"`             // Resolved expected value (operator_data.value)
 }
 
@@ -84,7 +82,6 @@ func (ca *CompositeAssertion) UnmarshalJSON(data []byte) error {
 			return fmt.Errorf("failed to unmarshal assertion operator data: %w", err)
 		}
 		ca.ExpectedValue = od.Value
-		ca.OperatorData = od
 	}
 
 	return nil
@@ -113,8 +110,8 @@ func synthesizeExtractorJSON(extractorType string, extractorData json.RawMessage
 // Actual possibly nil) when the extractor or operator errors. This is the single
 // evaluation entry point — it both decides pass/fail and captures what was
 // compared, so callers never re-derive the outcome.
-func (ca *CompositeAssertion) Evaluate(ctx extractors.ResponseContext) AssertionResult {
-	res := AssertionResult{
+func (ca *CompositeAssertion) Evaluate(ctx extractors.ResponseContext) spi.AssertionResult {
+	res := spi.AssertionResult{
 		Extractor: ca.ExtractorType,
 		Operator:  string(ca.OperatorType),
 		Expected:  ca.ExpectedValue,
