@@ -117,7 +117,7 @@ func (n *SseNode) InputSchema() []string {
 
 // OutputSchema returns the keys this node always produces.
 func (n *SseNode) OutputSchema() []string {
-	return []string{"events", "count", "last"}
+	return []string{"events", outputKeyCount, "last"}
 }
 
 func (n *SseNode) maxEvents() int {
@@ -447,9 +447,9 @@ func (n *SseNode) createSuccessResult(
 		last = events[len(events)-1]
 	}
 	outputs := map[string]any{
-		"events": events,
-		"count":  len(events),
-		"last":   last,
+		"events":       events,
+		outputKeyCount: len(events),
+		"last":         last,
 	}
 
 	return &SseExecutionResult{
