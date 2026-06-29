@@ -143,10 +143,14 @@ func TestEvaluate_Between(t *testing.T) {
 	}
 }
 
-func TestEvaluate_UnknownOperator(t *testing.T) {
-	ca := mkAssertion(t, "statusCode", "", "definitelyNotAnOperator", "1")
-	if r := ca.Evaluate(fakeCtx{status: 200}); r.Error == "" {
-		t.Fatalf("expected an error for an unknown operator, got %+v", r)
+// An unknown operator is rejected at decode time (mirroring the extractor
+// registry) rather than surfacing as an Evaluate error during execution.
+func TestUnmarshal_RejectsUnknownOperator(t *testing.T) {
+	raw := `{"extractor_type":"statusCode","extractor_data":{},` +
+		`"operator_type":"definitelyNotAnOperator","operator_data":{"value":"1"}}`
+	var ca node.CompositeAssertion
+	if err := json.Unmarshal([]byte(raw), &ca); err == nil {
+		t.Fatalf("expected unmarshal to reject unknown operator, got ca=%+v", ca)
 	}
 }
 
