@@ -271,6 +271,43 @@ func TestAssertOverInputs(t *testing.T) {
 	}
 }
 
+// TestLoopForeach proves the foreach loop: iterate a list resolved from a
+// template, run an inline body per item (item var injected), and expose the
+// aggregate count for the engine to assert on.
+func TestLoopForeach(t *testing.T) {
+	flowJSON := `{"name":"l","nodes":[{
+		"id":"each","type":"loop","items":"{{{nums}}}","item_var":"n",
+		"body":{"nodes":[{"id":"echo","type":"set_variable","variables":{"v":"{{n}}"}}],"edges":[]},
+		"assertions":[{"path":"count","op":"equals","expected":3}]
+	}],"edges":[]}`
+	f, err := flow.Parse([]byte(flowJSON))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	e := engine.New(node.Runtime{Clock: &fakeClock{}}, nil)
+	out, err := e.RunFlow(context.Background(), f, value.Map{"nums": value.Of([]any{10, 20, 30})})
+	if err != nil {
+		t.Fatalf("loop: %v", err)
+	}
+	cV, _ := out["each"].Get("count")
+	if c, ok := cV.Int(); !ok || c != 3 {
+		t.Fatalf("want count=3, got %v", c)
+	}
+}
+
+// TestLoopNonListErrors proves non-list items fail as a user error.
+func TestLoopNonListErrors(t *testing.T) {
+	flowJSON := `{"name":"l","nodes":[{
+		"id":"each","type":"loop","items":"{{{notalist}}}",
+		"body":{"nodes":[{"id":"echo","type":"set_variable","variables":{"v":"x"}}],"edges":[]}
+	}],"edges":[]}`
+	f, _ := flow.Parse([]byte(flowJSON))
+	e := engine.New(node.Runtime{Clock: &fakeClock{}}, nil)
+	if _, err := e.RunFlow(context.Background(), f, value.Map{"notalist": value.Of("scalar")}); err == nil {
+		t.Fatal("expected non-list items to fail")
+	}
+}
+
 // TestDirectNodeCall is a smoke test that the production wiring compiles.
 func TestDirectNodeCall(_ *testing.T) {
 	_ = nodes.DefaultRuntime()
