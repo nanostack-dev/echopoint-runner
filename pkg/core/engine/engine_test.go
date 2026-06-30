@@ -50,10 +50,12 @@ func TestRequestAssertOutput(t *testing.T) {
 		t.Fatalf("run: %v", err)
 	}
 
-	if uid, ok := out["call.uid"].Int(); !ok || uid != 7 {
+	uidV, _ := out["call"].Get("uid")
+	if uid, ok := uidV.Int(); !ok || uid != 7 {
 		t.Fatalf("extracted output call.uid: want 7, got %v (%v)", uid, out)
 	}
-	if status, ok := out["call.status"].Int(); !ok || status != http.StatusOK {
+	statusV, _ := out["call"].Get("status")
+	if status, ok := statusV.Int(); !ok || status != http.StatusOK {
 		t.Fatalf("node output call.status: want 200, got %v", status)
 	}
 }
@@ -94,7 +96,8 @@ func TestScheduling(t *testing.T) {
 	if clock.slept != 7*time.Millisecond {
 		t.Fatalf("both delays should run: want 7ms, got %v", clock.slept)
 	}
-	if got, _ := out["b.delayed_ms"].Int(); got != 4 {
+	bV, _ := out["b"].Get("delayed_ms")
+	if got, _ := bV.Int(); got != 4 {
 		t.Fatalf("want b.delayed_ms=4, got %v", got)
 	}
 }
@@ -119,7 +122,8 @@ func TestModuleRecursion(t *testing.T) {
 	if clock.slept != 5*time.Millisecond {
 		t.Fatalf("child delay should have run via recursion: got %v", clock.slept)
 	}
-	if got, ok := out["m.wait.delayed_ms"].Int(); !ok || got != 5 {
+	wV, _ := out["m"].Get("wait.delayed_ms")
+	if got, ok := wV.Int(); !ok || got != 5 {
 		t.Fatalf("child output should bubble up: want 5, got %v (%v)", got, out)
 	}
 }
@@ -157,6 +161,67 @@ func TestInterNodeTemplating(t *testing.T) {
 	e := engine.New(node.Runtime{HTTP: http.DefaultClient, Clock: &fakeClock{}}, nil)
 	if _, runErr := e.RunFlow(context.Background(), f, nil); runErr != nil {
 		t.Fatalf("templated auth flow failed (token did not resolve?): %v", runErr)
+	}
+}
+
+// TestPollUntil proves the self-evaluating loop: poll re-runs an inline body
+// flow until its exit condition passes. The server reports "pending" twice then
+// "done"; poll must stop on the 3rd attempt. The node calls assert.Run itself.
+func TestPollUntil(t *testing.T) {
+	var calls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		status := "pending"
+		if calls >= 3 {
+			status = "done"
+		}
+		_, _ = w.Write([]byte(`{"status":"` + status + `"}`))
+	}))
+	defer srv.Close()
+
+	flowJSON := `{"name":"p","nodes":[{
+		"id":"poll","type":"poll","interval_ms":1,"max_attempts":5,
+		"body":{"nodes":[{"id":"check","type":"request","url":"` + srv.URL + `",
+			"outputs":[{"name":"status","path":"status"}]}],"edges":[]},
+		"assertions":[{"path":"check.status","op":"equals","expected":"done"}]
+	}],"edges":[]}`
+	f, err := flow.Parse([]byte(flowJSON))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+
+	e := engine.New(node.Runtime{HTTP: http.DefaultClient, Clock: &fakeClock{}}, nil)
+	out, err := e.RunFlow(context.Background(), f, nil)
+	if err != nil {
+		t.Fatalf("poll: %v", err)
+	}
+	attV, _ := out["poll"].Get("attempts")
+	if a, ok := attV.Int(); !ok || a != 3 {
+		t.Fatalf("want 3 attempts, got %v", a)
+	}
+	if calls != 3 {
+		t.Fatalf("server hit %d times, want 3", calls)
+	}
+}
+
+// TestPollExhausts proves poll fails as a user error when the condition never
+// holds within the attempt budget.
+func TestPollExhausts(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"status":"pending"}`))
+	}))
+	defer srv.Close()
+
+	flowJSON := `{"name":"p","nodes":[{
+		"id":"poll","type":"poll","interval_ms":1,"max_attempts":2,
+		"body":{"nodes":[{"id":"check","type":"request","url":"` + srv.URL + `",
+			"outputs":[{"name":"status","path":"status"}]}],"edges":[]},
+		"assertions":[{"path":"check.status","op":"equals","expected":"done"}]
+	}],"edges":[]}`
+	f, _ := flow.Parse([]byte(flowJSON))
+	e := engine.New(node.Runtime{HTTP: http.DefaultClient, Clock: &fakeClock{}}, nil)
+	if _, err := e.RunFlow(context.Background(), f, nil); err == nil {
+		t.Fatal("expected poll to exhaust and fail")
 	}
 }
 

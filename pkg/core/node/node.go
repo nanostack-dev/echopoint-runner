@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/nanostack-dev/echopoint-runner/pkg/core/assert"
+	"github.com/nanostack-dev/echopoint-runner/pkg/core/flow"
 	"github.com/nanostack-dev/echopoint-runner/pkg/core/output"
 	"github.com/nanostack-dev/echopoint-runner/pkg/core/value"
 	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
@@ -67,11 +68,13 @@ type Clock interface {
 	Now() time.Time
 }
 
-// SubflowRunner runs a child flow by id and returns its outputs. The engine
+// SubflowRunner runs child flows and returns their outputs. The engine
 // satisfies this; injecting it (rather than importing the engine) keeps the
-// node package free of an import cycle and lets tests fake it.
+// node package free of an import cycle and lets tests fake it. module references
+// a flow by id; loop/poll run an inline body flow.
 type SubflowRunner interface {
 	RunSubflow(ctx context.Context, flowID string, in value.Map) (value.Map, error)
+	RunInline(ctx context.Context, f flow.Flow, in value.Map) (value.Map, error)
 }
 
 // Resolver resolves {{$dyn}} dynamic variables.
