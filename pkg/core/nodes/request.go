@@ -24,7 +24,7 @@ type RequestCfg struct {
 	Body    string            `json:"body,omitempty"`
 }
 
-func runRequest(ctx context.Context, cfg RequestCfg, rt node.Runtime) (node.Result, error) {
+func runRequest(ctx context.Context, cfg RequestCfg, _ value.Value, rt node.Runtime) (node.Result, error) {
 	method := cfg.Method
 	if method == "" {
 		method = http.MethodGet

@@ -32,7 +32,7 @@ type PollCfg struct {
 	TimeoutMs   int64           `json:"timeout_ms"`
 }
 
-func runPoll(ctx context.Context, cfg PollCfg, rt node.Runtime) (node.Result, error) {
+func runPoll(ctx context.Context, cfg PollCfg, _ value.Value, rt node.Runtime) (node.Result, error) {
 	if len(cfg.Assertions) == 0 {
 		return node.Result{}, fmt.Errorf("poll needs at least one exit condition: %w", node.ErrUser)
 	}

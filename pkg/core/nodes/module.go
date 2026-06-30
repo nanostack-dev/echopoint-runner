@@ -16,7 +16,7 @@ type ModuleCfg struct {
 	Body string `json:"body_flow_id"`
 }
 
-func runModule(ctx context.Context, cfg ModuleCfg, rt node.Runtime) (node.Result, error) {
+func runModule(ctx context.Context, cfg ModuleCfg, _ value.Value, rt node.Runtime) (node.Result, error) {
 	out, err := rt.Subflow.RunSubflow(ctx, cfg.Body, value.Map{})
 	if err != nil {
 		return node.Result{}, err
