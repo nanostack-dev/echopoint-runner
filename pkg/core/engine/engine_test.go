@@ -308,6 +308,60 @@ func TestLoopNonListErrors(t *testing.T) {
 	}
 }
 
+// TestBranchRoutes proves routing: the branch picks A, A runs, B is skipped.
+func TestBranchRoutes(t *testing.T) {
+	flowJSON := `{"name":"b","nodes":[
+		{"id":"route","type":"branch","cases":[
+			{"when":{"path":"x","op":"equals","expected":"a"},"target":"A"},
+			{"when":{"path":"x","op":"equals","expected":"b"},"target":"B"}]},
+		{"id":"A","type":"set_variable","variables":{"hit":"A"}},
+		{"id":"B","type":"set_variable","variables":{"hit":"B"}}],
+		"edges":[{"source":"route","target":"A"},{"source":"route","target":"B"}]}`
+	f, err := flow.Parse([]byte(flowJSON))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	e := engine.New(node.Runtime{Clock: &fakeClock{}}, nil)
+	out, err := e.RunFlow(context.Background(), f, value.Map{"x": value.Of("a")})
+	if err != nil {
+		t.Fatalf("branch: %v", err)
+	}
+	if _, ok := out["A"]; !ok {
+		t.Fatal("A should have run")
+	}
+	if _, ok := out["B"]; ok {
+		t.Fatal("B should have been skipped (routed away)")
+	}
+}
+
+// TestBranchSkipCascade proves the skip cascades: B is routed away, so B's child
+// B1 is skipped too.
+func TestBranchSkipCascade(t *testing.T) {
+	flowJSON := `{"name":"b","nodes":[
+		{"id":"route","type":"branch","default":"A",
+		 "cases":[{"when":{"path":"go","op":"equals","expected":"yes"},"target":"A"}]},
+		{"id":"A","type":"set_variable","variables":{"v":"a"}},
+		{"id":"B","type":"set_variable","variables":{"v":"b"}},
+		{"id":"B1","type":"set_variable","variables":{"v":"b1"}}],
+		"edges":[{"source":"route","target":"A"},{"source":"route","target":"B"},
+		         {"source":"B","target":"B1"}]}`
+	f, _ := flow.Parse([]byte(flowJSON))
+	e := engine.New(node.Runtime{Clock: &fakeClock{}}, nil)
+	out, err := e.RunFlow(context.Background(), f, value.Map{"go": value.Of("no")})
+	if err != nil {
+		t.Fatalf("branch: %v", err)
+	}
+	if _, ok := out["A"]; !ok {
+		t.Fatal("A (default) should have run")
+	}
+	if _, ok := out["B"]; ok {
+		t.Fatal("B should be skipped")
+	}
+	if _, ok := out["B1"]; ok {
+		t.Fatal("B1 should be skipped via cascade")
+	}
+}
+
 // TestDirectNodeCall is a smoke test that the production wiring compiles.
 func TestDirectNodeCall(_ *testing.T) {
 	_ = nodes.DefaultRuntime()
