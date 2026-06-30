@@ -81,7 +81,7 @@ func (e *Engine) RunFlow(ctx context.Context, f flow.Flow, inputs value.Map) (va
 	if ran != len(f.Nodes) {
 		return nil, fmt.Errorf("cycle or unreachable nodes: ran %d of %d", ran, len(f.Nodes))
 	}
-	return flatten(bus), nil
+	return collect(bus), nil
 }
 
 // runNode resolves the node's templates against the bus, decodes it into typed
@@ -132,15 +132,21 @@ func (e *Engine) RunSubflow(ctx context.Context, flowID string, in value.Map) (v
 	return e.RunFlow(pushStack(ctx, flowID), child, in)
 }
 
-func flatten(bus map[string]value.Map) value.Map {
-	out := value.Map{}
+// RunInline satisfies node.SubflowRunner for embedded body flows (loop, poll).
+func (e *Engine) RunInline(ctx context.Context, f flow.Flow, in value.Map) (value.Map, error) {
+	return e.RunFlow(ctx, f, in)
+}
+
+// collect nests each node's outputs under its id, so results are accessed by
+// path ("nodeID.key") uniformly — including a child flow's outputs when a
+// composite node asserts over them.
+func collect(bus map[string]value.Map) value.Map {
+	out := make(value.Map, len(bus))
 	for nodeID, m := range bus {
 		if nodeID == "" {
 			continue // the synthetic flow-inputs node is not a result
 		}
-		for k, v := range m {
-			out[nodeID+"."+k] = v
-		}
+		out[nodeID] = m.Value()
 	}
 	return out
 }

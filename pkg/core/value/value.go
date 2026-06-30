@@ -30,6 +30,17 @@ func JSON(b []byte) Value {
 // Map is a node's named outputs.
 type Map map[string]Value
 
+// Value boxes the map as a single Value so a collection of named outputs can be
+// asserted or extracted over by path — e.g. a child flow's outputs accessed as
+// "{childNode}.{key}".
+func (m Map) Value() Value {
+	raw := make(map[string]any, len(m))
+	for k, v := range m {
+		raw[k] = v.raw
+	}
+	return Value{raw: raw}
+}
+
 // IsZero reports whether the value is absent.
 func (v Value) IsZero() bool { return v.raw == nil }
 
