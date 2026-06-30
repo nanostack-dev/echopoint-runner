@@ -50,6 +50,10 @@ type Result struct {
 	// evaluated its own assertions in a loop (poll, sse); the engine then skips
 	// the post-step.
 	Assert value.Value
+	// Routed is set by routing nodes (branch): the successor ids execution was
+	// routed to. The engine skips every other successor (and its subtree). Nil
+	// for ordinary nodes — all successors run.
+	Routed []string
 }
 
 // Run is the node-author function: typed cfg + the node's input context (flow

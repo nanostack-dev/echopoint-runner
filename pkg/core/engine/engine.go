@@ -34,22 +34,30 @@ func New(deps node.Runtime, resolve func(string) (flow.Flow, bool)) *Engine {
 	return e
 }
 
-// RunFlow executes a flow and returns its outputs flattened as "nodeID.key".
+// RunFlow executes a flow and returns its outputs nested under each node id. The
+// scheduler is input-count topological with run-or-skip: a routing node (branch)
+// marks the successor edges it routed away from as dead, and any node left with
+// no live incoming edge is skipped — cascading the skip down its subtree.
 func (e *Engine) RunFlow(ctx context.Context, f flow.Flow, inputs value.Map) (value.Map, error) {
 	nodeByID := make(map[string]flow.Node, len(f.Nodes))
 	indeg := make(map[string]int, len(f.Nodes))
 	succ := make(map[string][]string, len(f.Nodes))
+	preds := make(map[string][]string, len(f.Nodes))
 	for _, n := range f.Nodes {
 		nodeByID[n.ID] = n
 		indeg[n.ID] = 0
 	}
 	for _, ed := range f.Edges {
 		succ[ed.From] = append(succ[ed.From], ed.To)
+		preds[ed.To] = append(preds[ed.To], ed.From)
 		indeg[ed.To]++
 	}
 
 	bus := make(map[string]value.Map, len(f.Nodes)+1)
 	bus[""] = inputs // flow inputs live under the synthetic empty-id node
+	done := make(map[string]bool, len(f.Nodes))
+	dead := make(map[string]map[string]bool)
+
 	ready := make([]string, 0, len(f.Nodes))
 	for id, d := range indeg {
 		if d == 0 {
@@ -58,30 +66,74 @@ func (e *Engine) RunFlow(ctx context.Context, f flow.Flow, inputs value.Map) (va
 	}
 	sort.Strings(ready)
 
-	ran := 0
+	processed := 0
 	for len(ready) > 0 {
 		id := ready[0]
 		ready = ready[1:]
+		processed++
+
+		if skipNode(preds[id], done, dead, id) {
+			releaseSuccessors(id, succ, indeg, &ready)
+			continue
+		}
 
 		res, err := e.runNode(ctx, nodeByID[id], bus)
 		if err != nil {
 			return nil, fmt.Errorf("node %s: %w", id, err)
 		}
 		bus[id] = res.Outputs
-		ran++
-
-		for _, s := range succ[id] {
-			indeg[s]--
-			if indeg[s] == 0 {
-				ready = append(ready, s)
-			}
-		}
-		sort.Strings(ready)
+		done[id] = true
+		recordRouting(id, res.Routed, succ[id], dead)
+		releaseSuccessors(id, succ, indeg, &ready)
 	}
-	if ran != len(f.Nodes) {
-		return nil, fmt.Errorf("cycle or unreachable nodes: ran %d of %d", ran, len(f.Nodes))
+	if processed != len(f.Nodes) {
+		return nil, fmt.Errorf("cycle or unreachable nodes: processed %d of %d", processed, len(f.Nodes))
 	}
 	return collect(bus), nil
+}
+
+// skipNode reports whether a node should be skipped: it has predecessors but no
+// live incoming edge — every predecessor was itself skipped, or routed away from
+// this node. Root nodes (no predecessors) always run.
+func skipNode(preds []string, done map[string]bool, dead map[string]map[string]bool, id string) bool {
+	if len(preds) == 0 {
+		return false
+	}
+	for _, p := range preds {
+		if done[p] && !dead[p][id] {
+			return false
+		}
+	}
+	return true
+}
+
+// recordRouting marks every successor a routing node did NOT route to as dead.
+func recordRouting(id string, routed, successors []string, dead map[string]map[string]bool) {
+	if routed == nil {
+		return // ordinary node — all successors run; a routing node sets a (possibly empty) slice
+	}
+	taken := make(map[string]bool, len(routed))
+	for _, t := range routed {
+		taken[t] = true
+	}
+	for _, s := range successors {
+		if !taken[s] {
+			if dead[id] == nil {
+				dead[id] = make(map[string]bool)
+			}
+			dead[id][s] = true
+		}
+	}
+}
+
+func releaseSuccessors(id string, succ map[string][]string, indeg map[string]int, ready *[]string) {
+	for _, s := range succ[id] {
+		indeg[s]--
+		if indeg[s] == 0 {
+			*ready = append(*ready, s)
+		}
+	}
+	sort.Strings(*ready)
 }
 
 // runNode resolves the node's templates against the bus, decodes it into typed
