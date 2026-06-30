@@ -124,8 +124,43 @@ func TestModuleRecursion(t *testing.T) {
 	}
 }
 
-// TestDefaultRuntimeWiring is a smoke test that the production wiring compiles
-// and a node function is directly callable with faked deps — no scaffolding.
+// TestInterNodeTemplating proves node B reads node A's output: login returns a
+// token, the second node uses {{login.token}} in its auth header, and the server
+// answers 200 only when the header is correct — so a passing flow proves the
+// template resolved against the bus.
+func TestInterNodeTemplating(t *testing.T) {
+	login := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"access_token": "xyz"}`))
+	}))
+	defer login.Close()
+	me := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer xyz" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		_, _ = w.Write([]byte(`{"ok": true}`))
+	}))
+	defer me.Close()
+
+	flowJSON := `{"name":"auth","nodes":[
+		{"id":"login","type":"request","method":"POST","url":"` + login.URL + `",
+		 "outputs":[{"name":"token","path":"access_token"}]},
+		{"id":"me","type":"request","method":"GET","url":"` + me.URL + `",
+		 "headers":{"Authorization":"Bearer {{login.token}}"},
+		 "assertions":[{"path":"ok","op":"equals","expected":true}]}],
+		"edges":[{"source":"login","target":"me"}]}`
+	f, err := flow.Parse([]byte(flowJSON))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+
+	e := engine.New(node.Runtime{HTTP: http.DefaultClient, Clock: &fakeClock{}}, nil)
+	if _, runErr := e.RunFlow(context.Background(), f, nil); runErr != nil {
+		t.Fatalf("templated auth flow failed (token did not resolve?): %v", runErr)
+	}
+}
+
+// TestDirectNodeCall is a smoke test that the production wiring compiles.
 func TestDirectNodeCall(_ *testing.T) {
-	_ = nodes.DefaultRuntime() // production wiring compiles
+	_ = nodes.DefaultRuntime()
 }
