@@ -24,6 +24,42 @@ import (
 // with %w; the engine classifies on it.
 var ErrUser = errors.New("user error")
 
+// CodedError is a user error carrying a stable error code (REQUEST_FAILED,
+// ASSERTION_FAILED, ...). It satisfies errors.Is(err, ErrUser).
+type CodedError struct {
+	Code string
+	err  error
+}
+
+func (e *CodedError) Error() string { return e.err.Error() }
+func (e *CodedError) Unwrap() error { return e.err }
+
+// UserErr builds a coded user error from a cause.
+func UserErr(code string, cause error) error {
+	return &CodedError{Code: code, err: fmt.Errorf("%w: %w", ErrUser, cause)}
+}
+
+// UserErrf builds a coded user error from a formatted message.
+func UserErrf(code, format string, args ...any) error {
+	return &CodedError{Code: code, err: fmt.Errorf("%w: %s", ErrUser, fmt.Sprintf(format, args...))}
+}
+
+// CodeOf returns the error's code: a CodedError's Code, "USER_ERROR" for an
+// uncoded user error, or "" for a runner fault.
+func CodeOf(err error) string {
+	var c *CodedError
+	if errors.As(err, &c) {
+		return c.Code
+	}
+	if errors.Is(err, ErrUser) {
+		return "USER_ERROR"
+	}
+	return ""
+}
+
+// IsUser reports whether err is a user-caused failure (vs a runner fault).
+func IsUser(err error) bool { return errors.Is(err, ErrUser) }
+
 // Base is embedded by every node Cfg. It carries identity plus the declared
 // assertions and outputs the framework evaluates after the node runs.
 type Base struct {
