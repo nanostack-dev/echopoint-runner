@@ -65,9 +65,9 @@ func runLoop(ctx context.Context, cfg LoopCfg, _ value.Value, rt node.Runtime) (
 		results = append(results, out.Value().Raw())
 	}
 
-	agg := value.Of(map[string]any{"results": results, "count": len(results)})
+	agg := value.Of(map[string]any{outKeyResults: results, outKeyCount: len(results)})
 	return node.Result{
-		Outputs: value.Map{"results": value.Of(results), "count": value.Of(len(results))},
+		Outputs: value.Map{outKeyResults: value.Of(results), outKeyCount: value.Of(len(results))},
 		Assert:  agg,
 	}, nil
 }

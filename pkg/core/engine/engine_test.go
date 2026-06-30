@@ -362,6 +362,46 @@ func TestBranchSkipCascade(t *testing.T) {
 	}
 }
 
+// TestSseCollectsEvents proves the SSE node parses an event stream, collecting
+// each data frame until EOF.
+func TestSseCollectsEvents(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(": comment ignored\n\ndata: {\"n\":0}\n\ndata: {\"n\":1}\n\ndata: {\"n\":2}\n\n"))
+	}))
+	defer srv.Close()
+
+	flowJSON := `{"name":"s","nodes":[{"id":"stream","type":"sse","url":"` + srv.URL + `","max_events":10,
+		"assertions":[{"path":"n","op":"gte","expected":0}]}],"edges":[]}`
+	f, err := flow.Parse([]byte(flowJSON))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	e := engine.New(node.Runtime{HTTP: http.DefaultClient, Clock: &fakeClock{}}, nil)
+	out, err := e.RunFlow(context.Background(), f, nil)
+	if err != nil {
+		t.Fatalf("sse: %v", err)
+	}
+	cV, _ := out["stream"].Get("count")
+	if c, ok := cV.Int(); !ok || c != 3 {
+		t.Fatalf("want 3 events, got %v", c)
+	}
+}
+
+// TestSseNon2xxFails proves a non-2xx connect fails as a user error.
+func TestSseNon2xxFails(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer srv.Close()
+	flowJSON := `{"name":"s","nodes":[{"id":"stream","type":"sse","url":"` + srv.URL + `"}],"edges":[]}`
+	f, _ := flow.Parse([]byte(flowJSON))
+	e := engine.New(node.Runtime{HTTP: http.DefaultClient, Clock: &fakeClock{}}, nil)
+	if _, err := e.RunFlow(context.Background(), f, nil); err == nil {
+		t.Fatal("expected sse 503 to fail")
+	}
+}
+
 // TestDirectNodeCall is a smoke test that the production wiring compiles.
 func TestDirectNodeCall(_ *testing.T) {
 	_ = nodes.DefaultRuntime()
