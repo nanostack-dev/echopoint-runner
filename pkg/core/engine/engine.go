@@ -96,7 +96,7 @@ func (e *Engine) runNode(ctx context.Context, fn flow.Node, bus map[string]value
 	if err != nil {
 		return node.Result{}, err
 	}
-	res, err := b.Run(ctx, e.deps)
+	res, err := b.Run(ctx, inputView(bus), e.deps)
 	if err != nil {
 		return node.Result{}, err
 	}
@@ -130,6 +130,23 @@ func (e *Engine) RunSubflow(ctx context.Context, flowID string, in value.Map) (v
 		return nil, fmt.Errorf("child flow %q not found: %w", flowID, node.ErrUser)
 	}
 	return e.RunFlow(pushStack(ctx, flowID), child, in)
+}
+
+// inputView boxes a node's input context as a single Value: flow inputs at the
+// top level, each upstream node's outputs nested under its id. assert/branch
+// evaluate over this when no explicit target is configured.
+func inputView(bus map[string]value.Map) value.Value {
+	merged := make(map[string]any, len(bus))
+	for k, v := range bus[""] { // flow inputs at top level
+		merged[k] = v.Raw()
+	}
+	for nodeID, m := range bus {
+		if nodeID == "" {
+			continue
+		}
+		merged[nodeID] = m.Value().Raw()
+	}
+	return value.Of(merged)
 }
 
 // RunInline satisfies node.SubflowRunner for embedded body flows (loop, poll).

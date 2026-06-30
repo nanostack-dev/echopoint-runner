@@ -11,6 +11,7 @@ import (
 	"github.com/nanostack-dev/echopoint-runner/pkg/core/flow"
 	"github.com/nanostack-dev/echopoint-runner/pkg/core/node"
 	"github.com/nanostack-dev/echopoint-runner/pkg/core/nodes"
+	"github.com/nanostack-dev/echopoint-runner/pkg/core/value"
 )
 
 // fakeClock is the whole testability story: a node's only effect, faked in one
@@ -222,6 +223,51 @@ func TestPollExhausts(t *testing.T) {
 	e := engine.New(node.Runtime{HTTP: http.DefaultClient, Clock: &fakeClock{}}, nil)
 	if _, err := e.RunFlow(context.Background(), f, nil); err == nil {
 		t.Fatal("expected poll to exhaust and fail")
+	}
+}
+
+// TestSetVariable proves computed variables: a string-concat template and a
+// {{{raw}}} structured passthrough, asserted + extracted over the computed map.
+func TestSetVariable(t *testing.T) {
+	flowJSON := `{"name":"sv","nodes":[{
+		"id":"vars","type":"set_variable",
+		"variables":{"greeting":"hi {{a}}","n":"{{{count}}}"},
+		"assertions":[{"path":"greeting","op":"equals","expected":"hi x"}],
+		"outputs":[{"name":"g","path":"greeting"}]
+	}],"edges":[]}`
+	f, err := flow.Parse([]byte(flowJSON))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	e := engine.New(node.Runtime{Clock: &fakeClock{}}, nil)
+	out, err := e.RunFlow(context.Background(), f, value.Map{"a": value.Of("x"), "count": value.Of(5)})
+	if err != nil {
+		t.Fatalf("set_variable: %v", err)
+	}
+	gV, _ := out["vars"].Get("g")
+	if g, _ := gV.Str(); g != "hi x" {
+		t.Fatalf("want g='hi x', got %q", g)
+	}
+	nV, _ := out["vars"].Get("n")
+	if n, ok := nV.Int(); !ok || n != 5 {
+		t.Fatalf("want n=5 (raw passthrough preserved number), got %v", n)
+	}
+}
+
+// TestAssertOverInputs proves the omitted-target assert: it validates the flow
+// inputs directly. Passes for role=admin, fails for role=guest.
+func TestAssertOverInputs(t *testing.T) {
+	flowJSON := `{"name":"a","nodes":[{
+		"id":"check","type":"assert",
+		"assertions":[{"path":"role","op":"equals","expected":"admin"}]
+	}],"edges":[]}`
+	f, _ := flow.Parse([]byte(flowJSON))
+	e := engine.New(node.Runtime{Clock: &fakeClock{}}, nil)
+	if _, err := e.RunFlow(context.Background(), f, value.Map{"role": value.Of("admin")}); err != nil {
+		t.Fatalf("assert over inputs (admin) should pass: %v", err)
+	}
+	if _, err := e.RunFlow(context.Background(), f, value.Map{"role": value.Of("guest")}); err == nil {
+		t.Fatal("assert over inputs (guest) should fail")
 	}
 }
 

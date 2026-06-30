@@ -16,7 +16,7 @@ type DelayCfg struct {
 	DurationMs int64 `json:"duration_ms"`
 }
 
-func runDelay(ctx context.Context, cfg DelayCfg, rt node.Runtime) (node.Result, error) {
+func runDelay(ctx context.Context, cfg DelayCfg, _ value.Value, rt node.Runtime) (node.Result, error) {
 	if err := rt.Clock.Sleep(ctx, time.Duration(cfg.DurationMs)*time.Millisecond); err != nil {
 		return node.Result{}, err
 	}

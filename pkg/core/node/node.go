@@ -52,8 +52,11 @@ type Result struct {
 	Assert value.Value
 }
 
-// Run is the node-author function: typed cfg in, result out.
-type Run[Cfg hasBase] func(ctx context.Context, cfg Cfg, rt Runtime) (Result, error)
+// Run is the node-author function: typed cfg + the node's input context (flow
+// inputs and upstream outputs, accessible by path) + runtime deps, result out.
+// Most nodes ignore in — templating already filled their cfg; assert/branch use
+// it to evaluate over inputs without naming them.
+type Run[Cfg hasBase] func(ctx context.Context, cfg Cfg, in value.Value, rt Runtime) (Result, error)
 
 // --- effect dependencies: the explicit, narrow capabilities a node may need ---
 
@@ -99,7 +102,7 @@ type Runtime struct {
 type Bound struct {
 	Base Base
 	Kind spi.Kind
-	Run  func(ctx context.Context, rt Runtime) (Result, error)
+	Run  func(ctx context.Context, in value.Value, rt Runtime) (Result, error)
 }
 
 type decoder func(raw json.RawMessage) (Bound, error)
@@ -119,7 +122,9 @@ func Register[Cfg hasBase](kind spi.Kind, fn Run[Cfg]) {
 		return Bound{
 			Base: b,
 			Kind: kind,
-			Run:  func(ctx context.Context, rt Runtime) (Result, error) { return fn(ctx, cfg, rt) },
+			Run: func(ctx context.Context, in value.Value, rt Runtime) (Result, error) {
+				return fn(ctx, cfg, in, rt)
+			},
 		}, nil
 	}
 }
