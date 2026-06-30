@@ -16,6 +16,7 @@ import (
 	"github.com/nanostack-dev/echopoint-runner/pkg/core/flow"
 	"github.com/nanostack-dev/echopoint-runner/pkg/core/node"
 	"github.com/nanostack-dev/echopoint-runner/pkg/core/output"
+	"github.com/nanostack-dev/echopoint-runner/pkg/core/tmpl"
 	"github.com/nanostack-dev/echopoint-runner/pkg/core/value"
 )
 
@@ -35,15 +36,11 @@ func New(deps node.Runtime, resolve func(string) (flow.Flow, bool)) *Engine {
 
 // RunFlow executes a flow and returns its outputs flattened as "nodeID.key".
 func (e *Engine) RunFlow(ctx context.Context, f flow.Flow, inputs value.Map) (value.Map, error) {
-	bound := make(map[string]node.Bound, len(f.Nodes))
+	nodeByID := make(map[string]flow.Node, len(f.Nodes))
 	indeg := make(map[string]int, len(f.Nodes))
 	succ := make(map[string][]string, len(f.Nodes))
 	for _, n := range f.Nodes {
-		b, err := node.Decode(n.Kind, n.Raw)
-		if err != nil {
-			return nil, err
-		}
-		bound[n.ID] = b
+		nodeByID[n.ID] = n
 		indeg[n.ID] = 0
 	}
 	for _, ed := range f.Edges {
@@ -66,7 +63,7 @@ func (e *Engine) RunFlow(ctx context.Context, f flow.Flow, inputs value.Map) (va
 		id := ready[0]
 		ready = ready[1:]
 
-		res, err := e.runNode(ctx, bound[id])
+		res, err := e.runNode(ctx, nodeByID[id], bus)
 		if err != nil {
 			return nil, fmt.Errorf("node %s: %w", id, err)
 		}
@@ -87,9 +84,18 @@ func (e *Engine) RunFlow(ctx context.Context, f flow.Flow, inputs value.Map) (va
 	return flatten(bus), nil
 }
 
-// runNode executes one node and applies the uniform assertion/output post-step.
-// This is the entire per-node lifecycle — identical for every kind.
-func (e *Engine) runNode(ctx context.Context, b node.Bound) (node.Result, error) {
+// runNode resolves the node's templates against the bus, decodes it into typed
+// config, runs it, and applies the uniform assertion/output post-step. This is
+// the entire per-node lifecycle — identical for every kind.
+func (e *Engine) runNode(ctx context.Context, fn flow.Node, bus map[string]value.Map) (node.Result, error) {
+	resolved, err := tmpl.Resolve(fn.Raw, tmpl.Bus(bus))
+	if err != nil {
+		return node.Result{}, err
+	}
+	b, err := node.Decode(fn.Kind, resolved)
+	if err != nil {
+		return node.Result{}, err
+	}
 	res, err := b.Run(ctx, e.deps)
 	if err != nil {
 		return node.Result{}, err
