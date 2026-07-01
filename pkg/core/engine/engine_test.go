@@ -35,8 +35,9 @@ func TestRequestAssertOutput(t *testing.T) {
 		"name": "t",
 		"nodes": [{
 			"id": "call", "type": "request", "method": "GET", "url": "` + srv.URL + `",
-			"assertions": [{"path": "status", "op": "equals", "expected": "ok"}],
-			"outputs":    [{"name": "uid", "path": "id"}]
+			"assertions": [{"path": "body.status", "op": "equals", "expected": "ok"},
+			               {"path": "status", "op": "equals", "expected": 200}],
+			"outputs":    [{"name": "uid", "path": "body.id"}]
 		}],
 		"edges": []
 	}`
@@ -70,7 +71,7 @@ func TestRequestAssertionFails(t *testing.T) {
 	defer srv.Close()
 
 	flowJSON := `{"name":"t","nodes":[{"id":"call","type":"request","url":"` + srv.URL + `",
-		"assertions":[{"path":"status","op":"equals","expected":"NOPE"}]}],"edges":[]}`
+		"assertions":[{"path":"body.status","op":"equals","expected":"NOPE"}]}],"edges":[]}`
 	f, _ := flow.Parse([]byte(flowJSON))
 
 	e := engine.New(node.Runtime{HTTP: srv.Client(), Clock: &fakeClock{}}, nil)
@@ -149,10 +150,10 @@ func TestInterNodeTemplating(t *testing.T) {
 
 	flowJSON := `{"name":"auth","nodes":[
 		{"id":"login","type":"request","method":"POST","url":"` + login.URL + `",
-		 "outputs":[{"name":"token","path":"access_token"}]},
+		 "outputs":[{"name":"token","path":"body.access_token"}]},
 		{"id":"me","type":"request","method":"GET","url":"` + me.URL + `",
 		 "headers":{"Authorization":"Bearer {{login.token}}"},
-		 "assertions":[{"path":"ok","op":"equals","expected":true}]}],
+		 "assertions":[{"path":"body.ok","op":"equals","expected":true}]}],
 		"edges":[{"source":"login","target":"me"}]}`
 	f, err := flow.Parse([]byte(flowJSON))
 	if err != nil {
@@ -183,7 +184,7 @@ func TestPollUntil(t *testing.T) {
 	flowJSON := `{"name":"p","nodes":[{
 		"id":"poll","type":"poll","interval_ms":1,"max_attempts":5,
 		"body":{"nodes":[{"id":"check","type":"request","url":"` + srv.URL + `",
-			"outputs":[{"name":"status","path":"status"}]}],"edges":[]},
+			"outputs":[{"name":"status","path":"body.status"}]}],"edges":[]},
 		"assertions":[{"path":"check.status","op":"equals","expected":"done"}]
 	}],"edges":[]}`
 	f, err := flow.Parse([]byte(flowJSON))
@@ -216,7 +217,7 @@ func TestPollExhausts(t *testing.T) {
 	flowJSON := `{"name":"p","nodes":[{
 		"id":"poll","type":"poll","interval_ms":1,"max_attempts":2,
 		"body":{"nodes":[{"id":"check","type":"request","url":"` + srv.URL + `",
-			"outputs":[{"name":"status","path":"status"}]}],"edges":[]},
+			"outputs":[{"name":"status","path":"body.status"}]}],"edges":[]},
 		"assertions":[{"path":"check.status","op":"equals","expected":"done"}]
 	}],"edges":[]}`
 	f, _ := flow.Parse([]byte(flowJSON))
@@ -399,6 +400,36 @@ func TestSseNon2xxFails(t *testing.T) {
 	e := engine.New(node.Runtime{HTTP: http.DefaultClient, Clock: &fakeClock{}}, nil)
 	if _, err := e.RunFlow(context.Background(), f, nil); err == nil {
 		t.Fatal("expected sse 503 to fail")
+	}
+}
+
+// TestAssertCrossNode proves the target-less assert: it references a PRIOR
+// node's output by "nodeID.key" — something a request-node assertion can't do.
+func TestAssertCrossNode(t *testing.T) {
+	flowJSON := `{"name":"x","nodes":[
+		{"id":"vars","type":"set_variable","variables":{"count":"{{{n}}}"}},
+		{"id":"check","type":"assert","assertions":[{"path":"vars.count","op":"equals","expected":5}]}],
+		"edges":[{"source":"vars","target":"check"}]}`
+	f, err := flow.Parse([]byte(flowJSON))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	e := engine.New(node.Runtime{Clock: &fakeClock{}}, nil)
+	if _, runErr := e.RunFlow(context.Background(), f, value.Map{"n": value.Of(5)}); runErr != nil {
+		t.Fatalf("cross-node assert should pass: %v", runErr)
+	}
+}
+
+// TestAssertUnknownRefFails proves the reference guard: an assertion on a
+// misspelled / unexecuted node is a clear error, not a silent failure.
+func TestAssertUnknownRefFails(t *testing.T) {
+	flowJSON := `{"name":"x","nodes":[
+		{"id":"check","type":"assert","assertions":[{"path":"typo.field","op":"equals","expected":"x"}]}],
+		"edges":[]}`
+	f, _ := flow.Parse([]byte(flowJSON))
+	e := engine.New(node.Runtime{Clock: &fakeClock{}}, nil)
+	if _, err := e.RunFlow(context.Background(), f, nil); err == nil {
+		t.Fatal("expected UNKNOWN_REFERENCE error for typo'd node ref")
 	}
 }
 

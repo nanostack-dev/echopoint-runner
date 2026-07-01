@@ -2,29 +2,25 @@ package nodes
 
 import (
 	"context"
-	"encoding/json"
 
 	"github.com/nanostack-dev/echopoint-runner/pkg/core/node"
 	"github.com/nanostack-dev/echopoint-runner/pkg/core/value"
 	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 )
 
-// AssertCfg validates a target value. With an explicit (templated) target it
-// asserts over that; with no target it asserts over the node's input context
-// (flow inputs + upstream outputs). The engine runs the declared assertions and
-// flips the node to failed on a miss.
+// AssertCfg validates data with no target of its own: its assertions address the
+// input context directly by fully-qualified path — flow inputs by name, any
+// already-executed node's outputs as "nodeID.key". References are checked to
+// exist, so a typo or an unexecuted node is a clear error.
 type AssertCfg struct {
 	node.Base
-
-	Target json.RawMessage `json:"target"`
 }
 
 func runAssert(_ context.Context, cfg AssertCfg, in value.Value, _ node.Runtime) (node.Result, error) {
-	target := in
-	if len(cfg.Target) > 0 {
-		target = value.JSON(cfg.Target)
+	if err := requireRefs(in, cfg.Assertions); err != nil {
+		return node.Result{}, err
 	}
-	return node.Result{Assert: target}, nil
+	return node.Result{Assert: in}, nil
 }
 
 //nolint:gochecknoinits // register the built-in node kind at package load
