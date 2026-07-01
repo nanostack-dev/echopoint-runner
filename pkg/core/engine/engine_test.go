@@ -401,6 +401,30 @@ func TestDynamicVars(t *testing.T) {
 	runOK(t, e, f, nil)
 }
 
+// TestValidationBranchTargetNoEdge proves a branch routing to a target with no
+// edge fails validation before execution.
+func TestValidationBranchTargetNoEdge(t *testing.T) {
+	f := parse(t, `{"name":"v","nodes":[
+		{"id":"route","type":"branch","cases":[{"when":{"path":"a","op":"equals","expected":"1"},"target":"X"}]},
+		{"id":"A","type":"set_variable","variables":{"v":"a"}}],
+		"edges":[{"source":"route","target":"A"}]}`)
+	res := runFail(t, engine.New(node.Runtime{Clock: &fakeClock{}}, nil), f, value.Map{"a": value.Of("1")})
+	if res.Code != "FLOW_VALIDATION_FAILED" {
+		t.Fatalf("want FLOW_VALIDATION_FAILED, got %q", res.Code)
+	}
+}
+
+// TestValidationEdgeToUnknownNode proves an edge to a non-existent node fails
+// validation.
+func TestValidationEdgeToUnknownNode(t *testing.T) {
+	f := parse(t, `{"name":"v","nodes":[{"id":"a","type":"delay","duration_ms":1}],
+		"edges":[{"source":"a","target":"ghost"}]}`)
+	res := runFail(t, engine.New(node.Runtime{Clock: &fakeClock{}}, nil), f, nil)
+	if res.Code != "FLOW_VALIDATION_FAILED" {
+		t.Fatalf("want FLOW_VALIDATION_FAILED, got %q", res.Code)
+	}
+}
+
 // TestDirectNodeCall is a smoke test that the production wiring compiles.
 func TestDirectNodeCall(_ *testing.T) {
 	_ = nodes.DefaultRuntime()

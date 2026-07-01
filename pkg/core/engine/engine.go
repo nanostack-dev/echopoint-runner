@@ -24,6 +24,8 @@ import (
 	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 )
 
+const codeFlowValidation = "FLOW_VALIDATION_FAILED"
+
 // Engine runs flows.
 type Engine struct {
 	resolve func(flowID string) (flow.Flow, bool)
@@ -50,7 +52,11 @@ func (e *Engine) RunFlow(ctx context.Context, f flow.Flow, inputs value.Map) (*r
 func (e *Engine) run(ctx context.Context, f flow.Flow, inputs value.Map) *result.FlowResult {
 	fr := &result.FlowResult{Success: true, Nodes: make(map[string]*result.NodeResult, len(f.Nodes))}
 	if len(f.Nodes) == 0 {
-		fr.Success, fr.Error, fr.Code, fr.Outputs = false, "no nodes to execute", "FLOW_VALIDATION_FAILED", value.Map{}
+		fr.Success, fr.Error, fr.Code, fr.Outputs = false, "no nodes to execute", codeFlowValidation, value.Map{}
+		return fr
+	}
+	if err := flow.Validate(f); err != nil {
+		fr.Success, fr.Error, fr.Code, fr.Outputs = false, err.Error(), codeFlowValidation, value.Map{}
 		return fr
 	}
 	s := newScheduler(f, inputs, fr)
@@ -61,7 +67,7 @@ func (e *Engine) run(ctx context.Context, f flow.Flow, inputs value.Map) *result
 	}
 	if s.processed != len(f.Nodes) {
 		fr.Success, fr.Error, fr.Code = false, fmt.Sprintf(
-			"cycle or unreachable nodes: processed %d of %d", s.processed, len(f.Nodes)), "FLOW_VALIDATION_FAILED"
+			"cycle or unreachable nodes: processed %d of %d", s.processed, len(f.Nodes)), codeFlowValidation
 	}
 	fr.Outputs = collect(s.store)
 	return fr
