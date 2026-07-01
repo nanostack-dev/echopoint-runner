@@ -10,6 +10,7 @@ import (
 	"github.com/nanostack-dev/echopoint-runner/pkg/engine"
 	"github.com/nanostack-dev/echopoint-runner/pkg/flow"
 	"github.com/nanostack-dev/echopoint-runner/pkg/node"
+	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 )
 
 // branchNodeJSON builds a branch node wire definition routing on the initial
@@ -83,7 +84,7 @@ func TestBranchRouting_RoutesToChosenSuccessor(t *testing.T) {
 	require.True(t, result.Success)
 
 	// router and nodeA ran; nodeB skipped.
-	branchResult := node.MustAs[*node.BranchExecutionResult](result.ExecutionResults["router"])
+	branchResult := spi.MustAs[*node.BranchExecutionResult](result.ExecutionResults["router"])
 	assert.Equal(t, "nodeA", branchResult.MatchedTarget)
 
 	assert.NotNil(t, nodeA.executedAt, "nodeA should execute")
@@ -302,7 +303,7 @@ func innerBranchForTest(t *testing.T, id, targetX, targetY string) node.AnyNode 
 	return parsed
 }
 
-func requireSkipped(t *testing.T, result node.AnyExecutionResult) {
+func requireSkipped(t *testing.T, result spi.AnyResult) {
 	t.Helper()
 	require.NotNil(t, result)
 	// All skipped results carry the NODE_SKIPPED error code via BaseExecutionResult.
@@ -313,9 +314,9 @@ func requireSkipped(t *testing.T, result node.AnyExecutionResult) {
 	require.NotNil(t, skipped.SkipReason)
 }
 
-func skippedBaseOf(result node.AnyExecutionResult) (*node.BaseExecutionResult, bool) {
+func skippedBaseOf(result spi.AnyResult) (*spi.BaseExecutionResult, bool) {
 	switch r := result.(type) {
-	case *node.BaseExecutionResult:
+	case *spi.BaseExecutionResult:
 		return r, true
 	case *node.RequestExecutionResult:
 		return &r.BaseExecutionResult, true

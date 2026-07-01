@@ -10,6 +10,7 @@ import (
 	"github.com/nanostack-dev/echopoint-runner/pkg/extractors"
 	"github.com/nanostack-dev/echopoint-runner/pkg/flow"
 	"github.com/nanostack-dev/echopoint-runner/pkg/node"
+	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -19,7 +20,7 @@ import (
 // what the migrated RequestNode does: build the success result, attach the
 // context, and let the engine evaluate assertions and outputs.
 type assertionResult struct {
-	node.BaseExecutionResult
+	spi.BaseExecutionResult
 
 	ctx extractors.ResponseContext
 }
@@ -39,12 +40,12 @@ type assertionNode struct {
 func (n *assertionNode) InputSchema() []string  { return nil }
 func (n *assertionNode) OutputSchema() []string { return outputNames(n.Outputs) }
 
-func (n *assertionNode) Execute(_ node.ExecutionContext) (node.AnyExecutionResult, error) {
+func (n *assertionNode) Execute(_ spi.ExecutionContext) (spi.AnyResult, error) {
 	if n.attempts != nil {
 		*n.attempts++
 	}
 	return &assertionResult{
-		BaseExecutionResult: node.BaseExecutionResult{
+		BaseExecutionResult: spi.BaseExecutionResult{
 			NodeID:      n.GetID(),
 			DisplayName: n.GetDisplayName(),
 			NodeType:    n.GetType(),
@@ -93,7 +94,7 @@ func TestEnginePass_FillsAssertionResultsAndMergesOutputs(t *testing.T) {
 		BaseNode: node.BaseNode{
 			ID:          "step",
 			DisplayName: "Step",
-			NodeType:    node.TypeRequest,
+			NodeType:    spi.KindRequest,
 			Assertions: []node.CompositeAssertion{
 				mkAssertionJSON(t, "jsonPath", "$.status", "equals", "ok"),
 			},
@@ -131,7 +132,7 @@ func TestEnginePass_AssertionFailureFlipsNodeToFailed(t *testing.T) {
 		BaseNode: node.BaseNode{
 			ID:          "step",
 			DisplayName: "Step",
-			NodeType:    node.TypeRequest,
+			NodeType:    spi.KindRequest,
 			Assertions: []node.CompositeAssertion{
 				mkAssertionJSON(t, "jsonPath", "$.status", "equals", "ok"),
 			},
@@ -163,7 +164,7 @@ func TestEnginePass_RetryRetriesOnAssertionFailure(t *testing.T) {
 		BaseNode: node.BaseNode{
 			ID:          "step",
 			DisplayName: "Step",
-			NodeType:    node.TypeRequest,
+			NodeType:    spi.KindRequest,
 			Assertions: []node.CompositeAssertion{
 				mkAssertionJSON(t, "jsonPath", "$.status", "equals", "ok"),
 			},
@@ -176,9 +177,9 @@ func TestEnginePass_RetryRetriesOnAssertionFailure(t *testing.T) {
 	// assertion pass is wrapped INSIDE the chain, each attempt re-evaluates the
 	// (failing) assertion, so all 3 attempts run.
 	retry := func(next engine.NodeExecutor) engine.NodeExecutor {
-		return func(ec node.ExecutionContext) (node.AnyExecutionResult, error) {
+		return func(ec spi.ExecutionContext) (spi.AnyResult, error) {
 			var (
-				res node.AnyExecutionResult
+				res spi.AnyResult
 				err error
 			)
 			for range 3 {
@@ -207,7 +208,7 @@ func TestEnginePass_RetryRetriesOnAssertionFailure(t *testing.T) {
 func TestEnginePass_NonProviderResultUnaffected(t *testing.T) {
 	flowInstance := flow.Flow{
 		Name:    "f",
-		Nodes:   []node.AnyNode{&MockNode{id: "m", nodeType: node.TypeDelay}},
+		Nodes:   []node.AnyNode{&MockNode{id: "m", nodeType: spi.KindDelay}},
 		Version: "1.0",
 	}
 	flowEngine, err := engine.NewFlowEngine(flowInstance, &engine.Options{})
@@ -225,10 +226,10 @@ func TestEnginePass_LinearFlowEdgesUnaffected(t *testing.T) {
 	// Guard: a node that provides a context but has no assertions/outputs still
 	// succeeds and propagates through edges.
 	a := &assertionNode{
-		BaseNode: node.BaseNode{ID: "a", DisplayName: "A", NodeType: node.TypeRequest},
+		BaseNode: node.BaseNode{ID: "a", DisplayName: "A", NodeType: spi.KindRequest},
 		value:    map[string]any{},
 	}
-	b := &MockNode{id: "b", nodeType: node.TypeRequest, shouldPass: true}
+	b := &MockNode{id: "b", nodeType: spi.KindRequest, shouldPass: true}
 	flowInstance := flow.Flow{
 		Name:    "f",
 		Nodes:   []node.AnyNode{a, b},

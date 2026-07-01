@@ -6,13 +6,14 @@ import (
 
 	"github.com/nanostack-dev/echopoint-runner/pkg/extractors"
 	node "github.com/nanostack-dev/echopoint-runner/pkg/node"
+	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestPrepareRequest_PreservesRawJSONTemplateBodyValue(t *testing.T) {
 	reqNode := &node.RequestNode{
-		BaseNode: node.BaseNode{ID: "step1", DisplayName: "Search Permissions", NodeType: node.TypeRequest},
+		BaseNode: node.BaseNode{ID: "step1", DisplayName: "Search Permissions", NodeType: spi.KindRequest},
 		Data: node.RequestData{
 			Method: http.MethodPost,
 			URL:    "https://example.com/permissions",
@@ -36,7 +37,7 @@ func TestPrepareRequest_PreservesRawJSONTemplateBodyValue(t *testing.T) {
 
 func TestPrepareRequest_PreservesRawJSONObjectAndScalarTemplateBodyValues(t *testing.T) {
 	reqNode := &node.RequestNode{
-		BaseNode: node.BaseNode{ID: "step1", DisplayName: "Create Product", NodeType: node.TypeRequest},
+		BaseNode: node.BaseNode{ID: "step1", DisplayName: "Create Product", NodeType: spi.KindRequest},
 		Data: node.RequestData{
 			Method: http.MethodPost,
 			URL:    "https://example.com/products",
@@ -67,7 +68,7 @@ func TestPrepareRequest_PreservesRawJSONObjectAndScalarTemplateBodyValues(t *tes
 
 func TestPrepareRequest_LeavesDoubleBraceTemplatesStringBased(t *testing.T) {
 	reqNode := &node.RequestNode{
-		BaseNode: node.BaseNode{ID: "step1", DisplayName: "Create Product", NodeType: node.TypeRequest},
+		BaseNode: node.BaseNode{ID: "step1", DisplayName: "Create Product", NodeType: spi.KindRequest},
 		Data: node.RequestData{
 			Method: http.MethodPost,
 			URL:    "{{baseUrl}}/products",
@@ -94,7 +95,7 @@ func TestPrepareRequest_LeavesDoubleBraceTemplatesStringBased(t *testing.T) {
 
 func TestPrepareRequest_LeavesUnknownRawTemplateLiteral(t *testing.T) {
 	reqNode := &node.RequestNode{
-		BaseNode: node.BaseNode{ID: "step1", DisplayName: "Create Product", NodeType: node.TypeRequest},
+		BaseNode: node.BaseNode{ID: "step1", DisplayName: "Create Product", NodeType: spi.KindRequest},
 		Data: node.RequestData{
 			Method: http.MethodPost,
 			URL:    "https://example.com/products",
@@ -115,7 +116,7 @@ func TestCreateResponseBackedErrorResultPreservesHTTPContext(t *testing.T) {
 		BaseNode: node.BaseNode{
 			ID:          "step1",
 			DisplayName: "Step 1",
-			NodeType:    node.TypeRequest,
+			NodeType:    spi.KindRequest,
 		},
 		Data: node.RequestData{Method: http.MethodPost},
 	}

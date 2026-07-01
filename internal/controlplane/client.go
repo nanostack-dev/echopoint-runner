@@ -12,9 +12,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/nanostack-dev/echopoint-runner/pkg/executionevents"
 	flowpkg "github.com/nanostack-dev/echopoint-runner/pkg/flow"
-	"github.com/nanostack-dev/echopoint-runner/pkg/node"
+	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 	"github.com/rs/zerolog/log"
 )
 
@@ -105,8 +104,8 @@ type CompleteJobRequest struct {
 }
 
 type RunnerProgressEvent struct {
-	Sequence int64                `json:"sequence"`
-	Type     executionevents.Type `json:"type"`
+	Sequence int64         `json:"sequence"`
+	Type     spi.EventType `json:"type"`
 	// Payload is the event-type-specific body, marshalled as a JSON object.
 	// It is a typed struct at the call site (see internal/runtime payloads).
 	Payload any `json:"payload"`
@@ -239,7 +238,7 @@ func (c *Client) Heartbeat(ctx context.Context, request HeartbeatRequest) ([]Hea
 	return results, nil
 }
 
-func FlowExecutionResultToPayload(result *node.FlowExecutionResult) (map[string]any, error) {
+func FlowExecutionResultToPayload(result *spi.FlowExecutionResult) (map[string]any, error) {
 	if result == nil {
 		return map[string]any{}, nil
 	}

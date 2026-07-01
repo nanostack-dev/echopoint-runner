@@ -5,13 +5,14 @@ import (
 	"fmt"
 
 	"github.com/nanostack-dev/echopoint-runner/pkg/extractors"
+	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 )
 
 //nolint:gochecknoinits
 func init() {
 	// Register StatusCodeExtractor
 	extractors.RegisterExtractor(
-		extractors.ExtractorTypeStatusCode,
+		spi.ExtractorTypeStatusCode,
 		func(data []byte) (extractors.AnyExtractor, error) {
 			var extractor StatusCodeExtractor
 			if err := json.Unmarshal(data, &extractor); err != nil {
@@ -22,7 +23,7 @@ func init() {
 	)
 
 	// Register HeaderExtractor
-	extractors.RegisterExtractor(extractors.ExtractorTypeHeader, func(data []byte) (extractors.AnyExtractor, error) {
+	extractors.RegisterExtractor(spi.ExtractorTypeHeader, func(data []byte) (extractors.AnyExtractor, error) {
 		var extractor HeaderExtractor
 		if err := json.Unmarshal(data, &extractor); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal Header extractor: %w", err)

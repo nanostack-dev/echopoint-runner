@@ -7,9 +7,6 @@ import (
 	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 )
 
-// OutputView is re-exported from spi (the L0 contract). Alias kept for back-compat.
-type OutputView = spi.OutputView
-
 // AnyNode is the full authoring/engine view of a node: the capability-agnostic
 // core (spi.Node) plus the assertion and output accessors, which carry concrete
 // extractor decode/eval behavior and therefore stay in this package.
@@ -25,68 +22,9 @@ type AnyNode interface {
 	GetOutputs() []Output
 }
 
-// ResolvedModuleFlow is re-exported from spi. Alias kept for back-compat.
-type ResolvedModuleFlow = spi.ResolvedModuleFlow
-
-// ModuleResolver is re-exported from spi. Alias kept for back-compat.
-type ModuleResolver = spi.ModuleResolver
-
-// ModuleExecutionRequest is re-exported from spi. Alias kept for back-compat.
-type ModuleExecutionRequest = spi.ModuleExecutionRequest
-
-// ModuleExecutor is re-exported from spi. Alias kept for back-compat.
-type ModuleExecutor = spi.ModuleExecutor
-
-// TypeNode is a node with typed data.
-type TypeNode[T any] interface {
-	AnyNode
-	GetData() T
-}
-
-// Type is re-exported from spi (was node.Type, now spi.Kind). Alias kept for back-compat.
-type Type = spi.Kind
-
-// Built-in node kinds (re-exported from spi).
-const (
-	TypeRequest     = spi.KindRequest
-	TypeDelay       = spi.KindDelay
-	TypeModule      = spi.KindModule
-	TypeSetVariable = spi.KindSetVariable
-	TypeLoop        = spi.KindLoop
-	TypePoll        = spi.KindPoll
-	TypeAssert      = spi.KindAssert
-	TypeBranch      = spi.KindBranch
-	TypeSse         = spi.KindSse
-)
-
-// RunWhen is re-exported from spi. Alias kept for back-compat.
-type RunWhen = spi.RunWhen
-
-// RunWhen phases (re-exported from spi).
-const (
-	RunWhenOnSuccess = spi.RunWhenOnSuccess
-	RunWhenAlways    = spi.RunWhenAlways
-)
-
-// ExecutionContext is re-exported from spi. Alias kept for back-compat.
-type ExecutionContext = spi.ExecutionContext
-
-// DynamicResolver is re-exported from spi. Alias kept for back-compat.
-type DynamicResolver = spi.DynamicResolver
-
-// AnyExecutionResult is re-exported from spi (was node.AnyExecutionResult, now
-// spi.AnyResult). Alias kept for back-compat.
-type AnyExecutionResult = spi.AnyResult
-
-// BaseExecutionResult is re-exported from spi. Alias kept for back-compat.
-type BaseExecutionResult = spi.BaseExecutionResult
-
-// AssertionResult is re-exported from spi. Alias kept for back-compat.
-type AssertionResult = spi.AssertionResult
-
 // RequestExecutionResult stores HTTP request node execution data.
 type RequestExecutionResult struct {
-	BaseExecutionResult
+	spi.BaseExecutionResult
 
 	// HTTP Request fields
 	RequestMethod  string            `json:"request_method"`
@@ -123,7 +61,7 @@ func (r *RequestExecutionResult) AssertionContext() extractors.ResponseContext {
 
 // DelayExecutionResult stores delay node execution data.
 type DelayExecutionResult struct {
-	BaseExecutionResult
+	spi.BaseExecutionResult
 
 	DelayMs    int64     `json:"delay_ms"`
 	DelayUntil time.Time `json:"delay_until"`
@@ -131,7 +69,7 @@ type DelayExecutionResult struct {
 
 // ModuleExecutionResult stores nested module execution data.
 type ModuleExecutionResult struct {
-	BaseExecutionResult
+	spi.BaseExecutionResult
 
 	FlowID            string         `json:"flow_id"`
 	ChildFinalOutputs map[string]any `json:"child_final_outputs,omitempty"`
@@ -142,7 +80,7 @@ type ModuleExecutionResult struct {
 // computed named values are exposed both as the node Outputs (via the embedded
 // base) and as the engine sees them; DurationMs records resolution time.
 type SetVariableExecutionResult struct {
-	BaseExecutionResult
+	spi.BaseExecutionResult
 
 	DurationMs int64 `json:"duration_ms"`
 }
@@ -161,7 +99,7 @@ func (r *SetVariableExecutionResult) AssertionContext() extractors.ResponseConte
 
 // LoopExecutionResult stores foreach loop node execution data.
 type LoopExecutionResult struct {
-	BaseExecutionResult
+	spi.BaseExecutionResult
 
 	// Iterations is the number of body executions that were attempted
 	// (after applying any max_iterations cap).
@@ -187,7 +125,7 @@ func (r *LoopExecutionResult) AssertionContext() extractors.ResponseContext {
 // re-runs an inline body sub-flow on an interval until all of its exit-condition
 // assertions pass on a single attempt, or it exhausts its attempt/deadline budget.
 type PollExecutionResult struct {
-	BaseExecutionResult
+	spi.BaseExecutionResult
 
 	// Attempts is the number of body executions performed (the attempt on which
 	// the poll succeeded, or the total attempts made before giving up).
@@ -202,7 +140,7 @@ type PollExecutionResult struct {
 // AssertExecutionResult stores assert node execution data: the value asserted
 // over and the full set of assertion outcomes captured during evaluation.
 type AssertExecutionResult struct {
-	BaseExecutionResult
+	spi.BaseExecutionResult
 
 	// AssertionResults now lives on the embedded BaseExecutionResult so the
 	// engine-level assertion pass fills it uniformly (wire tag "assertion_results"
@@ -228,7 +166,7 @@ func (r *AssertExecutionResult) AssertionContext() extractors.ResponseContext {
 // spi.RoutingResult so the engine skips the successor subtrees the branch routed
 // away from.
 type BranchExecutionResult struct {
-	BaseExecutionResult
+	spi.BaseExecutionResult
 
 	// MatchedTarget is the successor node ID execution was routed to, or "" when
 	// no case matched and no default was configured.
@@ -247,7 +185,7 @@ func (r *BranchExecutionResult) RoutedTargets() []string {
 
 // SseExecutionResult stores SSE (Server-Sent Events) node execution data.
 type SseExecutionResult struct {
-	BaseExecutionResult
+	spi.BaseExecutionResult
 
 	// RequestMethod and RequestURL capture the resolved connection details.
 	RequestMethod string `json:"request_method"`
@@ -270,19 +208,3 @@ type SseExecutionResult struct {
 	// Timing
 	DurationMs int64 `json:"duration_ms"`
 }
-
-// As safely casts an AnyExecutionResult to a concrete result type T
-// (e.g. As[*RequestExecutionResult](result)). It reports false instead of
-// panicking when the dynamic type does not match. Delegates to spi.As.
-func As[T AnyExecutionResult](result AnyExecutionResult) (T, bool) {
-	return spi.As[T](result)
-}
-
-// MustAs casts an AnyExecutionResult to a concrete result type T, panicking when
-// the dynamic type does not match. Delegates to spi.MustAs.
-func MustAs[T AnyExecutionResult](result AnyExecutionResult) T {
-	return spi.MustAs[T](result)
-}
-
-// FlowExecutionResult is re-exported from spi. Alias kept for back-compat.
-type FlowExecutionResult = spi.FlowExecutionResult

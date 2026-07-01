@@ -3,6 +3,8 @@ package node
 import (
 	"encoding/json"
 	"fmt"
+
+	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 )
 
 // UnmarshalNode unmarshals JSON into the appropriate typed node via the node-kind
@@ -10,7 +12,7 @@ import (
 // a new case here.
 func UnmarshalNode(data []byte) (AnyNode, error) {
 	var peek struct {
-		Type Type `json:"type"`
+		Type spi.Kind `json:"type"`
 	}
 	if err := json.Unmarshal(data, &peek); err != nil {
 		return nil, fmt.Errorf("failed to peek node type: %w", err)

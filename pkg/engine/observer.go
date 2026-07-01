@@ -4,7 +4,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nanostack-dev/echopoint-runner/pkg/node"
+	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 )
 
 type FlowStartedEvent struct {
@@ -15,18 +15,18 @@ type FlowStartedEvent struct {
 type NodeStartedEvent struct {
 	NodeID      string
 	DisplayName string
-	NodeType    node.Type
+	NodeType    spi.Kind
 	StartedAt   time.Time
 }
 
 type NodeFinishedEvent struct {
 	NodeID      string
 	DisplayName string
-	NodeType    node.Type
+	NodeType    spi.Kind
 	StartedAt   time.Time
 	FinishedAt  time.Time
 	DurationMs  int64
-	Result      node.AnyExecutionResult
+	Result      spi.AnyResult
 }
 
 type FlowFinishedEvent struct {
@@ -34,7 +34,7 @@ type FlowFinishedEvent struct {
 	StartedAt  time.Time
 	FinishedAt time.Time
 	DurationMs int64
-	Result     *node.FlowExecutionResult
+	Result     *spi.FlowExecutionResult
 }
 
 type ExecutionObserver interface {

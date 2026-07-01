@@ -7,6 +7,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/nanostack-dev/echopoint-runner/pkg/extractors"
+	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 )
 
 // HeaderExtractor extracts HTTP header values from a response.
@@ -16,7 +17,7 @@ type HeaderExtractor struct {
 
 func (e HeaderExtractor) Extract(ctx extractors.ResponseContext) (any, error) {
 	log.Debug().
-		Str("extractorType", string(extractors.ExtractorTypeHeader)).
+		Str("extractorType", string(spi.ExtractorTypeHeader)).
 		Str("headerName", e.HeaderName).
 		Msg("Starting header extraction")
 
@@ -25,7 +26,7 @@ func (e HeaderExtractor) Extract(ctx extractors.ResponseContext) (any, error) {
 		value := ha.GetHeader(e.HeaderName)
 		if value != "" {
 			log.Debug().
-				Str("extractorType", string(extractors.ExtractorTypeHeader)).
+				Str("extractorType", string(spi.ExtractorTypeHeader)).
 				Str("headerName", e.HeaderName).
 				Str("value", value).
 				Msg("Header extracted successfully")
@@ -33,7 +34,7 @@ func (e HeaderExtractor) Extract(ctx extractors.ResponseContext) (any, error) {
 		}
 		err := fmt.Errorf("header %s not found", e.HeaderName)
 		log.Warn().
-			Str("extractorType", string(extractors.ExtractorTypeHeader)).
+			Str("extractorType", string(spi.ExtractorTypeHeader)).
 			Str("headerName", e.HeaderName).
 			Err(err).
 			Msg("Header not found")
@@ -42,13 +43,13 @@ func (e HeaderExtractor) Extract(ctx extractors.ResponseContext) (any, error) {
 
 	err := errors.New("context does not implement HeaderAccessor interface")
 	log.Error().
-		Str("extractorType", string(extractors.ExtractorTypeHeader)).
+		Str("extractorType", string(spi.ExtractorTypeHeader)).
 		Str("headerName", e.HeaderName).
 		Err(err).
 		Msg("Failed to extract header")
 	return nil, err
 }
 
-func (e HeaderExtractor) GetType() extractors.ExtractorType {
-	return extractors.ExtractorTypeHeader
+func (e HeaderExtractor) GetType() spi.ExtractorType {
+	return spi.ExtractorTypeHeader
 }

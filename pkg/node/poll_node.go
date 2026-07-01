@@ -11,6 +11,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/nanostack-dev/echopoint-runner/pkg/extractors"
+	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 )
 
 // Default poll budgets applied when the wire payload omits them.
@@ -98,7 +99,7 @@ func (n *PollNode) intervalMs() int {
 // succeeds on the first attempt where all assertions pass; otherwise it waits
 // interval_ms and retries until the attempt budget, timeout, or context deadline
 // is exhausted.
-func (n *PollNode) Execute(ctx ExecutionContext) (AnyExecutionResult, error) {
+func (n *PollNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 	startTime := time.Now()
 
 	if ctx.ModuleExecutor == nil {
@@ -133,7 +134,7 @@ func (n *PollNode) Execute(ctx ExecutionContext) (AnyExecutionResult, error) {
 		Int("assertions", len(assertions)).
 		Msg("Starting poll node execution")
 
-	var lastAssertionResults []AssertionResult
+	var lastAssertionResults []spi.AssertionResult
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		// Abort before each attempt if the execution context (or the derived
 		// timeout) is already done.
@@ -147,7 +148,7 @@ func (n *PollNode) Execute(ctx ExecutionContext) (AnyExecutionResult, error) {
 		}
 
 		childInputs := n.buildChildInputs(ctx.FlowInputs, attempt)
-		res, err := ctx.ModuleExecutor.ExecuteModule(ModuleExecutionRequest{
+		res, err := ctx.ModuleExecutor.ExecuteModule(spi.ModuleExecutionRequest{
 			FlowID:         n.GetID() + "#poll",
 			FlowDefinition: n.Data.Body,
 			Inputs:         childInputs,
@@ -209,14 +210,14 @@ func (n *PollNode) successResult(
 	inputs map[string]any,
 	finalOutputs map[string]any,
 	attempt int,
-	assertionResults []AssertionResult,
+	assertionResults []spi.AssertionResult,
 	startedAt time.Time,
 ) *PollExecutionResult {
 	result := &PollExecutionResult{
-		BaseExecutionResult: BaseExecutionResult{
+		BaseExecutionResult: spi.BaseExecutionResult{
 			NodeID:      n.GetID(),
 			DisplayName: n.GetDisplayName(),
-			NodeType:    TypePoll,
+			NodeType:    spi.KindPoll,
 			Inputs:      inputs,
 			Outputs: map[string]any{
 				"attempts": attempt,
@@ -250,16 +251,16 @@ func (n *PollNode) errorResult(
 	err error,
 	code string,
 	attempts int,
-	assertionResults []AssertionResult,
+	assertionResults []spi.AssertionResult,
 	startedAt time.Time,
-) AnyExecutionResult {
+) spi.AnyResult {
 	errMsg := err.Error()
 	errCode := code
 	return &PollExecutionResult{
-		BaseExecutionResult: BaseExecutionResult{
+		BaseExecutionResult: spi.BaseExecutionResult{
 			NodeID:           n.GetID(),
 			DisplayName:      n.GetDisplayName(),
-			NodeType:         TypePoll,
+			NodeType:         spi.KindPoll,
 			Inputs:           inputs,
 			Outputs:          nil,
 			Error:            err,

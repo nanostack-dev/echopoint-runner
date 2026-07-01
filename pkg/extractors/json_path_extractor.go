@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 	"github.com/rs/zerolog/log"
 	"github.com/theory/jsonpath"
 )
@@ -16,7 +17,7 @@ type JSONPathExtractor struct {
 
 func (e JSONPathExtractor) Extract(ctx ResponseContext) (any, error) {
 	log.Debug().
-		Str("extractorType", string(ExtractorTypeJSONPath)).
+		Str("extractorType", string(spi.ExtractorTypeJSONPath)).
 		Str("path", e.Path).
 		Msg("Starting JSONPath extraction")
 
@@ -96,6 +97,6 @@ func (e JSONPathExtractor) Extract(ctx ResponseContext) (any, error) {
 	return results, nil
 }
 
-func (e JSONPathExtractor) GetType() ExtractorType {
-	return ExtractorTypeJSONPath
+func (e JSONPathExtractor) GetType() spi.ExtractorType {
+	return spi.ExtractorTypeJSONPath
 }

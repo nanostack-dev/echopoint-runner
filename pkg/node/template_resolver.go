@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 	"github.com/rs/zerolog/log"
 )
 
@@ -15,7 +16,7 @@ var stringVariablePattern = regexp.MustCompile(`\{\{([^}]+)\}\}`)
 // TemplateResolver handles resolution of {{variableName}} templates in strings and objects.
 type TemplateResolver struct {
 	variables map[string]any
-	dynamic   DynamicResolver
+	dynamic   spi.DynamicResolver
 }
 
 // NewTemplateResolver creates a new template resolver with the given variables.
@@ -28,7 +29,7 @@ func NewTemplateResolver(variables map[string]any) *TemplateResolver {
 // NewTemplateResolverWithDynamics creates a resolver that also resolves
 // {{$name}} dynamic variables via the given resolver (may be nil).
 func NewTemplateResolverWithDynamics(
-	variables map[string]any, dynamic DynamicResolver,
+	variables map[string]any, dynamic spi.DynamicResolver,
 ) *TemplateResolver {
 	return &TemplateResolver{
 		variables: variables,

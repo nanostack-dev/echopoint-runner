@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/nanostack-dev/echopoint-runner/pkg/node"
+	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 )
 
 // toMap marshals the typed payload and decodes it back to a generic map so the
@@ -30,12 +31,12 @@ func toMap(t *testing.T, v any) map[string]any {
 func TestNodeFinishedPayload_CarriesFlatEngineResult(t *testing.T) {
 	succeeded := true
 	result := &node.RequestExecutionResult{
-		BaseExecutionResult: node.BaseExecutionResult{
+		BaseExecutionResult: spi.BaseExecutionResult{
 			NodeID:      "ping",
 			DisplayName: "Ping",
-			NodeType:    node.TypeRequest,
+			NodeType:    spi.KindRequest,
 			Outputs:     map[string]any{"id": "prd_1"},
-			AssertionResults: []node.AssertionResult{
+			AssertionResults: []spi.AssertionResult{
 				{Index: 0, Extractor: "statusCode", Operator: "equals", Expected: "200", Actual: 200, Passed: true},
 			},
 		},
@@ -70,9 +71,9 @@ func TestNodeFinishedPayload_CarriesFlatEngineResult(t *testing.T) {
 func TestNodeFinishedPayload_CarriesSkipFields(t *testing.T) {
 	succeeded := true
 	result := &node.RequestExecutionResult{
-		BaseExecutionResult: node.BaseExecutionResult{
+		BaseExecutionResult: spi.BaseExecutionResult{
 			NodeID:        "notify",
-			NodeType:      node.TypeRequest,
+			NodeType:      spi.KindRequest,
 			SkipReason:    new("dependency_failed"),
 			ErrorMsg:      new(`Skipped because step "Create" failed`),
 			MissingInputs: []string{"create.id"},

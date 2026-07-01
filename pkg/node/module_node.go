@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 	"github.com/rs/zerolog/log"
 )
 
@@ -55,7 +56,7 @@ func (n *ModuleNode) OutputSchema() []string {
 	return keys
 }
 
-func (n *ModuleNode) Execute(ctx ExecutionContext) (AnyExecutionResult, error) {
+func (n *ModuleNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 	startTime := time.Now()
 	flowID := strings.TrimSpace(n.Data.FlowID)
 	if flowID == "" {
@@ -93,7 +94,7 @@ func (n *ModuleNode) Execute(ctx ExecutionContext) (AnyExecutionResult, error) {
 	maps.Copy(childInputs, resolvedFlow.InputOverrides)
 	maps.Copy(childInputs, moduleInputs)
 
-	result, err := ctx.ModuleExecutor.ExecuteModule(ModuleExecutionRequest{
+	result, err := ctx.ModuleExecutor.ExecuteModule(spi.ModuleExecutionRequest{
 		FlowID:         flowID,
 		FlowDefinition: resolvedFlow.FlowDefinition,
 		Inputs:         childInputs,
@@ -108,10 +109,10 @@ func (n *ModuleNode) Execute(ctx ExecutionContext) (AnyExecutionResult, error) {
 	}
 
 	return &ModuleExecutionResult{
-		BaseExecutionResult: BaseExecutionResult{
+		BaseExecutionResult: spi.BaseExecutionResult{
 			NodeID:      n.GetID(),
 			DisplayName: n.GetDisplayName(),
-			NodeType:    TypeModule,
+			NodeType:    spi.KindModule,
 			Inputs:      ctx.Inputs,
 			Outputs:     exportedOutputs,
 			ExecutedAt:  time.Now(),
@@ -139,7 +140,7 @@ func (n *ModuleNode) resolveModuleInputs(parentInputs map[string]any) (map[strin
 	return resolved, nil
 }
 
-func (n *ModuleNode) exportOutputs(result *FlowExecutionResult) (map[string]any, error) {
+func (n *ModuleNode) exportOutputs(result *spi.FlowExecutionResult) (map[string]any, error) {
 	outputs := make(map[string]any, len(n.Data.OutputBindings))
 	for outputName, sourceRef := range n.Data.OutputBindings {
 		trimmedOutputName := strings.TrimSpace(outputName)
@@ -165,8 +166,8 @@ func (n *ModuleNode) createErrorResult(
 	flowID string,
 	err error,
 	startedAt time.Time,
-	childResult *FlowExecutionResult,
-) AnyExecutionResult {
+	childResult *spi.FlowExecutionResult,
+) spi.AnyResult {
 	errMsg := err.Error()
 	errCode := "MODULE_FAILED"
 	childOutputs := map[string]any{}
@@ -175,10 +176,10 @@ func (n *ModuleNode) createErrorResult(
 	}
 
 	return &ModuleExecutionResult{
-		BaseExecutionResult: BaseExecutionResult{
+		BaseExecutionResult: spi.BaseExecutionResult{
 			NodeID:      n.GetID(),
 			DisplayName: n.GetDisplayName(),
-			NodeType:    TypeModule,
+			NodeType:    spi.KindModule,
 			Inputs:      inputs,
 			Outputs:     nil,
 			Error:       err,
