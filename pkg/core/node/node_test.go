@@ -58,7 +58,4 @@ func TestCodedError(t *testing.T) {
 	if node.CodeOf(errors.New("x")) != "" {
 		t.Fatal("runner fault should have empty code")
 	}
-	if node.CodeOf(node.ErrUser) != "USER_ERROR" {
-		t.Fatal("uncoded user error should be USER_ERROR")
-	}
 }

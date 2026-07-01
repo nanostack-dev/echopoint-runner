@@ -57,35 +57,37 @@ func New(deps node.Runtime, resolve func(string) (flow.Flow, bool), opts ...Opti
 	return e
 }
 
-// RunFlow executes a flow and returns its full result. The returned error is
-// reserved for exceptional wiring issues; ordinary node failures are recorded in
-// the result with Success=false.
-func (e *Engine) RunFlow(ctx context.Context, f flow.Flow, inputs value.Map) (*result.FlowResult, error) {
-	return e.run(ctx, f, inputs, true), nil
+// RunFlow executes a flow and returns its full result. Node failures are
+// recorded in the result (Success=false), not returned as an error.
+func (e *Engine) RunFlow(ctx context.Context, f flow.Flow, inputs value.Map) *result.FlowResult {
+	return e.run(ctx, f, inputs, e.observer, true)
 }
 
 // run is the scheduler entrypoint: it builds the scheduler state, drains the
-// ready queue, then finalizes (cycle detection + collected outputs). emit gates
-// flow/node event emission (true only for the top-level flow, not sub-flows).
-func (e *Engine) run(ctx context.Context, f flow.Flow, inputs value.Map, emit bool) *result.FlowResult {
+// ready queue, then finalizes (cycle detection + collected outputs). obs is the
+// event sink (nil for sub-flow runs); topLevel gates the module-graph validation
+// (done once, at the outermost flow).
+func (e *Engine) run(
+	ctx context.Context, f flow.Flow, inputs value.Map, obs Observer, topLevel bool,
+) *result.FlowResult {
 	fr := &result.FlowResult{Success: true, Nodes: make(map[string]*result.NodeResult, len(f.Nodes))}
-	e.emit(emit, Event{Type: spi.EventFlowStarted, Flow: fr})
+	emit(obs, Event{Type: spi.EventFlowStarted, Flow: fr})
 
 	switch {
 	case len(f.Nodes) == 0:
 		fr.Success, fr.Error, fr.Code, fr.Outputs = false, "no nodes to execute", codeFlowValidation, value.Map{}
 	default:
-		if err := e.validateFlow(f, emit); err != nil {
+		if err := e.validateFlow(f, topLevel); err != nil {
 			fr.Success, fr.Error, fr.Code, fr.Outputs = false, err.Error(), codeFlowValidation, value.Map{}
 		} else {
-			e.schedule(ctx, f, inputs, fr, emit)
+			e.schedule(ctx, f, inputs, fr, obs)
 		}
 	}
 
 	if fr.Success {
-		e.emit(emit, Event{Type: spi.EventFlowCompleted, Flow: fr})
+		emit(obs, Event{Type: spi.EventFlowCompleted, Flow: fr})
 	} else {
-		e.emit(emit, Event{Type: spi.EventFlowFailed, Flow: fr})
+		emit(obs, Event{Type: spi.EventFlowFailed, Flow: fr})
 	}
 	return fr
 }
@@ -129,9 +131,9 @@ func (e *Engine) walkModules(f flow.Flow, stack []string) error {
 }
 
 // schedule drains the ready queue and finalizes cycle detection + outputs.
-func (e *Engine) schedule(ctx context.Context, f flow.Flow, inputs value.Map, fr *result.FlowResult, emit bool) {
+func (e *Engine) schedule(ctx context.Context, f flow.Flow, inputs value.Map, fr *result.FlowResult, obs Observer) {
 	s := newScheduler(f, inputs, fr)
-	s.emit = emit
+	s.obs = obs
 	for len(s.ready) > 0 {
 		id := s.ready[0]
 		s.ready = s.ready[1:]
@@ -159,7 +161,7 @@ type scheduler struct {
 	processed  int
 	ready      []string
 	fr         *result.FlowResult
-	emit       bool
+	obs        Observer
 }
 
 func newScheduler(f flow.Flow, inputs value.Map, fr *result.FlowResult) *scheduler {
@@ -200,25 +202,29 @@ func (e *Engine) step(ctx context.Context, s *scheduler, id string) {
 	fn := s.nodeByID[id]
 	isAlways := runWhenOf(fn) == spi.RunWhenAlways
 
-	if runIt, reason := classify(id, s.preds[id], s.done, s.failed, s.dead, s.mainFailed, isAlways); !runIt {
+	if runIt, reason := s.classify(id, isAlways); !runIt {
 		nr := &result.NodeResult{ID: id, Kind: fn.Kind, Status: result.StatusSkipped, SkipReason: reason}
 		s.fr.Nodes[id] = nr
-		e.emit(s.emit, Event{Type: spi.EventNodeCompleted, NodeID: id, Node: nr})
+		emit(s.obs, Event{Type: spi.EventNodeCompleted, NodeID: id, Node: nr})
 		s.release(id)
 		return
 	}
 
-	e.emit(s.emit, Event{Type: spi.EventNodeStarted, NodeID: id})
+	emit(s.obs, Event{Type: spi.EventNodeStarted, NodeID: id})
 	res, assertions, err := e.runNode(ctx, fn, s.store)
 	nr := &result.NodeResult{ID: id, Kind: fn.Kind, Assertions: assertions}
 	if err != nil {
-		nr.Status, nr.Error, nr.Code = result.StatusFailed, err.Error(), codeOrDefault(err)
+		code := node.CodeOf(err)
+		if code == "" {
+			code = "RUNNER_ERROR" // a genuine runner fault, not a user error
+		}
+		nr.Status, nr.Error, nr.Code = result.StatusFailed, err.Error(), code
 		s.fr.Nodes[id] = nr
 		s.failed[id] = true
 		if !isAlways {
 			s.mainFailed, s.fr.Success = true, false
 		}
-		e.emit(s.emit, Event{Type: spi.EventNodeFailed, NodeID: id, Node: nr})
+		emit(s.obs, Event{Type: spi.EventNodeFailed, NodeID: id, Node: nr})
 		s.release(id)
 		return
 	}
@@ -226,7 +232,7 @@ func (e *Engine) step(ctx context.Context, s *scheduler, id string) {
 	s.done[id] = true
 	nr.Status, nr.Outputs = result.StatusSuccess, res.Outputs
 	s.fr.Nodes[id] = nr
-	e.emit(s.emit, Event{Type: spi.EventNodeCompleted, NodeID: id, Node: nr})
+	emit(s.obs, Event{Type: spi.EventNodeCompleted, NodeID: id, Node: nr})
 	recordRouting(id, res.Routed, s.succ[id], s.dead)
 	s.release(id)
 }
@@ -247,12 +253,10 @@ func (s *scheduler) release(id string) {
 // not routed away) — unless it is an on_success node and the main phase already
 // failed, in which case cleanup is aborted. run_when=always nodes run for
 // cleanup regardless of a main failure, as long as their inputs are available.
-func classify(
-	id string, preds []string, done, failed map[string]bool,
-	dead map[string]map[string]bool, mainFailed, isAlways bool,
-) (bool, string) {
+func (s *scheduler) classify(id string, isAlways bool) (bool, string) {
+	preds := s.preds[id]
 	if len(preds) == 0 {
-		if !isAlways && mainFailed {
+		if !isAlways && s.mainFailed {
 			return false, result.SkipNotReachable
 		}
 		return true, ""
@@ -261,18 +265,18 @@ func classify(
 	reason := result.SkipDependencySkipped
 	for _, p := range preds {
 		switch {
-		case done[p] && !dead[p][id]:
+		case s.done[p] && !s.dead[p][id]:
 			live = true
-		case failed[p]:
+		case s.failed[p]:
 			reason = result.SkipDependencyFailed
-		case done[p] && dead[p][id]:
+		case s.done[p] && s.dead[p][id]:
 			if reason == result.SkipDependencySkipped {
 				reason = result.SkipRoutedAway
 			}
 		}
 	}
 	if live {
-		if !isAlways && mainFailed {
+		if !isAlways && s.mainFailed {
 			return false, result.SkipAbortedAfterFail
 		}
 		return true, ""
@@ -316,7 +320,7 @@ func (e *Engine) runNode(
 			}
 			maps.Copy(res.Outputs, extracted)
 		}
-		if results.AnyFailed() {
+		if !results.AllPassed() {
 			return res, results, node.UserErrf("ASSERTION_FAILED", "assertion failed on %s", b.Base.ID)
 		}
 		return res, results, nil
@@ -337,7 +341,7 @@ func (e *Engine) RunSubflow(ctx context.Context, flowID string, in value.Map) (v
 	if !ok {
 		return nil, node.UserErrf("MODULE_FLOW_NOT_FOUND", "child flow %q not found", flowID)
 	}
-	res := e.run(pushStack(ctx, flowID), child, in, false)
+	res := e.run(pushStack(ctx, flowID), child, in, nil, false)
 	if !res.Success {
 		return nil, node.UserErrf("MODULE_FAILED", "child flow %q failed", flowID)
 	}
@@ -346,7 +350,7 @@ func (e *Engine) RunSubflow(ctx context.Context, flowID string, in value.Map) (v
 
 // RunInline satisfies node.SubflowRunner for embedded body flows (loop, poll).
 func (e *Engine) RunInline(ctx context.Context, f flow.Flow, in value.Map) (value.Map, error) {
-	res := e.run(ctx, f, in, false)
+	res := e.run(ctx, f, in, nil, false)
 	if !res.Success {
 		return nil, node.UserErrf("SUBFLOW_FAILED", "inline body failed")
 	}
@@ -372,13 +376,6 @@ func runWhenOf(fn flow.Node) spi.RunWhen {
 		return spi.RunWhenOnSuccess
 	}
 	return head.RunWhen
-}
-
-func codeOrDefault(err error) string {
-	if c := node.CodeOf(err); c != "" {
-		return c
-	}
-	return "RUNNER_ERROR"
 }
 
 // recordRouting marks every successor a routing node did NOT route to as dead.

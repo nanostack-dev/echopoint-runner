@@ -46,19 +46,6 @@ const (
 	OpExists      Op = "exists"
 )
 
-// known is the set of valid operators, for decode-time validation.
-//
-//nolint:gochecknoglobals // immutable operator set
-var known = map[Op]bool{
-	OpEquals: true, OpNotEquals: true, OpContains: true, OpNotContains: true,
-	OpStartsWith: true, OpEndsWith: true, OpRegex: true, OpEmpty: true,
-	OpNotEmpty: true, OpGreaterThan: true, OpLessThan: true, OpGTE: true,
-	OpLTE: true, OpBetween: true, OpExists: true,
-}
-
-// IsKnown reports whether op is a registered operator.
-func IsKnown(op Op) bool { return known[op] }
-
 // Result is one assertion's outcome.
 type Result struct {
 	Spec   Spec
@@ -79,9 +66,6 @@ func (rs Results) AllPassed() bool {
 	}
 	return true
 }
-
-// AnyFailed reports whether any assertion failed.
-func (rs Results) AnyFailed() bool { return !rs.AllPassed() }
 
 // Run evaluates every spec against v and returns one Result each.
 func Run(v value.Value, specs []Spec) Results {

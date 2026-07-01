@@ -36,10 +36,7 @@ func parse(t *testing.T, flowJSON string) flow.Flow {
 // runOK runs a flow, requires it to succeed, and returns its nested outputs.
 func runOK(t *testing.T, e *engine.Engine, f flow.Flow, inputs value.Map) value.Map {
 	t.Helper()
-	res, err := e.RunFlow(context.Background(), f, inputs)
-	if err != nil {
-		t.Fatalf("run error: %v", err)
-	}
+	res := e.RunFlow(context.Background(), f, inputs)
 	if !res.Success {
 		t.Fatalf("flow should have succeeded; nodes=%+v", res.Nodes)
 	}
@@ -49,10 +46,7 @@ func runOK(t *testing.T, e *engine.Engine, f flow.Flow, inputs value.Map) value.
 // runFail runs a flow, requires Success=false, and returns the full result.
 func runFail(t *testing.T, e *engine.Engine, f flow.Flow, inputs value.Map) *result.FlowResult {
 	t.Helper()
-	res, err := e.RunFlow(context.Background(), f, inputs)
-	if err != nil {
-		t.Fatalf("run error: %v", err)
-	}
+	res := e.RunFlow(context.Background(), f, inputs)
 	if res.Success {
 		t.Fatalf("flow should have failed; nodes=%+v", res.Nodes)
 	}
@@ -373,13 +367,8 @@ func TestAlwaysCleanupRunsAfterFailure(t *testing.T) {
 
 // runFailOrOK runs a flow tolerating either verdict (used where skips, not
 // failures, are the point) and returns the full result.
-func runFailOrOK(t *testing.T, e *engine.Engine, f flow.Flow, inputs value.Map) *result.FlowResult {
-	t.Helper()
-	res, err := e.RunFlow(context.Background(), f, inputs)
-	if err != nil {
-		t.Fatalf("run error: %v", err)
-	}
-	return res
+func runFailOrOK(_ *testing.T, e *engine.Engine, f flow.Flow, inputs value.Map) *result.FlowResult {
+	return e.RunFlow(context.Background(), f, inputs)
 }
 
 // fakeVars is a deterministic dynamic-variable resolver for tests.

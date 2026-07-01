@@ -7,7 +7,6 @@ package node
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -19,46 +18,26 @@ import (
 	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 )
 
-// ErrUser tags a failure as caused by the flow definition or the target system
-// (bad config, a 500 from the called API) rather than a runner fault. Wrap it
-// with %w; the engine classifies on it.
-var ErrUser = errors.New("user error")
-
-// CodedError is a user error carrying a stable error code (REQUEST_FAILED,
-// ASSERTION_FAILED, ...). It satisfies errors.Is(err, ErrUser).
-type CodedError struct {
-	Code string
-	err  error
-}
-
-func (e *CodedError) Error() string { return e.err.Error() }
-func (e *CodedError) Unwrap() error { return e.err }
-
-// UserErr builds a coded user error from a cause.
-func UserErr(code string, cause error) error {
-	return &CodedError{Code: code, err: fmt.Errorf("%w: %w", ErrUser, cause)}
-}
-
-// UserErrf builds a coded user error from a formatted message.
+// UserErrf builds a coded user error (a spi.UserError) from a formatted message,
+// so echopoint's spi.AsUserError sees new-core failures. Code is a stable string
+// (REQUEST_FAILED, ASSERTION_FAILED, ...); a runner fault is a plain error.
 func UserErrf(code, format string, args ...any) error {
-	return &CodedError{Code: code, err: fmt.Errorf("%w: %s", ErrUser, fmt.Sprintf(format, args...))}
+	return spi.NewUserError(code, fmt.Sprintf(format, args...), nil)
 }
 
-// CodeOf returns the error's code: a CodedError's Code, "USER_ERROR" for an
-// uncoded user error, or "" for a runner fault.
+// CodeOf returns a user error's stable code, or "" for a runner fault.
 func CodeOf(err error) string {
-	var c *CodedError
-	if errors.As(err, &c) {
-		return c.Code
-	}
-	if errors.Is(err, ErrUser) {
-		return "USER_ERROR"
+	if ue, ok := spi.AsUserError(err); ok {
+		return ue.Code
 	}
 	return ""
 }
 
 // IsUser reports whether err is a user-caused failure (vs a runner fault).
-func IsUser(err error) bool { return errors.Is(err, ErrUser) }
+func IsUser(err error) bool {
+	_, ok := spi.AsUserError(err)
+	return ok
+}
 
 // Base is embedded by every node Cfg. It carries identity plus the declared
 // assertions and outputs the framework evaluates after the node runs.
@@ -125,19 +104,15 @@ type SubflowRunner interface {
 	RunInline(ctx context.Context, f flow.Flow, in value.Map) (value.Map, error)
 }
 
-// Resolver resolves {{$dyn}} dynamic variables.
-type Resolver interface {
-	Resolve(name string, args []string) (string, error)
-}
-
 // Runtime is the explicit dependency set handed to every node — genuine
 // external effects only, no assert/extract/error sugar. A node touches only the
-// fields it needs; a test builds a Runtime with just those.
+// fields it needs; a test builds a Runtime with just those. Vars resolves
+// {{$dyn}} dynamic variables (spi.DynamicResolver, satisfied by pkg/dynamicvars).
 type Runtime struct {
 	HTTP    HTTPDoer
 	Clock   Clock
 	Subflow SubflowRunner
-	Vars    Resolver
+	Vars    spi.DynamicResolver
 }
 
 // --- registry ---

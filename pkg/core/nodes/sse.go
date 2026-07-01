@@ -2,6 +2,7 @@ package nodes
 
 import (
 	"bufio"
+	"cmp"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -58,7 +59,7 @@ func runSse(ctx context.Context, cfg SseCfg, _ value.Value, rt node.Runtime) (no
 			return node.Result{}, err
 		}
 		if ctx.Err() != context.DeadlineExceeded {
-			return node.Result{}, node.UserErrf("SSE_FAILED", "sse read")
+			return node.Result{}, node.UserErrf("SSE_FAILED", "sse read: %v", err)
 		}
 		stopReason = "timeout"
 	} else if ctx.Err() == context.DeadlineExceeded {
@@ -140,7 +141,7 @@ func evalSseEvent(
 	count, maxEvents int,
 	stopOnFail bool,
 ) (bool, string, error) {
-	if len(cfg.Assertions) > 0 && assert.Run(value.Of(parsed), cfg.Assertions).AnyFailed() && stopOnFail {
+	if len(cfg.Assertions) > 0 && !assert.Run(value.Of(parsed), cfg.Assertions).AllPassed() && stopOnFail {
 		return true, "assertion_failure",
 			node.UserErrf("SSE_FAILED", "sse assertion failed at event %d", count-1)
 	}
@@ -154,9 +155,9 @@ func evalSseEvent(
 }
 
 func sseConnect(ctx context.Context, cfg SseCfg, rt node.Runtime) (*http.Response, error) {
-	req, err := http.NewRequestWithContext(ctx, orDefault(cfg.Method, http.MethodGet), cfg.URL, nil)
+	req, err := http.NewRequestWithContext(ctx, cmp.Or(cfg.Method, http.MethodGet), cfg.URL, nil)
 	if err != nil {
-		return nil, node.UserErrf("SSE_FAILED", "sse build request")
+		return nil, node.UserErrf("SSE_FAILED", "sse build request: %v", err)
 	}
 	req.Header.Set("Accept", "text/event-stream")
 	req.Header.Set("Cache-Control", "no-cache")
@@ -165,7 +166,7 @@ func sseConnect(ctx context.Context, cfg SseCfg, rt node.Runtime) (*http.Respons
 	}
 	resp, err := rt.HTTP.Do(req)
 	if err != nil {
-		return nil, node.UserErrf("SSE_FAILED", "sse connect")
+		return nil, node.UserErrf("SSE_FAILED", "sse connect: %v", err)
 	}
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		_ = resp.Body.Close()
