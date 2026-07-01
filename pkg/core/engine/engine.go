@@ -161,6 +161,11 @@ func (e *Engine) schedule(ctx context.Context, f flow.Flow, inputs value.Map, fr
 	s := newScheduler(f, inputs, fr)
 	s.obs = obs
 	for len(s.ready) > 0 {
+		if err := ctx.Err(); err != nil {
+			fr.Success, fr.Error, fr.Code = false, "flow cancelled: "+err.Error(), "CANCELLED"
+			fr.Outputs = collect(s.store)
+			return
+		}
 		id := s.ready[0]
 		s.ready = s.ready[1:]
 		e.step(ctx, s, id)
@@ -196,7 +201,7 @@ func newScheduler(f flow.Flow, inputs value.Map, fr *result.FlowResult) *schedul
 		indeg:    make(map[string]int, len(f.Nodes)),
 		succ:     make(map[string][]string, len(f.Nodes)),
 		preds:    make(map[string][]string, len(f.Nodes)),
-		store:    map[string]value.Map{"": inputs},
+		store:    map[string]value.Map{"": mergeInputs(f.Inputs, inputs)},
 		done:     map[string]bool{},
 		failed:   map[string]bool{},
 		dead:     map[string]map[string]bool{},
@@ -245,6 +250,7 @@ func (e *Engine) step(ctx context.Context, s *scheduler, id string) {
 			code = "RUNNER_ERROR" // a genuine runner fault, not a user error
 		}
 		nr.Status, nr.Error, nr.Code = result.StatusFailed, err.Error(), code
+		nr.Outputs = res.Outputs // keep what was produced (e.g. the body that failed an assertion)
 		s.fr.Nodes[id] = nr
 		s.failed[id] = true
 		if !isAlways {
@@ -261,6 +267,18 @@ func (e *Engine) step(ctx context.Context, s *scheduler, id string) {
 	emit(s.obs, Event{Type: spi.EventNodeCompleted, NodeID: id, Node: nr})
 	recordRouting(id, res.Routed, s.succ[id], s.dead)
 	s.release(id)
+}
+
+// mergeInputs overlays caller/runtime inputs on top of the flow's declared
+// default inputs (the passed values win).
+func mergeInputs(defaults, override value.Map) value.Map {
+	if len(defaults) == 0 {
+		return override
+	}
+	merged := make(value.Map, len(defaults)+len(override))
+	maps.Copy(merged, defaults)
+	maps.Copy(merged, override)
+	return merged
 }
 
 // release decrements successors' in-degree and enqueues any that become ready.
