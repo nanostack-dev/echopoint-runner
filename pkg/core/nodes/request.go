@@ -59,19 +59,9 @@ func runRequest(ctx context.Context, cfg RequestCfg, _ value.Value, rt node.Runt
 	respMap := value.Map{
 		"status":  value.Of(resp.StatusCode),
 		"headers": value.Of(headerMap(resp.Header)),
-		"body":    value.Of(parseBody(raw)),
+		"body":    value.Of(jsonOrString(raw)),
 	}
 	return node.Result{Outputs: respMap, Assert: respMap.Value(), Provided: true}, nil
-}
-
-// parseBody parses the body as JSON when it is valid JSON, otherwise keeps it as
-// a raw string — so assertions can path into "body.x" (JSON) or compare "body"
-// directly (text). Content-Type is not trusted (many APIs mislabel it).
-func parseBody(raw []byte) any {
-	if v := value.JSON(raw); !v.IsZero() {
-		return v.Raw()
-	}
-	return string(raw)
 }
 
 // headerMap flattens response headers (first value, lowercased key) so

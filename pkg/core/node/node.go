@@ -70,6 +70,11 @@ type Result struct {
 	// This is explicit rather than inferred from a zero Assert, so asserting over
 	// a JSON null still runs.
 	Provided bool
+	// Assertions is set by self-evaluating nodes (poll, sse) to surface the
+	// assertion outcomes they evaluated internally — the engine records these on
+	// the node result, since its post-step (which fills them for provider nodes)
+	// does not run for self-evaluating nodes.
+	Assertions assert.Results
 	// Routed is set by routing nodes (branch): the successor ids execution was
 	// routed to. The engine skips every other successor (and its subtree). Nil
 	// for ordinary nodes — all successors run.

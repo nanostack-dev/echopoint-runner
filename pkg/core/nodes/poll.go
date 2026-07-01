@@ -61,22 +61,19 @@ func runPoll(ctx context.Context, cfg PollCfg, _ value.Value, rt node.Runtime) (
 	for attempt := 1; attempt <= attempts; attempt++ {
 		out, runErr := rt.Subflow.RunInline(ctx, body, value.Map{"attempt": value.Of(attempt)})
 		if runErr != nil {
-			return node.Result{}, node.UserErrf(
-				"POLL_BODY_FAILED",
-				"poll body failed on attempt %d: %v",
-				attempt,
-				runErr,
-			)
+			return node.Result{}, pollErr(ctx, attempt,
+				node.UserErrf("POLL_BODY_FAILED", "poll body failed on attempt %d: %v", attempt, runErr))
 		}
-		if assert.Run(out.Value(), cfg.Assertions).AllPassed() {
-			return node.Result{Outputs: value.Map{
-				"attempts": value.Of(attempt),
-				"result":   out.Value(),
-			}}, nil
+		results := assert.Run(out.Value(), cfg.Assertions)
+		if results.AllPassed() {
+			return node.Result{
+				Outputs:    value.Map{"attempts": value.Of(attempt), "result": out.Value()},
+				Assertions: results,
+			}, nil
 		}
 		if attempt < attempts {
 			if sleepErr := rt.Clock.Sleep(ctx, interval); sleepErr != nil {
-				return node.Result{}, sleepErr
+				return node.Result{}, pollErr(ctx, attempt, sleepErr)
 			}
 		}
 	}
@@ -85,6 +82,15 @@ func runPoll(ctx context.Context, cfg PollCfg, _ value.Value, rt node.Runtime) (
 		"poll exit condition not met after %d attempts",
 		attempts,
 	)
+}
+
+// pollErr maps a per-attempt failure to a coded error: a hit deadline becomes
+// POLL_TIMEOUT, everything else keeps the caller's error.
+func pollErr(ctx context.Context, attempt int, fallback error) error {
+	if ctx.Err() == context.DeadlineExceeded {
+		return node.UserErrf("POLL_TIMEOUT", "poll timed out on attempt %d", attempt)
+	}
+	return fallback
 }
 
 //nolint:gochecknoinits // register the built-in node kind at package load

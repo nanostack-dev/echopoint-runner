@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"cmp"
 	"context"
-	"encoding/json"
 	"net/http"
 	"strings"
 	"time"
@@ -53,7 +52,7 @@ func runSse(ctx context.Context, cfg SseCfg, _ value.Value, rt node.Runtime) (no
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 0, bufio.MaxScanTokenSize), sseMaxLineBytes)
 
-	events, stopReason, err := readSseStream(scanner, cfg)
+	events, results, stopReason, err := readSseStream(scanner, cfg)
 	if err != nil {
 		if stopReason == "assertion_failure" {
 			return node.Result{}, err
@@ -70,12 +69,15 @@ func runSse(ctx context.Context, cfg SseCfg, _ value.Value, rt node.Runtime) (no
 	if len(events) > 0 {
 		last = events[len(events)-1]
 	}
-	return node.Result{Outputs: value.Map{
-		"events":      value.Of(events),
-		outKeyCount:   value.Of(len(events)),
-		"last":        value.Of(last),
-		"stop_reason": value.Of(stopReason),
-	}}, nil
+	return node.Result{
+		Outputs: value.Map{
+			"events":      value.Of(events),
+			outKeyCount:   value.Of(len(events)),
+			"last":        value.Of(last),
+			"stop_reason": value.Of(stopReason),
+		},
+		Assertions: results,
+	}, nil
 }
 
 // sseParser accumulates field lines into events per the SSE grammar.
@@ -110,7 +112,7 @@ func (p *sseParser) feed(line string) (string, string, bool) {
 // readSseStream parses events until a stop condition. A non-nil error with
 // stopReason "assertion_failure" is a node failure; any other non-nil error is
 // the scanner's (e.g. a cancelled read).
-func readSseStream(scanner *bufio.Scanner, cfg SseCfg) ([]any, string, error) {
+func readSseStream(scanner *bufio.Scanner, cfg SseCfg) ([]any, assert.Results, string, error) {
 	maxEvents := cfg.MaxEvents
 	if maxEvents <= 0 {
 		maxEvents = defaultSseMaxEvents
@@ -119,29 +121,32 @@ func readSseStream(scanner *bufio.Scanner, cfg SseCfg) ([]any, string, error) {
 
 	var p sseParser
 	events := []any{}
+	var allResults assert.Results
 	for scanner.Scan() {
 		data, name, complete := p.feed(scanner.Text())
 		if !complete {
 			continue
 		}
-		parsed := parseSseData(data)
+		parsed := jsonOrString([]byte(data))
 		events = append(events, parsed)
-		if stop, reason, err := evalSseEvent(cfg, parsed, data, name, len(events), maxEvents, stopOnFail); stop {
-			return events, reason, err
+		var results assert.Results
+		if len(cfg.Assertions) > 0 {
+			results = assert.Run(value.Of(parsed), cfg.Assertions)
+			allResults = append(allResults, results...)
+		}
+		if stop, reason, err := evalSseEvent(cfg, results, data, name, len(events), maxEvents, stopOnFail); stop {
+			return events, allResults, reason, err
 		}
 	}
-	return events, "eof", scanner.Err()
+	return events, allResults, "eof", scanner.Err()
 }
 
-// evalSseEvent applies the stop conditions to a freshly dispatched event.
+// evalSseEvent applies the stop conditions to a freshly dispatched event, given
+// its already-evaluated assertion results.
 func evalSseEvent(
-	cfg SseCfg,
-	parsed any,
-	data, name string,
-	count, maxEvents int,
-	stopOnFail bool,
+	cfg SseCfg, results assert.Results, data, name string, count, maxEvents int, stopOnFail bool,
 ) (bool, string, error) {
-	if len(cfg.Assertions) > 0 && !assert.Run(value.Of(parsed), cfg.Assertions).AllPassed() && stopOnFail {
+	if len(cfg.Assertions) > 0 && !results.AllPassed() && stopOnFail {
 		return true, "assertion_failure",
 			node.UserErrf("SSE_FAILED", "sse assertion failed at event %d", count-1)
 	}
@@ -173,15 +178,6 @@ func sseConnect(ctx context.Context, cfg SseCfg, rt node.Runtime) (*http.Respons
 		return nil, node.UserErrf("SSE_FAILED", "sse non-2xx status %d", resp.StatusCode)
 	}
 	return resp, nil
-}
-
-// parseSseData parses an event's data as JSON, falling back to the raw string.
-func parseSseData(data string) any {
-	var v any
-	if err := json.Unmarshal([]byte(data), &v); err == nil {
-		return v
-	}
-	return data
 }
 
 // splitSseField splits "field: value", stripping one optional leading space.
