@@ -53,8 +53,8 @@ func (e *Engine) RunFlow(ctx context.Context, f flow.Flow, inputs value.Map) (va
 		indeg[ed.To]++
 	}
 
-	bus := make(map[string]value.Map, len(f.Nodes)+1)
-	bus[""] = inputs // flow inputs live under the synthetic empty-id node
+	storeOutputs := make(map[string]value.Map, len(f.Nodes)+1)
+	storeOutputs[""] = inputs // flow inputs live under the synthetic empty-id node
 	done := make(map[string]bool, len(f.Nodes))
 	dead := make(map[string]map[string]bool)
 
@@ -77,11 +77,11 @@ func (e *Engine) RunFlow(ctx context.Context, f flow.Flow, inputs value.Map) (va
 			continue
 		}
 
-		res, err := e.runNode(ctx, nodeByID[id], bus)
+		res, err := e.runNode(ctx, nodeByID[id], storeOutputs)
 		if err != nil {
 			return nil, fmt.Errorf("node %s: %w", id, err)
 		}
-		bus[id] = res.Outputs
+		storeOutputs[id] = res.Outputs
 		done[id] = true
 		recordRouting(id, res.Routed, succ[id], dead)
 		releaseSuccessors(id, succ, indeg, &ready)
@@ -89,7 +89,7 @@ func (e *Engine) RunFlow(ctx context.Context, f flow.Flow, inputs value.Map) (va
 	if processed != len(f.Nodes) {
 		return nil, fmt.Errorf("cycle or unreachable nodes: processed %d of %d", processed, len(f.Nodes))
 	}
-	return collect(bus), nil
+	return collect(storeOutputs), nil
 }
 
 // skipNode reports whether a node should be skipped: it has predecessors but no
@@ -136,11 +136,11 @@ func releaseSuccessors(id string, succ map[string][]string, indeg map[string]int
 	sort.Strings(*ready)
 }
 
-// runNode resolves the node's templates against the bus, decodes it into typed
-// config, runs it, and applies the uniform assertion/output post-step. This is
-// the entire per-node lifecycle — identical for every kind.
-func (e *Engine) runNode(ctx context.Context, fn flow.Node, bus map[string]value.Map) (node.Result, error) {
-	resolved, err := tmpl.Resolve(fn.Raw, tmpl.Bus(bus))
+// runNode resolves the node's templates against the output store, decodes it
+// into typed config, runs it, and applies the uniform assertion/output
+// post-step. This is the entire per-node lifecycle — identical for every kind.
+func (e *Engine) runNode(ctx context.Context, fn flow.Node, storeOutputs map[string]value.Map) (node.Result, error) {
+	resolved, err := tmpl.Resolve(fn.Raw, tmpl.Store(storeOutputs))
 	if err != nil {
 		return node.Result{}, err
 	}
@@ -148,7 +148,7 @@ func (e *Engine) runNode(ctx context.Context, fn flow.Node, bus map[string]value
 	if err != nil {
 		return node.Result{}, err
 	}
-	res, err := b.Run(ctx, inputView(bus), e.deps)
+	res, err := b.Run(ctx, inputView(storeOutputs), e.deps)
 	if err != nil {
 		return node.Result{}, err
 	}
@@ -187,12 +187,12 @@ func (e *Engine) RunSubflow(ctx context.Context, flowID string, in value.Map) (v
 // inputView boxes a node's input context as a single Value: flow inputs at the
 // top level, each upstream node's outputs nested under its id. assert/branch
 // evaluate over this when no explicit target is configured.
-func inputView(bus map[string]value.Map) value.Value {
-	merged := make(map[string]any, len(bus))
-	for k, v := range bus[""] { // flow inputs at top level
+func inputView(storeOutputs map[string]value.Map) value.Value {
+	merged := make(map[string]any, len(storeOutputs))
+	for k, v := range storeOutputs[""] { // flow inputs at top level
 		merged[k] = v.Raw()
 	}
-	for nodeID, m := range bus {
+	for nodeID, m := range storeOutputs {
 		if nodeID == "" {
 			continue
 		}
@@ -209,9 +209,9 @@ func (e *Engine) RunInline(ctx context.Context, f flow.Flow, in value.Map) (valu
 // collect nests each node's outputs under its id, so results are accessed by
 // path ("nodeID.key") uniformly — including a child flow's outputs when a
 // composite node asserts over them.
-func collect(bus map[string]value.Map) value.Map {
-	out := make(value.Map, len(bus))
-	for nodeID, m := range bus {
+func collect(storeOutputs map[string]value.Map) value.Map {
+	out := make(value.Map, len(storeOutputs))
+	for nodeID, m := range storeOutputs {
 		if nodeID == "" {
 			continue // the synthetic flow-inputs node is not a result
 		}

@@ -1,5 +1,5 @@
 // Package tmpl resolves {{ref}} / {{{ref}}} template tokens in a raw node
-// definition against the inter-node output bus, before the node is decoded.
+// definition against the inter-node output store, before the node is decoded.
 // Nodes never see templates — they receive fully resolved, typed config.
 package tmpl
 
@@ -19,36 +19,36 @@ var rawPattern = regexp.MustCompile(`^\{\{\{\s*([^{}]+?)\s*\}\}\}$`)
 // refPattern matches an inline {{ref}} for string interpolation.
 var refPattern = regexp.MustCompile(`\{\{\s*([^{}]+?)\s*\}\}`)
 
-// Bus maps node id -> that node's outputs; flow inputs live under the empty id.
-type Bus map[string]value.Map
+// Store maps node id -> that node's outputs; flow inputs live under the empty id.
+type Store map[string]value.Map
 
-// Resolve substitutes template tokens in raw using the bus and returns resolved
+// Resolve substitutes template tokens in raw using the store and returns resolved
 // JSON. Unresolved refs are left verbatim so a typo is visible rather than
 // silently empty.
-func Resolve(raw json.RawMessage, bus Bus) (json.RawMessage, error) {
+func Resolve(raw json.RawMessage, store Store) (json.RawMessage, error) {
 	var v any
 	if err := json.Unmarshal(raw, &v); err != nil {
 		return nil, fmt.Errorf("template parse: %w", err)
 	}
-	out, err := json.Marshal(walk(v, bus))
+	out, err := json.Marshal(walk(v, store))
 	if err != nil {
 		return nil, fmt.Errorf("template remarshal: %w", err)
 	}
 	return out, nil
 }
 
-func walk(v any, bus Bus) any {
+func walk(v any, store Store) any {
 	switch t := v.(type) {
 	case string:
-		return resolveString(t, bus)
+		return resolveString(t, store)
 	case map[string]any:
 		for k, val := range t {
-			t[k] = walk(val, bus)
+			t[k] = walk(val, store)
 		}
 		return t
 	case []any:
 		for i, val := range t {
-			t[i] = walk(val, bus)
+			t[i] = walk(val, store)
 		}
 		return t
 	default:
@@ -56,25 +56,25 @@ func walk(v any, bus Bus) any {
 	}
 }
 
-func resolveString(s string, bus Bus) any {
+func resolveString(s string, store Store) any {
 	if m := rawPattern.FindStringSubmatch(s); m != nil {
-		if val, ok := lookup(m[1], bus); ok {
+		if val, ok := lookup(m[1], store); ok {
 			return val.Raw()
 		}
 		return s
 	}
 	return refPattern.ReplaceAllStringFunc(s, func(tok string) string {
 		ref := strings.TrimSpace(refPattern.FindStringSubmatch(tok)[1])
-		if val, ok := lookup(ref, bus); ok {
+		if val, ok := lookup(ref, store); ok {
 			return val.String()
 		}
 		return tok
 	})
 }
 
-func lookup(ref string, bus Bus) (value.Value, bool) {
+func lookup(ref string, store Store) (value.Value, bool) {
 	nodeID, key := splitRef(strings.TrimSpace(ref))
-	outs, ok := bus[nodeID]
+	outs, ok := store[nodeID]
 	if !ok {
 		return value.Value{}, false
 	}
