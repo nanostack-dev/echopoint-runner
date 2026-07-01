@@ -2,7 +2,6 @@ package nodes
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -35,7 +34,7 @@ func runRequest(ctx context.Context, cfg RequestCfg, _ value.Value, rt node.Runt
 	}
 	req, err := http.NewRequestWithContext(ctx, method, cfg.URL, body)
 	if err != nil {
-		return node.Result{}, fmt.Errorf("build request: %w", node.ErrUser)
+		return node.Result{}, node.UserErrf("REQUEST_FAILED", "build request: %v", err)
 	}
 	for k, v := range cfg.Headers {
 		req.Header.Set(k, v)
@@ -43,7 +42,7 @@ func runRequest(ctx context.Context, cfg RequestCfg, _ value.Value, rt node.Runt
 
 	resp, err := rt.HTTP.Do(req)
 	if err != nil {
-		return node.Result{}, fmt.Errorf("http: %w", node.ErrUser)
+		return node.Result{}, node.UserErrf("REQUEST_FAILED", "http: %v", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	raw, _ := io.ReadAll(resp.Body)
