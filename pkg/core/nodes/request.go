@@ -48,10 +48,36 @@ func runRequest(ctx context.Context, cfg RequestCfg, _ value.Value, rt node.Runt
 	defer func() { _ = resp.Body.Close() }()
 	raw, _ := io.ReadAll(resp.Body)
 
-	return node.Result{
-		Outputs: value.Map{"status": value.Of(resp.StatusCode)},
-		Assert:  value.JSON(raw),
-	}, nil
+	// Expose the whole response as {status, headers, body} so this node's own
+	// assertions AND any downstream node can path into status/headers/body.
+	respMap := value.Map{
+		"status":  value.Of(resp.StatusCode),
+		"headers": value.Of(headerMap(resp.Header)),
+		"body":    value.Of(parseBody(raw)),
+	}
+	return node.Result{Outputs: respMap, Assert: respMap.Value()}, nil
+}
+
+// parseBody parses the body as JSON when it is valid JSON, otherwise keeps it as
+// a raw string — so assertions can path into "body.x" (JSON) or compare "body"
+// directly (text). Content-Type is not trusted (many APIs mislabel it).
+func parseBody(raw []byte) any {
+	if v := value.JSON(raw); !v.IsZero() {
+		return v.Raw()
+	}
+	return string(raw)
+}
+
+// headerMap flattens response headers (first value, lowercased key) so
+// assertions can path into "headers.content-type".
+func headerMap(h http.Header) map[string]any {
+	out := make(map[string]any, len(h))
+	for k, v := range h {
+		if len(v) > 0 {
+			out[strings.ToLower(k)] = v[0]
+		}
+	}
+	return out
 }
 
 //nolint:gochecknoinits // register the built-in node kind at package load

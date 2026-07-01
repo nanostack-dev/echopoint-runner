@@ -2,7 +2,6 @@ package nodes
 
 import (
 	"context"
-	"encoding/json"
 
 	"github.com/nanostack-dev/echopoint-runner/pkg/core/assert"
 	"github.com/nanostack-dev/echopoint-runner/pkg/core/node"
@@ -10,32 +9,36 @@ import (
 	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 )
 
-// BranchCase routes to Target when its condition holds over the branch target.
+// BranchCase routes to Target when its condition holds over the input context.
 type BranchCase struct {
 	When   assert.Spec `json:"when"`
 	Target string      `json:"target"`
 }
 
 // BranchCfg routes execution to one successor by the first matching case (or
-// Default). It evaluates over an explicit (templated) target, or the node's
-// input context when none is given. A branch never fails on no-match — the
-// engine skips the successors it routes away from (and their subtrees).
+// Default). Conditions address the input context directly by fully-qualified
+// path (flow inputs by name, "nodeID.key" for any already-executed node) — no
+// target of its own. A branch never fails on no-match; the engine skips the
+// successors it routes away from (and their subtrees).
 type BranchCfg struct {
 	node.Base
 
-	Target  json.RawMessage `json:"target"`
-	Cases   []BranchCase    `json:"cases"`
-	Default string          `json:"default"`
+	Cases   []BranchCase `json:"cases"`
+	Default string       `json:"default"`
 }
 
 func runBranch(_ context.Context, cfg BranchCfg, in value.Value, _ node.Runtime) (node.Result, error) {
-	target := in
-	if len(cfg.Target) > 0 {
-		target = value.JSON(cfg.Target)
+	specs := make([]assert.Spec, len(cfg.Cases))
+	for i, c := range cfg.Cases {
+		specs[i] = c.When
 	}
+	if err := requireRefs(in, specs); err != nil {
+		return node.Result{}, err
+	}
+
 	matched, matchedIndex := "", -1
 	for i, c := range cfg.Cases {
-		if assert.Run(target, []assert.Spec{c.When}).AllPassed() {
+		if assert.Run(in, []assert.Spec{c.When}).AllPassed() {
 			matched, matchedIndex = c.Target, i
 			break
 		}
