@@ -620,6 +620,44 @@ func TestSseMaxEvents(t *testing.T) {
 	}
 }
 
+// TestHyphenatedRefs proves hyphenated node ids and header keys are addressable:
+// a "create-user" node, a "content-type" header, a "user-id" body field, and a
+// cross-node ref to a hyphenated id all resolve (regression for the RFC-9535
+// dot-shorthand hyphen bug).
+func TestHyphenatedRefs(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"user-id": 42}`))
+	}))
+	defer srv.Close()
+
+	f := parse(t, `{"name":"h","nodes":[
+		{"id":"create-user","type":"request","url":"`+srv.URL+`",
+		 "assertions":[{"path":"headers.content-type","op":"contains","expected":"json"},
+		               {"path":"body.user-id","op":"equals","expected":42}],
+		 "outputs":[{"name":"uid","path":"body.user-id"}]},
+		{"id":"check","type":"assert","assertions":[{"path":"create-user.uid","op":"equals","expected":42}]}],
+		"edges":[{"source":"create-user","target":"check"}]}`)
+	runOK(t, engine.New(node.Runtime{HTTP: srv.Client(), Clock: &fakeClock{}}, nil), f, nil)
+}
+
+// TestDeepTemplateRef proves a template ref reaches a node's nested output
+// ({{call.body.ok}}), not just its top-level declared outputs — templates and
+// assertions share one path addressing.
+func TestDeepTemplateRef(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"ok": true}`))
+	}))
+	defer srv.Close()
+
+	f := parse(t, `{"name":"d","nodes":[
+		{"id":"call","type":"request","url":"`+srv.URL+`"},
+		{"id":"echo","type":"set_variable","variables":{"got":"{{call.body.ok}}"},
+		 "assertions":[{"path":"got","op":"equals","expected":"true"}]}],
+		"edges":[{"source":"call","target":"echo"}]}`)
+	runOK(t, engine.New(node.Runtime{HTTP: srv.Client(), Clock: &fakeClock{}}, nil), f, nil)
+}
+
 // TestDirectNodeCall is a smoke test that the production wiring compiles.
 func TestDirectNodeCall(_ *testing.T) {
 	_ = nodes.DefaultRuntime()

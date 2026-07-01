@@ -22,7 +22,11 @@ const (
 type LoopCfg struct {
 	node.Base
 
-	Items           json.RawMessage `json:"items"`
+	Items json.RawMessage `json:"items"`
+	// Body is the inline flow run once per item. It is re-templated per iteration
+	// with the injected item/index. NOTE: the outer template pass also visits it,
+	// so a flow input or node named exactly like a loop variable (item_var /
+	// index_var) could be substituted before the loop runs — avoid that collision.
 	Body            json.RawMessage `json:"body"`
 	ItemVar         string          `json:"item_var"`
 	IndexVar        string          `json:"index_var"`
@@ -66,8 +70,9 @@ func runLoop(ctx context.Context, cfg LoopCfg, _ value.Value, rt node.Runtime) (
 
 	agg := value.Of(map[string]any{outKeyResults: results, outKeyCount: len(results)})
 	return node.Result{
-		Outputs: value.Map{outKeyResults: value.Of(results), outKeyCount: value.Of(len(results))},
-		Assert:  agg,
+		Outputs:  value.Map{outKeyResults: value.Of(results), outKeyCount: value.Of(len(results))},
+		Assert:   agg,
+		Provided: true,
 	}, nil
 }
 

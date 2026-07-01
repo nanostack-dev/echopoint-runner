@@ -290,23 +290,24 @@ func classify(
 func (e *Engine) runNode(
 	ctx context.Context, fn flow.Node, store map[string]value.Map,
 ) (node.Result, assert.Results, error) {
-	resolved, err := tmpl.Resolve(fn.Raw, tmpl.Store(store), e.dynFunc())
+	view := inputView(store)
+	resolved, err := tmpl.Resolve(fn.Raw, view, e.dynFunc())
 	if err != nil {
-		return node.Result{}, nil, err
+		return node.Result{}, nil, node.UserErrf("INVALID_NODE_CONFIG", "template %s: %v", fn.Kind, err)
 	}
 	b, err := node.Decode(fn.Kind, resolved)
 	if err != nil {
-		return node.Result{}, nil, err
+		return node.Result{}, nil, node.UserErrf("INVALID_NODE_CONFIG", "decode %s: %v", fn.Kind, err)
 	}
 	// The run-and-assert unit is what middleware (retry/timeout) wraps, so a
 	// retry re-runs the assertion pass too.
 	exec := func(ctx context.Context) (node.Result, assert.Results, error) {
-		res, runErr := b.Run(ctx, inputView(store), e.deps)
+		res, runErr := b.Run(ctx, view, e.deps)
 		if runErr != nil {
 			return node.Result{}, nil, runErr
 		}
-		if res.Assert.IsZero() {
-			return res, nil, nil // node self-evaluated (or has nothing to assert)
+		if !res.Provided {
+			return res, nil, nil // node self-evaluated / routes / nothing to assert
 		}
 		results := assert.Run(res.Assert, b.Base.Assertions)
 		if extracted := output.Extract(res.Assert, b.Base.Outputs); len(extracted) > 0 {

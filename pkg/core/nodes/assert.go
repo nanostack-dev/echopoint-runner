@@ -20,7 +20,7 @@ func runAssert(_ context.Context, cfg AssertCfg, in value.Value, _ node.Runtime)
 	if err := requireRefs(in, cfg.Assertions); err != nil {
 		return node.Result{}, err
 	}
-	return node.Result{Assert: in}, nil
+	return node.Result{Assert: in, Provided: true}, nil
 }
 
 //nolint:gochecknoinits // register the built-in node kind at package load

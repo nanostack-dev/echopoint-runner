@@ -90,13 +90,15 @@ func (v Value) List() ([]Value, bool) {
 }
 
 // Get resolves an RFC-9535 JSONPath into the value, reporting whether it
-// matched. A bare path ("body.id", "status") is treated as "$.body.id" for
-// convenience; full JSONPath ("$.items[*].id", "$.data[?@.active]") also works.
-// A single match returns that value; multiple matches return a list.
+// matched. A bare dotted path ("body.id", "headers.content-type", a hyphenated
+// node id like "create-user.id") is bracket-quoted so every member name is
+// addressable; a path already starting with "$" is used verbatim so full
+// JSONPath ("$.items[*].id", "$.data[?@.active]") works. A single match returns
+// that value; multiple matches return a list.
 func (v Value) Get(path string) (Value, bool) {
 	expr := path
 	if !strings.HasPrefix(expr, "$") {
-		expr = "$." + strings.TrimPrefix(expr, ".")
+		expr = bracketPath(path)
 	}
 	p, err := jsonpath.Parse(expr)
 	if err != nil {
@@ -126,6 +128,25 @@ func (v Value) String() string {
 		b, _ := json.Marshal(t)
 		return string(b)
 	}
+}
+
+// bracketPath turns a dotted path into a bracket-quoted JSONPath, so member
+// names containing hyphens or other non-shorthand characters (e.g.
+// "content-type", "create-user") are addressable — RFC-9535 dot shorthand
+// rejects them.
+func bracketPath(path string) string {
+	path = strings.TrimPrefix(path, ".")
+	if path == "" {
+		return "$"
+	}
+	var b strings.Builder
+	b.WriteByte('$')
+	for seg := range strings.SplitSeq(path, ".") {
+		b.WriteString("['")
+		b.WriteString(strings.ReplaceAll(seg, `'`, `\'`))
+		b.WriteString("']")
+	}
+	return b.String()
 }
 
 // MarshalJSON renders the boxed value back to JSON (for results crossing the

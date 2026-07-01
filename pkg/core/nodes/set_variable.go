@@ -24,7 +24,7 @@ func runSetVariable(_ context.Context, cfg SetVariableCfg, _ value.Value, _ node
 	for name, raw := range cfg.Variables {
 		out[name] = value.JSON(raw)
 	}
-	return node.Result{Outputs: out, Assert: out.Value()}, nil
+	return node.Result{Outputs: out, Assert: out.Value(), Provided: true}, nil
 }
 
 //nolint:gochecknoinits // register the built-in node kind at package load

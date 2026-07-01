@@ -61,7 +61,7 @@ func runRequest(ctx context.Context, cfg RequestCfg, _ value.Value, rt node.Runt
 		"headers": value.Of(headerMap(resp.Header)),
 		"body":    value.Of(parseBody(raw)),
 	}
-	return node.Result{Outputs: respMap, Assert: respMap.Value()}, nil
+	return node.Result{Outputs: respMap, Assert: respMap.Value(), Provided: true}, nil
 }
 
 // parseBody parses the body as JSON when it is valid JSON, otherwise keeps it as
