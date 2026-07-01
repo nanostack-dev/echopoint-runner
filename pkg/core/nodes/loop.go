@@ -1,6 +1,7 @@
 package nodes
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 
@@ -43,8 +44,8 @@ func runLoop(ctx context.Context, cfg LoopCfg, _ value.Value, rt node.Runtime) (
 	if err != nil {
 		return node.Result{}, node.UserErrf("LOOP_FAILED", "loop body: %v", err)
 	}
-	itemVar := orDefault(cfg.ItemVar, defaultItemVar)
-	indexVar := orDefault(cfg.IndexVar, defaultIndexVar)
+	itemVar := cmp.Or(cfg.ItemVar, defaultItemVar)
+	indexVar := cmp.Or(cfg.IndexVar, defaultIndexVar)
 
 	count := len(items)
 	if cfg.MaxIterations > 0 && cfg.MaxIterations < count {
@@ -74,13 +75,6 @@ func runLoop(ctx context.Context, cfg LoopCfg, _ value.Value, rt node.Runtime) (
 		Assert:   agg,
 		Provided: true,
 	}, nil
-}
-
-func orDefault(v, fallback string) string {
-	if v == "" {
-		return fallback
-	}
-	return v
 }
 
 //nolint:gochecknoinits // register the built-in node kind at package load

@@ -19,8 +19,9 @@ type Event struct {
 // call synchronously from the engine.
 type Observer func(Event)
 
-func (e *Engine) emit(on bool, ev Event) {
-	if on && e.observer != nil {
-		e.observer(ev)
+// emit sends an event to obs when one is bound (nil for sub-flow runs).
+func emit(obs Observer, ev Event) {
+	if obs != nil {
+		obs(ev)
 	}
 }

@@ -48,12 +48,6 @@ func TestOperators(t *testing.T) {
 	}
 }
 
-func TestIsKnown(t *testing.T) {
-	if !assert.IsKnown(assert.OpBetween) || assert.IsKnown(assert.Op("nope")) {
-		t.Fatal("IsKnown mismatch")
-	}
-}
-
 // quote renders a scalar test value as JSON: bare numbers/arrays stay literal,
 // everything else becomes a JSON string.
 func quote(s string) string {
