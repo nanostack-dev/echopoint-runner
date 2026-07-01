@@ -2,6 +2,7 @@ package engine_test
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -378,6 +379,26 @@ func runFailOrOK(t *testing.T, e *engine.Engine, f flow.Flow, inputs value.Map) 
 		t.Fatalf("run error: %v", err)
 	}
 	return res
+}
+
+// fakeVars is a deterministic dynamic-variable resolver for tests.
+type fakeVars struct{}
+
+func (fakeVars) Resolve(name string, _ []string) (string, error) {
+	if name == "greeting" {
+		return "hello", nil
+	}
+	return "", errors.New("unknown dynamic variable")
+}
+
+// TestDynamicVars proves {{$name}} resolves via the runtime's resolver during
+// templating, before the node decodes.
+func TestDynamicVars(t *testing.T) {
+	f := parse(t, `{"name":"d","nodes":[{"id":"vars","type":"set_variable",
+		"variables":{"g":"{{$greeting}}!"},
+		"assertions":[{"path":"g","op":"equals","expected":"hello!"}]}],"edges":[]}`)
+	e := engine.New(node.Runtime{Clock: &fakeClock{}, Vars: fakeVars{}}, nil)
+	runOK(t, e, f, nil)
 }
 
 // TestDirectNodeCall is a smoke test that the production wiring compiles.
