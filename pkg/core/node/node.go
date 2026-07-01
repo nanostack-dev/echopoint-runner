@@ -82,10 +82,15 @@ type Result struct {
 	// Outputs are the named values the node produces for downstream nodes.
 	Outputs value.Map
 	// Assert is the value the node's declared assertions/outputs run against (a
-	// response body, a computed map, ...). Leave it None when the node already
-	// evaluated its own assertions in a loop (poll, sse); the engine then skips
-	// the post-step.
+	// response body, a computed map, ...) when Provided is true.
 	Assert value.Value
+	// Provided is set by nodes that expose a value for the framework's uniform
+	// assertion/output post-step (request, set_variable, assert, loop). Nodes
+	// that evaluate their own assertions (poll, sse) or route (branch) or have
+	// none (delay, module) leave it false, and the engine skips the post-step.
+	// This is explicit rather than inferred from a zero Assert, so asserting over
+	// a JSON null still runs.
+	Provided bool
 	// Routed is set by routing nodes (branch): the successor ids execution was
 	// routed to. The engine skips every other successor (and its subtree). Nil
 	// for ordinary nodes — all successors run.

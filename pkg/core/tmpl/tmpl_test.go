@@ -10,10 +10,10 @@ import (
 )
 
 func TestResolve(t *testing.T) {
-	store := tmpl.Store{
-		"":      value.Map{"name": value.Of("alice")}, // flow input (bare)
-		"login": value.Map{"token": value.Of("xyz"), "obj": value.Of(map[string]any{"a": float64(1)})},
-	}
+	view := value.Of(map[string]any{
+		"name":  "alice", // flow input (bare)
+		"login": map[string]any{"token": "xyz", "obj": map[string]any{"a": float64(1)}},
+	})
 	dyn := func(name string, args []string) (string, error) {
 		if name == "up" && len(args) > 0 {
 			return "U:" + args[0], nil
@@ -27,7 +27,7 @@ func TestResolve(t *testing.T) {
 		"raw":   "{{{login.obj}}}",
 		"dyn":   "{{$up:x}}",
 		"miss":  "{{nope.x}}"
-	}`), store, dyn)
+	}`), view, dyn)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,7 +56,7 @@ func TestResolve(t *testing.T) {
 }
 
 func TestResolveNilDynLeavesLiteral(t *testing.T) {
-	got, err := tmpl.Resolve(json.RawMessage(`{"x":"{{$uuid}}"}`), tmpl.Store{}, nil)
+	got, err := tmpl.Resolve(json.RawMessage(`{"x":"{{$uuid}}"}`), value.Value{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

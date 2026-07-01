@@ -25,6 +25,10 @@ const (
 type PollCfg struct {
 	node.Base
 
+	// Body is the inline flow polled each attempt (re-templated per attempt with
+	// the injected "attempt"). NOTE: the outer template pass also visits it, so a
+	// flow input or node named "attempt" could be substituted before polling —
+	// avoid that collision.
 	Body        json.RawMessage `json:"body"`
 	MaxAttempts int             `json:"max_attempts"`
 	IntervalMs  int64           `json:"interval_ms"`
