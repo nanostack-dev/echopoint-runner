@@ -5,6 +5,7 @@ package flow
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/nanostack-dev/echopoint-runner/pkg/core/value"
@@ -73,6 +74,12 @@ func Parse(b []byte) (Flow, error) {
 func Validate(f Flow) error {
 	ids := make(map[string]bool, len(f.Nodes))
 	for _, n := range f.Nodes {
+		if n.ID == "" {
+			return errors.New("node with empty id")
+		}
+		if ids[n.ID] {
+			return fmt.Errorf("duplicate node id %q", n.ID)
+		}
 		ids[n.ID] = true
 	}
 	for _, e := range f.Edges {

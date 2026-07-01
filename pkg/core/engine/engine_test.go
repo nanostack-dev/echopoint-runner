@@ -647,6 +647,99 @@ func TestDeepTemplateRef(t *testing.T) {
 	runOK(t, engine.New(node.Runtime{HTTP: srv.Client(), Clock: &fakeClock{}}, nil), f, nil)
 }
 
+// TestModuleInputs proves a module passes its inputs into the child flow.
+func TestModuleInputs(t *testing.T) {
+	child := parse(t, `{"name":"child","nodes":[{"id":"echo","type":"set_variable",
+		"variables":{"seen":"{{who}}"},"assertions":[{"path":"seen","op":"equals","expected":"alice"}]}],"edges":[]}`)
+	resolve := func(id string) (flow.Flow, bool) { return child, id == "child" }
+	parent := parse(t, `{"name":"parent","nodes":[{"id":"m","type":"module",
+		"body_flow_id":"child","inputs":{"who":"alice"}}],"edges":[]}`)
+	runOK(t, engine.New(node.Runtime{Clock: &fakeClock{}}, resolve), parent, nil)
+}
+
+// TestFlowDefaultInputs proves a flow's declared "inputs" act as defaults that
+// the passed inputs override.
+func TestFlowDefaultInputs(t *testing.T) {
+	f := parse(t, `{"name":"d","inputs":{"env":"prod","region":"us"},
+		"nodes":[{"id":"v","type":"set_variable","variables":{"e":"{{env}}","r":"{{region}}"},
+		"assertions":[{"path":"e","op":"equals","expected":"dev"},
+		              {"path":"r","op":"equals","expected":"us"}]}],"edges":[]}`)
+	runOK(t, engine.New(node.Runtime{Clock: &fakeClock{}}, nil), f, value.Map{"env": value.Of("dev")})
+}
+
+// TestFailedNodeKeepsOutputs proves a node that fails an assertion still surfaces
+// its produced outputs (so a UI can show the body that failed).
+func TestFailedNodeKeepsOutputs(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"id":9,"status":"bad"}`))
+	}))
+	defer srv.Close()
+	f := parse(t, `{"name":"f","nodes":[{"id":"call","type":"request","url":"`+srv.URL+`",
+		"assertions":[{"path":"body.status","op":"equals","expected":"ok"}],
+		"outputs":[{"name":"uid","path":"body.id"}]}],"edges":[]}`)
+	res := runFail(t, engine.New(node.Runtime{HTTP: srv.Client(), Clock: &fakeClock{}}, nil), f, nil)
+	uidV, ok := res.Nodes["call"].Outputs["uid"]
+	if !ok {
+		t.Fatal("failed node should keep its extracted outputs")
+	}
+	if i, _ := uidV.Int(); i != 9 {
+		t.Fatalf("uid=%v", i)
+	}
+}
+
+// TestCancellation proves a cancelled context stops the flow with CANCELLED.
+func TestCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	f := parse(t, `{"name":"c","nodes":[{"id":"a","type":"delay","duration_ms":1}],"edges":[]}`)
+	res := engine.New(node.Runtime{Clock: &fakeClock{}}, nil).RunFlow(ctx, f, nil)
+	if res.Success || res.Code != "CANCELLED" {
+		t.Fatalf("cancelled flow: want CANCELLED, got success=%v code=%q", res.Success, res.Code)
+	}
+}
+
+// TestAlwaysNodeFailureDoesNotFailFlow locks the contract: an always-cleanup
+// node that itself fails does not fail the flow.
+func TestAlwaysNodeFailureDoesNotFailFlow(t *testing.T) {
+	f := parse(t, `{"name":"a","nodes":[
+		{"id":"main","type":"set_variable","variables":{"v":"1"}},
+		{"id":"cleanup","type":"assert","run_when":"always",
+		 "assertions":[{"path":"missing","op":"equals","expected":1}]}],"edges":[]}`)
+	res := runFailOrOK(t, engine.New(node.Runtime{Clock: &fakeClock{}}, nil), f, nil)
+	if !res.Success {
+		t.Fatal("an always-node failure should NOT fail the flow")
+	}
+	if res.Nodes["cleanup"].Status != result.StatusFailed {
+		t.Fatalf("cleanup should be recorded failed, got %+v", res.Nodes["cleanup"])
+	}
+}
+
+// TestLoopMaxIterations proves max_iterations caps the loop.
+func TestLoopMaxIterations(t *testing.T) {
+	f := parse(t, `{"name":"l","nodes":[{"id":"each","type":"loop","items":"{{{nums}}}","max_iterations":2,
+		"body":{"nodes":[{"id":"e","type":"set_variable","variables":{"v":"{{item}}"}}],"edges":[]},
+		"assertions":[{"path":"count","op":"equals","expected":2}]}],"edges":[]}`)
+	runOK(t, engine.New(node.Runtime{Clock: &fakeClock{}}, nil), f, value.Map{"nums": value.Of([]any{1, 2, 3, 4, 5})})
+}
+
+// TestSseContinuesOnAssertionFailure proves stop_on_assertion_failure=false keeps
+// consuming past a failing event to EOF.
+func TestSseContinuesOnAssertionFailure(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"n\":0}\n\ndata: {\"n\":1}\n\ndata: {\"n\":2}\n\n"))
+	}))
+	defer srv.Close()
+	f := parse(t, `{"name":"s","nodes":[{"id":"stream","type":"sse","url":"`+srv.URL+`",
+		"stop_on_assertion_failure":false,
+		"assertions":[{"path":"n","op":"lt","expected":1}]}],"edges":[]}`)
+	out := runOK(t, engine.New(node.Runtime{HTTP: http.DefaultClient, Clock: &fakeClock{}}, nil), f, nil)
+	cV, _ := out["stream"].Get("count")
+	if c, _ := cV.Int(); c != 3 {
+		t.Fatalf("want 3 (continued past failing events), got %v", c)
+	}
+}
+
 // TestDirectNodeCall is a smoke test that the production wiring compiles.
 func TestDirectNodeCall(_ *testing.T) {
 	_ = nodes.DefaultRuntime()
