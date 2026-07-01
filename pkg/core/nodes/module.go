@@ -16,6 +16,15 @@ type ModuleCfg struct {
 	Body string `json:"body_flow_id"`
 }
 
+// ReferencedFlows implements node.FlowReferencer: the child flow this module
+// runs, so the engine validates the reference and detects cycles generically.
+func (c ModuleCfg) ReferencedFlows() []string {
+	if c.Body == "" {
+		return nil
+	}
+	return []string{c.Body}
+}
+
 func runModule(ctx context.Context, cfg ModuleCfg, _ value.Value, rt node.Runtime) (node.Result, error) {
 	out, err := rt.Subflow.RunSubflow(ctx, cfg.Body, value.Map{})
 	if err != nil {

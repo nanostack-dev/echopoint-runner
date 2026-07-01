@@ -27,6 +27,21 @@ type BranchCfg struct {
 	Default string       `json:"default"`
 }
 
+// RouteTargets implements node.Router: every successor a case or the default may
+// route to, so the engine validates each target has an edge generically.
+func (c BranchCfg) RouteTargets() []string {
+	targets := make([]string, 0, len(c.Cases)+1)
+	for _, cs := range c.Cases {
+		if cs.Target != "" {
+			targets = append(targets, cs.Target)
+		}
+	}
+	if c.Default != "" {
+		targets = append(targets, c.Default)
+	}
+	return targets
+}
+
 func runBranch(_ context.Context, cfg BranchCfg, in value.Value, _ node.Runtime) (node.Result, error) {
 	specs := make([]assert.Spec, len(cfg.Cases))
 	for i, c := range cfg.Cases {
