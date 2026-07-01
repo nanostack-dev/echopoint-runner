@@ -207,7 +207,7 @@ func classify(
 func (e *Engine) runNode(
 	ctx context.Context, fn flow.Node, store map[string]value.Map,
 ) (node.Result, assert.Results, error) {
-	resolved, err := tmpl.Resolve(fn.Raw, tmpl.Store(store))
+	resolved, err := tmpl.Resolve(fn.Raw, tmpl.Store(store), e.dynFunc())
 	if err != nil {
 		return node.Result{}, nil, err
 	}
@@ -262,6 +262,15 @@ func (e *Engine) RunInline(ctx context.Context, f flow.Flow, in value.Map) (valu
 		return nil, node.UserErrf("SUBFLOW_FAILED", "inline body failed")
 	}
 	return res.Outputs, nil
+}
+
+// dynFunc adapts the runtime's dynamic-variable resolver for templating (nil
+// when none is configured, disabling {{$...}} vars).
+func (e *Engine) dynFunc() tmpl.DynFunc {
+	if e.deps.Vars == nil {
+		return nil
+	}
+	return e.deps.Vars.Resolve
 }
 
 // runWhenOf peeks a node's run_when phase (default on_success).

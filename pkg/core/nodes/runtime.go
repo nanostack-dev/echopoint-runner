@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/nanostack-dev/echopoint-runner/pkg/core/dynamicvars"
 	"github.com/nanostack-dev/echopoint-runner/pkg/core/node"
 )
 
@@ -35,5 +36,6 @@ func DefaultRuntime() node.Runtime {
 	return node.Runtime{
 		HTTP:  http.DefaultClient,
 		Clock: WallClock{},
+		Vars:  dynamicvars.New(),
 	}
 }
