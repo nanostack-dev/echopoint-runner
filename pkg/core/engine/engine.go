@@ -28,15 +28,31 @@ const codeFlowValidation = "FLOW_VALIDATION_FAILED"
 
 // Engine runs flows.
 type Engine struct {
-	resolve func(flowID string) (flow.Flow, bool)
-	deps    node.Runtime
+	resolve    func(flowID string) (flow.Flow, bool)
+	deps       node.Runtime
+	observer   Observer
+	middleware []Middleware
+}
+
+// Option configures an Engine at construction.
+type Option func(*Engine)
+
+// WithObserver attaches an execution-event observer (top-level flow only).
+func WithObserver(o Observer) Option { return func(e *Engine) { e.observer = o } }
+
+// WithMiddleware wraps every node's run-and-assert unit (e.g. Retry, Timeout).
+func WithMiddleware(mw ...Middleware) Option {
+	return func(e *Engine) { e.middleware = append(e.middleware, mw...) }
 }
 
 // New builds an engine. resolve looks up child flows by id (pass nil when the
 // flow has no sub-flows). The engine wires itself in as the sub-flow runner.
-func New(deps node.Runtime, resolve func(string) (flow.Flow, bool)) *Engine {
+func New(deps node.Runtime, resolve func(string) (flow.Flow, bool), opts ...Option) *Engine {
 	e := &Engine{resolve: resolve, deps: deps}
 	e.deps.Subflow = e
+	for _, o := range opts {
+		o(e)
+	}
 	return e
 }
 
@@ -44,22 +60,39 @@ func New(deps node.Runtime, resolve func(string) (flow.Flow, bool)) *Engine {
 // reserved for exceptional wiring issues; ordinary node failures are recorded in
 // the result with Success=false.
 func (e *Engine) RunFlow(ctx context.Context, f flow.Flow, inputs value.Map) (*result.FlowResult, error) {
-	return e.run(ctx, f, inputs), nil
+	return e.run(ctx, f, inputs, true), nil
 }
 
 // run is the scheduler entrypoint: it builds the scheduler state, drains the
-// ready queue, then finalizes (cycle detection + collected outputs).
-func (e *Engine) run(ctx context.Context, f flow.Flow, inputs value.Map) *result.FlowResult {
+// ready queue, then finalizes (cycle detection + collected outputs). emit gates
+// flow/node event emission (true only for the top-level flow, not sub-flows).
+func (e *Engine) run(ctx context.Context, f flow.Flow, inputs value.Map, emit bool) *result.FlowResult {
 	fr := &result.FlowResult{Success: true, Nodes: make(map[string]*result.NodeResult, len(f.Nodes))}
-	if len(f.Nodes) == 0 {
+	e.emit(emit, Event{Type: spi.EventFlowStarted, Flow: fr})
+
+	switch {
+	case len(f.Nodes) == 0:
 		fr.Success, fr.Error, fr.Code, fr.Outputs = false, "no nodes to execute", codeFlowValidation, value.Map{}
-		return fr
+	default:
+		if err := flow.Validate(f); err != nil {
+			fr.Success, fr.Error, fr.Code, fr.Outputs = false, err.Error(), codeFlowValidation, value.Map{}
+		} else {
+			e.schedule(ctx, f, inputs, fr, emit)
+		}
 	}
-	if err := flow.Validate(f); err != nil {
-		fr.Success, fr.Error, fr.Code, fr.Outputs = false, err.Error(), codeFlowValidation, value.Map{}
-		return fr
+
+	if fr.Success {
+		e.emit(emit, Event{Type: spi.EventFlowCompleted, Flow: fr})
+	} else {
+		e.emit(emit, Event{Type: spi.EventFlowFailed, Flow: fr})
 	}
+	return fr
+}
+
+// schedule drains the ready queue and finalizes cycle detection + outputs.
+func (e *Engine) schedule(ctx context.Context, f flow.Flow, inputs value.Map, fr *result.FlowResult, emit bool) {
 	s := newScheduler(f, inputs, fr)
+	s.emit = emit
 	for len(s.ready) > 0 {
 		id := s.ready[0]
 		s.ready = s.ready[1:]
@@ -70,7 +103,6 @@ func (e *Engine) run(ctx context.Context, f flow.Flow, inputs value.Map) *result
 			"cycle or unreachable nodes: processed %d of %d", s.processed, len(f.Nodes)), codeFlowValidation
 	}
 	fr.Outputs = collect(s.store)
-	return fr
 }
 
 // scheduler holds the mutable state of one run: the graph, the output store, and
@@ -88,6 +120,7 @@ type scheduler struct {
 	processed  int
 	ready      []string
 	fr         *result.FlowResult
+	emit       bool
 }
 
 func newScheduler(f flow.Flow, inputs value.Map, fr *result.FlowResult) *scheduler {
@@ -129,11 +162,14 @@ func (e *Engine) step(ctx context.Context, s *scheduler, id string) {
 	isAlways := runWhenOf(fn) == spi.RunWhenAlways
 
 	if runIt, reason := classify(id, s.preds[id], s.done, s.failed, s.dead, s.mainFailed, isAlways); !runIt {
-		s.fr.Nodes[id] = &result.NodeResult{ID: id, Kind: fn.Kind, Status: result.StatusSkipped, SkipReason: reason}
+		nr := &result.NodeResult{ID: id, Kind: fn.Kind, Status: result.StatusSkipped, SkipReason: reason}
+		s.fr.Nodes[id] = nr
+		e.emit(s.emit, Event{Type: spi.EventNodeCompleted, NodeID: id, Node: nr})
 		s.release(id)
 		return
 	}
 
+	e.emit(s.emit, Event{Type: spi.EventNodeStarted, NodeID: id})
 	res, assertions, err := e.runNode(ctx, fn, s.store)
 	nr := &result.NodeResult{ID: id, Kind: fn.Kind, Assertions: assertions}
 	if err != nil {
@@ -143,6 +179,7 @@ func (e *Engine) step(ctx context.Context, s *scheduler, id string) {
 		if !isAlways {
 			s.mainFailed, s.fr.Success = true, false
 		}
+		e.emit(s.emit, Event{Type: spi.EventNodeFailed, NodeID: id, Node: nr})
 		s.release(id)
 		return
 	}
@@ -150,6 +187,7 @@ func (e *Engine) step(ctx context.Context, s *scheduler, id string) {
 	s.done[id] = true
 	nr.Status, nr.Outputs = result.StatusSuccess, res.Outputs
 	s.fr.Nodes[id] = nr
+	e.emit(s.emit, Event{Type: spi.EventNodeCompleted, NodeID: id, Node: nr})
 	recordRouting(id, res.Routed, s.succ[id], s.dead)
 	s.release(id)
 }
@@ -221,24 +259,29 @@ func (e *Engine) runNode(
 	if err != nil {
 		return node.Result{}, nil, err
 	}
-	res, err := b.Run(ctx, inputView(store), e.deps)
-	if err != nil {
-		return node.Result{}, nil, err
-	}
-	if res.Assert.IsZero() {
-		return res, nil, nil // node self-evaluated (or has nothing to assert)
-	}
-	results := assert.Run(res.Assert, b.Base.Assertions)
-	if extracted := output.Extract(res.Assert, b.Base.Outputs); len(extracted) > 0 {
-		if res.Outputs == nil {
-			res.Outputs = value.Map{}
+	// The run-and-assert unit is what middleware (retry/timeout) wraps, so a
+	// retry re-runs the assertion pass too.
+	exec := func(ctx context.Context) (node.Result, assert.Results, error) {
+		res, runErr := b.Run(ctx, inputView(store), e.deps)
+		if runErr != nil {
+			return node.Result{}, nil, runErr
 		}
-		maps.Copy(res.Outputs, extracted)
+		if res.Assert.IsZero() {
+			return res, nil, nil // node self-evaluated (or has nothing to assert)
+		}
+		results := assert.Run(res.Assert, b.Base.Assertions)
+		if extracted := output.Extract(res.Assert, b.Base.Outputs); len(extracted) > 0 {
+			if res.Outputs == nil {
+				res.Outputs = value.Map{}
+			}
+			maps.Copy(res.Outputs, extracted)
+		}
+		if results.AnyFailed() {
+			return res, results, node.UserErrf("ASSERTION_FAILED", "assertion failed on %s", b.Base.ID)
+		}
+		return res, results, nil
 	}
-	if results.AnyFailed() {
-		return res, results, node.UserErrf("ASSERTION_FAILED", "assertion failed on %s", b.Base.ID)
-	}
-	return res, results, nil
+	return chainMiddleware(exec, e.middleware)(ctx)
 }
 
 // RunSubflow satisfies node.SubflowRunner: it resolves a child flow by id and
@@ -254,7 +297,7 @@ func (e *Engine) RunSubflow(ctx context.Context, flowID string, in value.Map) (v
 	if !ok {
 		return nil, node.UserErrf("MODULE_FLOW_NOT_FOUND", "child flow %q not found", flowID)
 	}
-	res := e.run(pushStack(ctx, flowID), child, in)
+	res := e.run(pushStack(ctx, flowID), child, in, false)
 	if !res.Success {
 		return nil, node.UserErrf("MODULE_FAILED", "child flow %q failed", flowID)
 	}
@@ -263,7 +306,7 @@ func (e *Engine) RunSubflow(ctx context.Context, flowID string, in value.Map) (v
 
 // RunInline satisfies node.SubflowRunner for embedded body flows (loop, poll).
 func (e *Engine) RunInline(ctx context.Context, f flow.Flow, in value.Map) (value.Map, error) {
-	res := e.run(ctx, f, in)
+	res := e.run(ctx, f, in, false)
 	if !res.Success {
 		return nil, node.UserErrf("SUBFLOW_FAILED", "inline body failed")
 	}
