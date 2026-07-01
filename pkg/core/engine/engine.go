@@ -13,6 +13,7 @@ import (
 	"maps"
 	"slices"
 	"sort"
+	"strings"
 
 	"github.com/nanostack-dev/echopoint-runner/pkg/core/assert"
 	"github.com/nanostack-dev/echopoint-runner/pkg/core/flow"
@@ -74,7 +75,7 @@ func (e *Engine) run(ctx context.Context, f flow.Flow, inputs value.Map, emit bo
 	case len(f.Nodes) == 0:
 		fr.Success, fr.Error, fr.Code, fr.Outputs = false, "no nodes to execute", codeFlowValidation, value.Map{}
 	default:
-		if err := flow.Validate(f); err != nil {
+		if err := e.validateFlow(f, emit); err != nil {
 			fr.Success, fr.Error, fr.Code, fr.Outputs = false, err.Error(), codeFlowValidation, value.Map{}
 		} else {
 			e.schedule(ctx, f, inputs, fr, emit)
@@ -87,6 +88,44 @@ func (e *Engine) run(ctx context.Context, f flow.Flow, inputs value.Map, emit bo
 		e.emit(emit, Event{Type: spi.EventFlowFailed, Flow: fr})
 	}
 	return fr
+}
+
+// validateFlow runs structural validation and, at the top level, walks the
+// module reference graph to detect cycles and missing flows before executing
+// anything (no side effects).
+func (e *Engine) validateFlow(f flow.Flow, topLevel bool) error {
+	if err := flow.Validate(f); err != nil {
+		return err
+	}
+	if topLevel && e.resolve != nil {
+		return e.walkModules(f, nil)
+	}
+	return nil
+}
+
+func (e *Engine) walkModules(f flow.Flow, stack []string) error {
+	for _, n := range f.Nodes {
+		if n.Kind != spi.KindModule {
+			continue
+		}
+		var cfg struct {
+			Body string `json:"body_flow_id"`
+		}
+		if err := json.Unmarshal(n.Raw, &cfg); err != nil || cfg.Body == "" {
+			return fmt.Errorf("module %q: a body_flow_id is required", n.ID)
+		}
+		if slices.Contains(stack, cfg.Body) {
+			return fmt.Errorf("module cycle detected: %s -> %s", strings.Join(stack, " -> "), cfg.Body)
+		}
+		child, ok := e.resolve(cfg.Body)
+		if !ok {
+			return fmt.Errorf("module %q references unknown flow %q", n.ID, cfg.Body)
+		}
+		if err := e.walkModules(child, append(stack, cfg.Body)); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // schedule drains the ready queue and finalizes cycle detection + outputs.
