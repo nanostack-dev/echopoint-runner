@@ -14,6 +14,7 @@ import (
 	"github.com/nanostack-dev/echopoint-runner/pkg/core/nodes"
 	"github.com/nanostack-dev/echopoint-runner/pkg/core/result"
 	"github.com/nanostack-dev/echopoint-runner/pkg/core/value"
+	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 )
 
 // fakeClock is the whole testability story: a node's only effect, faked in one
@@ -435,6 +436,65 @@ func TestJSONPathFilter(t *testing.T) {
 		map[string]any{"name": "bob", "role": "user"},
 	})}
 	runOK(t, engine.New(node.Runtime{Clock: &fakeClock{}}, nil), f, inputs)
+}
+
+// TestObserverEvents proves the engine emits the expected event sequence for a
+// two-node chain: flow.started, then per node started+completed, then
+// flow.completed.
+func TestObserverEvents(t *testing.T) {
+	f := parse(t, `{"name":"o","nodes":[
+		{"id":"a","type":"delay","duration_ms":1},
+		{"id":"b","type":"delay","duration_ms":1}],
+		"edges":[{"source":"a","target":"b"}]}`)
+	var types []spi.EventType
+	obs := func(ev engine.Event) { types = append(types, ev.Type) }
+	e := engine.New(node.Runtime{Clock: &fakeClock{}}, nil, engine.WithObserver(obs))
+	runOK(t, e, f, nil)
+
+	want := []spi.EventType{
+		spi.EventFlowStarted,
+		spi.EventNodeStarted, spi.EventNodeCompleted, // a
+		spi.EventNodeStarted, spi.EventNodeCompleted, // b
+		spi.EventFlowCompleted,
+	}
+	if len(types) != len(want) {
+		t.Fatalf("want %d events, got %d: %v", len(want), len(types), types)
+	}
+	for i := range want {
+		if types[i] != want[i] {
+			t.Fatalf("event %d: want %q got %q (%v)", i, want[i], types[i], types)
+		}
+	}
+}
+
+// TestRetryMiddleware proves Retry re-runs a node (re-request + re-assert) until
+// it passes: a flaky server reports "pending" then "ready".
+func TestRetryMiddleware(t *testing.T) {
+	var calls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		status := "pending"
+		if calls >= 2 {
+			status = "ready"
+		}
+		_, _ = w.Write([]byte(`{"status":"` + status + `"}`))
+	}))
+	defer srv.Close()
+
+	f := parse(t, `{"name":"r","nodes":[{"id":"call","type":"request","url":"`+srv.URL+`",
+		"assertions":[{"path":"body.status","op":"equals","expected":"ready"}]}],"edges":[]}`)
+
+	// no retry -> first attempt is "pending" -> fails
+	runFail(t, engine.New(node.Runtime{HTTP: http.DefaultClient, Clock: &fakeClock{}}, nil), f, nil)
+
+	// with Retry(3) -> succeeds on the 2nd attempt
+	calls = 0
+	e := engine.New(node.Runtime{HTTP: http.DefaultClient, Clock: &fakeClock{}}, nil,
+		engine.WithMiddleware(engine.Retry(3)))
+	runOK(t, e, f, nil)
+	if calls != 2 {
+		t.Fatalf("want 2 calls (retry passed on 2nd), got %d", calls)
+	}
 }
 
 // TestDirectNodeCall is a smoke test that the production wiring compiles.
