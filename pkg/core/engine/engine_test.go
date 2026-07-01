@@ -540,6 +540,86 @@ func TestModuleUnknownFlow(t *testing.T) {
 	}
 }
 
+// TestParallelJoin proves a diamond join: c has two predecessors, runs once
+// after both, and reads both their outputs.
+func TestParallelJoin(t *testing.T) {
+	f := parse(t, `{"name":"d","nodes":[
+		{"id":"a","type":"set_variable","variables":{"v":"A"}},
+		{"id":"b","type":"set_variable","variables":{"v":"B"}},
+		{"id":"c","type":"set_variable","variables":{"got":"{{a.v}}-{{b.v}}"}}],
+		"edges":[{"source":"a","target":"c"},{"source":"b","target":"c"}]}`)
+	out := runOK(t, engine.New(node.Runtime{Clock: &fakeClock{}}, nil), f, nil)
+	gv, _ := out["c"].Get("got")
+	if g, _ := gv.Str(); g != "A-B" {
+		t.Fatalf("join should see both inputs: got %q", g)
+	}
+}
+
+// TestLoopContinueOnError proves a failing iteration is captured and the loop
+// continues when continue_on_error is set.
+func TestLoopContinueOnError(t *testing.T) {
+	f := parse(t, `{"name":"l","nodes":[{
+		"id":"each","type":"loop","items":"{{{nums}}}","item_var":"item","continue_on_error":true,
+		"body":{"nodes":[{"id":"chk","type":"assert","assertions":[{"path":"item","op":"not_equals","expected":2}]}],"edges":[]},
+		"assertions":[{"path":"count","op":"equals","expected":3}]}],"edges":[]}`)
+	out := runOK(t, engine.New(node.Runtime{Clock: &fakeClock{}}, nil), f,
+		value.Map{"nums": value.Of([]any{1, 2, 3})})
+	cV, _ := out["each"].Get("count")
+	if c, _ := cV.Int(); c != 3 {
+		t.Fatalf("all 3 iterations should be recorded, got count=%v", c)
+	}
+}
+
+// TestPollBodyError proves a body that errors (not merely unsatisfied) fails the
+// poll with POLL_BODY_FAILED.
+func TestPollBodyError(t *testing.T) {
+	f := parse(t, `{"name":"p","nodes":[{
+		"id":"poll","type":"poll","interval_ms":1,"max_attempts":3,
+		"body":{"nodes":[{"id":"bad","type":"assert","assertions":[{"path":"ghost.x","op":"equals","expected":1}]}],"edges":[]},
+		"assertions":[{"path":"bad.ok","op":"equals","expected":true}]}],"edges":[]}`)
+	res := runFail(t, engine.New(node.Runtime{Clock: &fakeClock{}}, nil), f, nil)
+	if got := res.Nodes["poll"].Code; got != "POLL_BODY_FAILED" {
+		t.Fatalf("want POLL_BODY_FAILED, got %q", got)
+	}
+}
+
+// TestSseCompletionEvent proves the stream stops on a named completion event.
+func TestSseCompletionEvent(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"n\":0}\n\nevent: done\ndata: bye\n\ndata: {\"n\":1}\n\n"))
+	}))
+	defer srv.Close()
+	f := parse(
+		t,
+		`{"name":"s","nodes":[{"id":"stream","type":"sse","url":"`+srv.URL+`","completion_event":"done"}],"edges":[]}`,
+	)
+	out := runOK(t, engine.New(node.Runtime{HTTP: http.DefaultClient, Clock: &fakeClock{}}, nil), f, nil)
+	srV, _ := out["stream"].Get("stop_reason")
+	if s, _ := srV.Str(); s != "completion_event" {
+		t.Fatalf("stop_reason=%q, want completion_event", s)
+	}
+	cV, _ := out["stream"].Get("count")
+	if c, _ := cV.Int(); c != 2 {
+		t.Fatalf("want 2 events (n:0 + done), got %v", c)
+	}
+}
+
+// TestSseMaxEvents proves the stream stops after max_events.
+func TestSseMaxEvents(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: 0\n\ndata: 1\n\ndata: 2\n\ndata: 3\n\n"))
+	}))
+	defer srv.Close()
+	f := parse(t, `{"name":"s","nodes":[{"id":"stream","type":"sse","url":"`+srv.URL+`","max_events":2}],"edges":[]}`)
+	out := runOK(t, engine.New(node.Runtime{HTTP: http.DefaultClient, Clock: &fakeClock{}}, nil), f, nil)
+	srV, _ := out["stream"].Get("stop_reason")
+	if s, _ := srV.Str(); s != "max_events" {
+		t.Fatalf("stop_reason=%q, want max_events", s)
+	}
+}
+
 // TestDirectNodeCall is a smoke test that the production wiring compiles.
 func TestDirectNodeCall(_ *testing.T) {
 	_ = nodes.DefaultRuntime()
