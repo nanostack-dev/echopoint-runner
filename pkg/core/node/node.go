@@ -115,14 +115,33 @@ type Runtime struct {
 	Vars    spi.DynamicResolver
 }
 
+// --- capability interfaces (optional, implemented by a Cfg to opt into engine
+// features generically, without the engine knowing the node type) ---
+
+// FlowReferencer is implemented by node configs that reference child flows by id
+// (module, ...), so the engine can validate references and detect cycles without
+// special-casing the kind.
+type FlowReferencer interface {
+	ReferencedFlows() []string
+}
+
+// Router is implemented by node configs that route to specific successors
+// (branch, ...), so the engine can validate that every target has an edge.
+type Router interface {
+	RouteTargets() []string
+}
+
 // --- registry ---
 
-// Bound is a decoded node ready for the engine: its declared Base, its kind, and
-// a type-erased run closure that already holds the typed Cfg.
+// Bound is a decoded node ready for the engine: its declared Base, its kind, a
+// type-erased run closure holding the typed Cfg, and any capabilities the Cfg
+// opted into (Refs/Targets), surfaced generically for validation.
 type Bound struct {
-	Base Base
-	Kind spi.Kind
-	Run  func(ctx context.Context, in value.Value, rt Runtime) (Result, error)
+	Base    Base
+	Kind    spi.Kind
+	Run     func(ctx context.Context, in value.Value, rt Runtime) (Result, error)
+	Refs    []string // child flow ids (FlowReferencer), for cycle/existence validation
+	Targets []string // route targets (Router), for branch-target validation
 }
 
 type decoder func(raw json.RawMessage) (Bound, error)
@@ -132,20 +151,30 @@ var registry = map[spi.Kind]decoder{}
 
 // Register binds a kind to its typed Run. Cfg is inferred from fn; the closure
 // erases it so differently-typed nodes share one registry. Call from an init().
+// Registering a kind twice panics — that is a wiring bug, caught at load.
 func Register[Cfg hasBase](kind spi.Kind, fn Run[Cfg]) {
+	if _, dup := registry[kind]; dup {
+		panic(fmt.Sprintf("node: duplicate registration for kind %q", kind))
+	}
 	registry[kind] = func(raw json.RawMessage) (Bound, error) {
 		var cfg Cfg
 		if err := json.Unmarshal(raw, &cfg); err != nil {
 			return Bound{}, fmt.Errorf("decode %s node: %w", kind, err)
 		}
-		b := cfg.base()
-		return Bound{
-			Base: b,
+		bound := Bound{
+			Base: cfg.base(),
 			Kind: kind,
 			Run: func(ctx context.Context, in value.Value, rt Runtime) (Result, error) {
 				return fn(ctx, cfg, in, rt)
 			},
-		}, nil
+		}
+		if fr, ok := any(cfg).(FlowReferencer); ok {
+			bound.Refs = fr.ReferencedFlows()
+		}
+		if r, ok := any(cfg).(Router); ok {
+			bound.Targets = r.RouteTargets()
+		}
+		return bound, nil
 	}
 }
 

@@ -92,39 +92,65 @@ func (e *Engine) run(
 	return fr
 }
 
-// validateFlow runs structural validation and, at the top level, walks the
-// module reference graph to detect cycles and missing flows before executing
-// anything (no side effects).
+// validateFlow runs structural validation (edges), then generic capability
+// validation (route targets have edges; referenced child flows exist and are
+// acyclic). It decodes nodes and reads the Router/FlowReferencer capabilities
+// they opted into — no per-node-type knowledge here.
 func (e *Engine) validateFlow(f flow.Flow, topLevel bool) error {
 	if err := flow.Validate(f); err != nil {
 		return err
 	}
+	if err := validateTargets(f); err != nil {
+		return err
+	}
 	if topLevel && e.resolve != nil {
-		return e.walkModules(f, nil)
+		return e.walkRefs(f, nil)
 	}
 	return nil
 }
 
-func (e *Engine) walkModules(f flow.Flow, stack []string) error {
+// validateTargets checks every Router node's targets are real successor edges.
+func validateTargets(f flow.Flow) error {
+	succ := make(map[string]map[string]bool, len(f.Nodes))
+	for _, ed := range f.Edges {
+		if succ[ed.From] == nil {
+			succ[ed.From] = map[string]bool{}
+		}
+		succ[ed.From][ed.To] = true
+	}
 	for _, n := range f.Nodes {
-		if n.Kind != spi.KindModule {
+		b, err := node.Decode(n.Kind, n.Raw)
+		if err != nil {
+			continue // decode errors surface at execution with a node result
+		}
+		for _, target := range b.Targets {
+			if target != "" && !succ[n.ID][target] {
+				return fmt.Errorf("node %q routes to %q but has no edge to it", n.ID, target)
+			}
+		}
+	}
+	return nil
+}
+
+// walkRefs walks the referenced-flow graph (FlowReferencer nodes) to detect
+// cycles and unresolvable flows, with no side effects.
+func (e *Engine) walkRefs(f flow.Flow, stack []string) error {
+	for _, n := range f.Nodes {
+		b, err := node.Decode(n.Kind, n.Raw)
+		if err != nil {
 			continue
 		}
-		var cfg struct {
-			Body string `json:"body_flow_id"`
-		}
-		if err := json.Unmarshal(n.Raw, &cfg); err != nil || cfg.Body == "" {
-			return fmt.Errorf("module %q: a body_flow_id is required", n.ID)
-		}
-		if slices.Contains(stack, cfg.Body) {
-			return fmt.Errorf("module cycle detected: %s -> %s", strings.Join(stack, " -> "), cfg.Body)
-		}
-		child, ok := e.resolve(cfg.Body)
-		if !ok {
-			return fmt.Errorf("module %q references unknown flow %q", n.ID, cfg.Body)
-		}
-		if err := e.walkModules(child, append(stack, cfg.Body)); err != nil {
-			return err
+		for _, ref := range b.Refs {
+			if slices.Contains(stack, ref) {
+				return fmt.Errorf("flow cycle detected: %s -> %s", strings.Join(stack, " -> "), ref)
+			}
+			child, ok := e.resolve(ref)
+			if !ok {
+				return fmt.Errorf("node %q references unknown flow %q", n.ID, ref)
+			}
+			if recErr := e.walkRefs(child, append(stack, ref)); recErr != nil {
+				return recErr
+			}
 		}
 	}
 	return nil

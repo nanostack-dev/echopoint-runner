@@ -67,14 +67,14 @@ func Parse(b []byte) (Flow, error) {
 }
 
 // Validate checks structural invariants before execution: every edge references
-// declared nodes, and every branch case/default target is a real successor edge
-// of the branch. It does not execute anything (no side effects).
+// a declared node. Node-shape validation (route targets, referenced child flows)
+// is done by the engine via node capabilities, so flow stays free of node-type
+// knowledge.
 func Validate(f Flow) error {
 	ids := make(map[string]bool, len(f.Nodes))
 	for _, n := range f.Nodes {
 		ids[n.ID] = true
 	}
-	succ := make(map[string]map[string]bool, len(f.Nodes))
 	for _, e := range f.Edges {
 		if !ids[e.From] {
 			return fmt.Errorf("edge source %q is not a declared node", e.From)
@@ -82,44 +82,8 @@ func Validate(f Flow) error {
 		if !ids[e.To] {
 			return fmt.Errorf("edge target %q is not a declared node", e.To)
 		}
-		if succ[e.From] == nil {
-			succ[e.From] = map[string]bool{}
-		}
-		succ[e.From][e.To] = true
-	}
-	for _, n := range f.Nodes {
-		if n.Kind != spi.KindBranch {
-			continue
-		}
-		if err := validateBranchTargets(n, succ[n.ID]); err != nil {
-			return err
-		}
 	}
 	return nil
-}
-
-func validateBranchTargets(n Node, targets map[string]bool) error {
-	var cfg struct {
-		Cases []struct {
-			Target string `json:"target"`
-		} `json:"cases"`
-		Default string `json:"default"`
-	}
-	if err := json.Unmarshal(n.Raw, &cfg); err != nil {
-		return fmt.Errorf("branch %q: %w", n.ID, err)
-	}
-	check := func(target string) error {
-		if target != "" && !targets[target] {
-			return fmt.Errorf("branch %q routes to %q but has no edge to it", n.ID, target)
-		}
-		return nil
-	}
-	for _, c := range cfg.Cases {
-		if err := check(c.Target); err != nil {
-			return err
-		}
-	}
-	return check(cfg.Default)
 }
 
 func toMap(m map[string]any) value.Map {
