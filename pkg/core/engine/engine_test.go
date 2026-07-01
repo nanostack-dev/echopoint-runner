@@ -425,6 +425,18 @@ func TestValidationEdgeToUnknownNode(t *testing.T) {
 	}
 }
 
+// TestJSONPathFilter proves real RFC-9535 jsonpath: a filter selects an array
+// element by predicate.
+func TestJSONPathFilter(t *testing.T) {
+	f := parse(t, `{"name":"jp","nodes":[{"id":"check","type":"assert",
+		"assertions":[{"path":"$.users[?@.role=='admin'].name","op":"equals","expected":"alice"}]}],"edges":[]}`)
+	inputs := value.Map{"users": value.Of([]any{
+		map[string]any{"name": "alice", "role": "admin"},
+		map[string]any{"name": "bob", "role": "user"},
+	})}
+	runOK(t, engine.New(node.Runtime{Clock: &fakeClock{}}, nil), f, inputs)
+}
+
 // TestDirectNodeCall is a smoke test that the production wiring compiles.
 func TestDirectNodeCall(_ *testing.T) {
 	_ = nodes.DefaultRuntime()
