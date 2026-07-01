@@ -185,6 +185,27 @@ func TestPollUntil(t *testing.T) {
 	}
 }
 
+// TestPollSurfacesAssertions proves the self-evaluating poll node records its
+// exit-condition outcomes on NodeResult.Assertions (the engine skips its
+// post-step, so the node itself must supply them).
+func TestPollSurfacesAssertions(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"status":"done"}`))
+	}))
+	defer srv.Close()
+
+	f := parse(t, `{"name":"p","nodes":[{
+		"id":"poll","type":"poll","interval_ms":1,"max_attempts":2,
+		"body":{"nodes":[{"id":"check","type":"request","url":"`+srv.URL+`",
+			"outputs":[{"name":"status","path":"body.status"}]}],"edges":[]},
+		"assertions":[{"path":"check.status","op":"equals","expected":"done"}]}],"edges":[]}`)
+	res := runFailOrOK(t, engine.New(node.Runtime{HTTP: http.DefaultClient, Clock: &fakeClock{}}, nil), f, nil)
+	got := res.Nodes["poll"].Assertions
+	if len(got) != 1 || !got.AllPassed() {
+		t.Fatalf("poll should surface its passing exit condition, got %+v", got)
+	}
+}
+
 // TestPollExhausts proves poll fails when the condition never holds.
 func TestPollExhausts(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -296,10 +317,15 @@ func TestSseCollectsEvents(t *testing.T) {
 
 	f := parse(t, `{"name":"s","nodes":[{"id":"stream","type":"sse","url":"`+srv.URL+`","max_events":10,
 		"assertions":[{"path":"n","op":"gte","expected":0}]}],"edges":[]}`)
-	out := runOK(t, engine.New(node.Runtime{HTTP: http.DefaultClient, Clock: &fakeClock{}}, nil), f, nil)
-	cV, _ := out["stream"].Get("count")
+	e := engine.New(node.Runtime{HTTP: http.DefaultClient, Clock: &fakeClock{}}, nil)
+	res := runFailOrOK(t, e, f, nil)
+	cV := res.Nodes["stream"].Outputs["count"]
 	if c, ok := cV.Int(); !ok || c != 3 {
 		t.Fatalf("want 3 events, got %v", c)
+	}
+	// Self-evaluating: each event's per-event assertion is recorded on the node.
+	if got := res.Nodes["stream"].Assertions; len(got) != 3 || !got.AllPassed() {
+		t.Fatalf("want 3 passing per-event assertions, got %+v", got)
 	}
 }
 

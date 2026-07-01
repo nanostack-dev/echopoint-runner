@@ -355,7 +355,7 @@ func (e *Engine) runNode(
 			return node.Result{}, nil, runErr
 		}
 		if !res.Provided {
-			return res, nil, nil // node self-evaluated / routes / nothing to assert
+			return res, res.Assertions, nil // self-evaluated node's own results (may be nil)
 		}
 		results := assert.Run(res.Assert, b.Base.Assertions)
 		if extracted := output.Extract(res.Assert, b.Base.Outputs); len(extracted) > 0 {
