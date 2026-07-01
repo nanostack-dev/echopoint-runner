@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -59,7 +58,7 @@ func runSse(ctx context.Context, cfg SseCfg, _ value.Value, rt node.Runtime) (no
 			return node.Result{}, err
 		}
 		if ctx.Err() != context.DeadlineExceeded {
-			return node.Result{}, fmt.Errorf("sse read: %w", node.ErrUser)
+			return node.Result{}, node.UserErrf("SSE_FAILED", "sse read")
 		}
 		stopReason = "timeout"
 	} else if ctx.Err() == context.DeadlineExceeded {
@@ -143,7 +142,7 @@ func evalSseEvent(
 ) (bool, string, error) {
 	if len(cfg.Assertions) > 0 && assert.Run(value.Of(parsed), cfg.Assertions).AnyFailed() && stopOnFail {
 		return true, "assertion_failure",
-			fmt.Errorf("sse assertion failed at event %d: %w", count-1, node.ErrUser)
+			node.UserErrf("SSE_FAILED", "sse assertion failed at event %d", count-1)
 	}
 	if cfg.CompletionEvent != "" && (name == cfg.CompletionEvent || data == cfg.CompletionEvent) {
 		return true, "completion_event", nil
@@ -157,7 +156,7 @@ func evalSseEvent(
 func sseConnect(ctx context.Context, cfg SseCfg, rt node.Runtime) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, orDefault(cfg.Method, http.MethodGet), cfg.URL, nil)
 	if err != nil {
-		return nil, fmt.Errorf("sse build request: %w", node.ErrUser)
+		return nil, node.UserErrf("SSE_FAILED", "sse build request")
 	}
 	req.Header.Set("Accept", "text/event-stream")
 	req.Header.Set("Cache-Control", "no-cache")
@@ -166,11 +165,11 @@ func sseConnect(ctx context.Context, cfg SseCfg, rt node.Runtime) (*http.Respons
 	}
 	resp, err := rt.HTTP.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("sse connect: %w", node.ErrUser)
+		return nil, node.UserErrf("SSE_FAILED", "sse connect")
 	}
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		_ = resp.Body.Close()
-		return nil, fmt.Errorf("sse non-2xx status %d: %w", resp.StatusCode, node.ErrUser)
+		return nil, node.UserErrf("SSE_FAILED", "sse non-2xx status %d", resp.StatusCode)
 	}
 	return resp, nil
 }

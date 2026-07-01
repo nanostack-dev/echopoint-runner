@@ -3,7 +3,6 @@ package nodes
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 
 	"github.com/nanostack-dev/echopoint-runner/pkg/core/flow"
 	"github.com/nanostack-dev/echopoint-runner/pkg/core/node"
@@ -34,11 +33,11 @@ type LoopCfg struct {
 func runLoop(ctx context.Context, cfg LoopCfg, _ value.Value, rt node.Runtime) (node.Result, error) {
 	items, ok := value.JSON(cfg.Items).List()
 	if !ok {
-		return node.Result{}, fmt.Errorf("loop items must resolve to a list: %w", node.ErrUser)
+		return node.Result{}, node.UserErrf("LOOP_FAILED", "loop items must resolve to a list")
 	}
 	body, err := flow.Parse(cfg.Body)
 	if err != nil {
-		return node.Result{}, fmt.Errorf("loop body: %w", node.ErrUser)
+		return node.Result{}, node.UserErrf("LOOP_FAILED", "loop body: %v", err)
 	}
 	itemVar := orDefault(cfg.ItemVar, defaultItemVar)
 	indexVar := orDefault(cfg.IndexVar, defaultIndexVar)
@@ -60,7 +59,7 @@ func runLoop(ctx context.Context, cfg LoopCfg, _ value.Value, rt node.Runtime) (
 				results = append(results, map[string]any{"index": i, "error": runErr.Error()})
 				continue
 			}
-			return node.Result{}, fmt.Errorf("loop iteration %d failed: %w", i, node.ErrUser)
+			return node.Result{}, node.UserErrf("LOOP_FAILED", "loop iteration %d failed: %v", i, runErr)
 		}
 		results = append(results, out.Value().Raw())
 	}

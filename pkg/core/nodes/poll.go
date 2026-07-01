@@ -3,7 +3,6 @@ package nodes
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"time"
 
 	"github.com/nanostack-dev/echopoint-runner/pkg/core/assert"
@@ -34,11 +33,11 @@ type PollCfg struct {
 
 func runPoll(ctx context.Context, cfg PollCfg, _ value.Value, rt node.Runtime) (node.Result, error) {
 	if len(cfg.Assertions) == 0 {
-		return node.Result{}, fmt.Errorf("poll needs at least one exit condition: %w", node.ErrUser)
+		return node.Result{}, node.UserErrf("POLL_FAILED", "poll needs at least one exit condition")
 	}
 	body, err := flow.Parse(cfg.Body)
 	if err != nil {
-		return node.Result{}, fmt.Errorf("poll body: %w", node.ErrUser)
+		return node.Result{}, node.UserErrf("POLL_FAILED", "poll body: %v", err)
 	}
 
 	attempts := cfg.MaxAttempts
@@ -58,7 +57,12 @@ func runPoll(ctx context.Context, cfg PollCfg, _ value.Value, rt node.Runtime) (
 	for attempt := 1; attempt <= attempts; attempt++ {
 		out, runErr := rt.Subflow.RunInline(ctx, body, value.Map{"attempt": value.Of(attempt)})
 		if runErr != nil {
-			return node.Result{}, fmt.Errorf("poll body failed on attempt %d: %w", attempt, node.ErrUser)
+			return node.Result{}, node.UserErrf(
+				"POLL_BODY_FAILED",
+				"poll body failed on attempt %d: %v",
+				attempt,
+				runErr,
+			)
 		}
 		if assert.Run(out.Value(), cfg.Assertions).AllPassed() {
 			return node.Result{Outputs: value.Map{
@@ -72,8 +76,11 @@ func runPoll(ctx context.Context, cfg PollCfg, _ value.Value, rt node.Runtime) (
 			}
 		}
 	}
-	return node.Result{}, fmt.Errorf(
-		"poll exit condition not met after %d attempts: %w", attempts, node.ErrUser)
+	return node.Result{}, node.UserErrf(
+		"POLL_CONDITION_NOT_MET",
+		"poll exit condition not met after %d attempts",
+		attempts,
+	)
 }
 
 //nolint:gochecknoinits // register the built-in node kind at package load
