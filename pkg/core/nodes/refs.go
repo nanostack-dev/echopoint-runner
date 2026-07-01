@@ -26,10 +26,14 @@ func requireRefs(in value.Value, specs []assert.Spec) error {
 	return nil
 }
 
-// refRoot returns the first path segment ("login" from "$.login.token").
+// refRoot returns the first path segment — the node id or flow-input name —
+// stopping at the first "." or "[" ("login" from "$.login.token",
+// "users" from "$.users[?@.role=='admin']").
 func refRoot(path string) string {
 	path = strings.TrimPrefix(path, "$")
 	path = strings.TrimPrefix(path, ".")
-	root, _, _ := strings.Cut(path, ".")
-	return root
+	if i := strings.IndexAny(path, ".["); i >= 0 {
+		return path[:i]
+	}
+	return path
 }

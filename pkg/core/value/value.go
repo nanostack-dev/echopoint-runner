@@ -5,8 +5,9 @@ package value
 
 import (
 	"encoding/json"
-	"strconv"
 	"strings"
+
+	"github.com/theory/jsonpath"
 )
 
 // Value boxes one decoded-JSON value. The zero Value is absent (see IsZero).
@@ -88,30 +89,30 @@ func (v Value) List() ([]Value, bool) {
 	return out, true
 }
 
-// Get walks a dotted/JSONPath-lite path ("$.a.b", "a.0.b") into the value,
-// reporting whether the path resolved. A full RFC-9535 JSONPath drops in here
-// later; this covers object/array member access.
+// Get resolves an RFC-9535 JSONPath into the value, reporting whether it
+// matched. A bare path ("body.id", "status") is treated as "$.body.id" for
+// convenience; full JSONPath ("$.items[*].id", "$.data[?@.active]") also works.
+// A single match returns that value; multiple matches return a list.
 func (v Value) Get(path string) (Value, bool) {
-	cur := v.raw
-	for _, seg := range splitPath(path) {
-		switch c := cur.(type) {
-		case map[string]any:
-			next, ok := c[seg]
-			if !ok {
-				return Value{}, false
-			}
-			cur = next
-		case []any:
-			i, err := strconv.Atoi(seg)
-			if err != nil || i < 0 || i >= len(c) {
-				return Value{}, false
-			}
-			cur = c[i]
-		default:
-			return Value{}, false
-		}
+	expr := path
+	if !strings.HasPrefix(expr, "$") {
+		expr = "$." + strings.TrimPrefix(expr, ".")
 	}
-	return Value{raw: cur}, true
+	p, err := jsonpath.Parse(expr)
+	if err != nil {
+		return Value{}, false
+	}
+	nodes := p.Select(v.raw)
+	switch len(nodes) {
+	case 0:
+		return Value{}, false
+	case 1:
+		return Value{raw: nodes[0]}, true
+	default:
+		out := make([]any, len(nodes))
+		copy(out, nodes)
+		return Value{raw: out}, true
+	}
 }
 
 // String renders the value for comparison and interpolation.
@@ -131,12 +132,3 @@ func (v Value) String() string {
 // wire). Inbound boxing goes through JSON/Of, keeping every method a value
 // receiver.
 func (v Value) MarshalJSON() ([]byte, error) { return json.Marshal(v.raw) }
-
-func splitPath(path string) []string {
-	path = strings.TrimPrefix(path, "$")
-	path = strings.TrimPrefix(path, ".")
-	if path == "" {
-		return nil
-	}
-	return strings.Split(path, ".")
-}
