@@ -497,6 +497,15 @@ func TestRetryMiddleware(t *testing.T) {
 	}
 }
 
+// TestTimeoutMiddleware proves Timeout bounds a node: a 50ms delay under a 1ms
+// per-node timeout is cancelled and the node fails.
+func TestTimeoutMiddleware(t *testing.T) {
+	f := parse(t, `{"name":"to","nodes":[{"id":"wait","type":"delay","duration_ms":50}],"edges":[]}`)
+	e := engine.New(node.Runtime{Clock: nodes.WallClock{}}, nil,
+		engine.WithMiddleware(engine.Timeout(time.Millisecond)))
+	runFail(t, e, f, nil)
+}
+
 // TestDirectNodeCall is a smoke test that the production wiring compiles.
 func TestDirectNodeCall(_ *testing.T) {
 	_ = nodes.DefaultRuntime()

@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/nanostack-dev/echopoint-runner/pkg/core/node"
 	"github.com/nanostack-dev/echopoint-runner/pkg/core/value"
@@ -12,18 +13,24 @@ import (
 )
 
 // RequestCfg configures an HTTP request node. Its declared assertions and
-// outputs (on the embedded Base) run against the response body — the node never
-// mentions them.
+// outputs (on the embedded Base) run against the response {status, headers,
+// body} — the node never mentions them.
 type RequestCfg struct {
 	node.Base
 
-	Method  string            `json:"method"`
-	URL     string            `json:"url"`
-	Headers map[string]string `json:"headers,omitempty"`
-	Body    string            `json:"body,omitempty"`
+	Method    string            `json:"method"`
+	URL       string            `json:"url"`
+	Headers   map[string]string `json:"headers,omitempty"`
+	Body      string            `json:"body,omitempty"`
+	TimeoutMs int64             `json:"timeout_ms,omitempty"`
 }
 
 func runRequest(ctx context.Context, cfg RequestCfg, _ value.Value, rt node.Runtime) (node.Result, error) {
+	if cfg.TimeoutMs > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, time.Duration(cfg.TimeoutMs)*time.Millisecond)
+		defer cancel()
+	}
 	method := cfg.Method
 	if method == "" {
 		method = http.MethodGet
