@@ -1,12 +1,14 @@
 // Package engine is orchestration only. Given one flow, it schedules nodes in
 // dependency order, runs each node's declared assertion/output post-step, and
 // recurses for sub-flows. It has no per-node-type logic: every kind is dispatched
-// the same way. The engine also satisfies node.SubflowRunner, so composite nodes
-// (module/poll/loop) recurse back into it.
+// the same way. It records each node's outcome in a result.FlowResult and keeps
+// going past a failure (skipping dependents) rather than aborting. The engine
+// also satisfies node.SubflowRunner, so composite nodes recurse back into it.
 package engine
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"maps"
 	"slices"
@@ -16,8 +18,10 @@ import (
 	"github.com/nanostack-dev/echopoint-runner/pkg/core/flow"
 	"github.com/nanostack-dev/echopoint-runner/pkg/core/node"
 	"github.com/nanostack-dev/echopoint-runner/pkg/core/output"
+	"github.com/nanostack-dev/echopoint-runner/pkg/core/result"
 	"github.com/nanostack-dev/echopoint-runner/pkg/core/tmpl"
 	"github.com/nanostack-dev/echopoint-runner/pkg/core/value"
+	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 )
 
 // Engine runs flows.
@@ -34,77 +38,249 @@ func New(deps node.Runtime, resolve func(string) (flow.Flow, bool)) *Engine {
 	return e
 }
 
-// RunFlow executes a flow and returns its outputs nested under each node id. The
-// scheduler is input-count topological with run-or-skip: a routing node (branch)
-// marks the successor edges it routed away from as dead, and any node left with
-// no live incoming edge is skipped — cascading the skip down its subtree.
-func (e *Engine) RunFlow(ctx context.Context, f flow.Flow, inputs value.Map) (value.Map, error) {
-	nodeByID := make(map[string]flow.Node, len(f.Nodes))
-	indeg := make(map[string]int, len(f.Nodes))
-	succ := make(map[string][]string, len(f.Nodes))
-	preds := make(map[string][]string, len(f.Nodes))
-	for _, n := range f.Nodes {
-		nodeByID[n.ID] = n
-		indeg[n.ID] = 0
-	}
-	for _, ed := range f.Edges {
-		succ[ed.From] = append(succ[ed.From], ed.To)
-		preds[ed.To] = append(preds[ed.To], ed.From)
-		indeg[ed.To]++
-	}
-
-	storeOutputs := make(map[string]value.Map, len(f.Nodes)+1)
-	storeOutputs[""] = inputs // flow inputs live under the synthetic empty-id node
-	done := make(map[string]bool, len(f.Nodes))
-	dead := make(map[string]map[string]bool)
-
-	ready := make([]string, 0, len(f.Nodes))
-	for id, d := range indeg {
-		if d == 0 {
-			ready = append(ready, id)
-		}
-	}
-	sort.Strings(ready)
-
-	processed := 0
-	for len(ready) > 0 {
-		id := ready[0]
-		ready = ready[1:]
-		processed++
-
-		if skipNode(preds[id], done, dead, id) {
-			releaseSuccessors(id, succ, indeg, &ready)
-			continue
-		}
-
-		res, err := e.runNode(ctx, nodeByID[id], storeOutputs)
-		if err != nil {
-			return nil, fmt.Errorf("node %s: %w", id, err)
-		}
-		storeOutputs[id] = res.Outputs
-		done[id] = true
-		recordRouting(id, res.Routed, succ[id], dead)
-		releaseSuccessors(id, succ, indeg, &ready)
-	}
-	if processed != len(f.Nodes) {
-		return nil, fmt.Errorf("cycle or unreachable nodes: processed %d of %d", processed, len(f.Nodes))
-	}
-	return collect(storeOutputs), nil
+// RunFlow executes a flow and returns its full result. The returned error is
+// reserved for exceptional wiring issues; ordinary node failures are recorded in
+// the result with Success=false.
+func (e *Engine) RunFlow(ctx context.Context, f flow.Flow, inputs value.Map) (*result.FlowResult, error) {
+	return e.run(ctx, f, inputs), nil
 }
 
-// skipNode reports whether a node should be skipped: it has predecessors but no
-// live incoming edge — every predecessor was itself skipped, or routed away from
-// this node. Root nodes (no predecessors) always run.
-func skipNode(preds []string, done map[string]bool, dead map[string]map[string]bool, id string) bool {
-	if len(preds) == 0 {
-		return false
+// run is the scheduler entrypoint: it builds the scheduler state, drains the
+// ready queue, then finalizes (cycle detection + collected outputs).
+func (e *Engine) run(ctx context.Context, f flow.Flow, inputs value.Map) *result.FlowResult {
+	fr := &result.FlowResult{Success: true, Nodes: make(map[string]*result.NodeResult, len(f.Nodes))}
+	if len(f.Nodes) == 0 {
+		fr.Success, fr.Error, fr.Code, fr.Outputs = false, "no nodes to execute", "FLOW_VALIDATION_FAILED", value.Map{}
+		return fr
 	}
-	for _, p := range preds {
-		if done[p] && !dead[p][id] {
-			return false
+	s := newScheduler(f, inputs, fr)
+	for len(s.ready) > 0 {
+		id := s.ready[0]
+		s.ready = s.ready[1:]
+		e.step(ctx, s, id)
+	}
+	if s.processed != len(f.Nodes) {
+		fr.Success, fr.Error, fr.Code = false, fmt.Sprintf(
+			"cycle or unreachable nodes: processed %d of %d", s.processed, len(f.Nodes)), "FLOW_VALIDATION_FAILED"
+	}
+	fr.Outputs = collect(s.store)
+	return fr
+}
+
+// scheduler holds the mutable state of one run: the graph, the output store, and
+// per-node terminal state (done/failed) plus dead routing edges.
+type scheduler struct {
+	nodeByID   map[string]flow.Node
+	indeg      map[string]int
+	succ       map[string][]string
+	preds      map[string][]string
+	store      map[string]value.Map
+	done       map[string]bool
+	failed     map[string]bool
+	dead       map[string]map[string]bool
+	mainFailed bool
+	processed  int
+	ready      []string
+	fr         *result.FlowResult
+}
+
+func newScheduler(f flow.Flow, inputs value.Map, fr *result.FlowResult) *scheduler {
+	s := &scheduler{
+		nodeByID: make(map[string]flow.Node, len(f.Nodes)),
+		indeg:    make(map[string]int, len(f.Nodes)),
+		succ:     make(map[string][]string, len(f.Nodes)),
+		preds:    make(map[string][]string, len(f.Nodes)),
+		store:    map[string]value.Map{"": inputs},
+		done:     map[string]bool{},
+		failed:   map[string]bool{},
+		dead:     map[string]map[string]bool{},
+		fr:       fr,
+	}
+	for _, n := range f.Nodes {
+		s.nodeByID[n.ID] = n
+		s.indeg[n.ID] = 0
+	}
+	for _, ed := range f.Edges {
+		s.succ[ed.From] = append(s.succ[ed.From], ed.To)
+		s.preds[ed.To] = append(s.preds[ed.To], ed.From)
+		s.indeg[ed.To]++
+	}
+	for id, d := range s.indeg {
+		if d == 0 {
+			s.ready = append(s.ready, id)
 		}
 	}
-	return true
+	sort.Strings(s.ready)
+	return s
+}
+
+// step runs or skips one ready node and records its outcome. A routing node
+// marks the edges it routed away from as dead; a failed on_success node aborts
+// the main phase; run_when=always nodes still run for cleanup.
+func (e *Engine) step(ctx context.Context, s *scheduler, id string) {
+	s.processed++
+	fn := s.nodeByID[id]
+	isAlways := runWhenOf(fn) == spi.RunWhenAlways
+
+	if runIt, reason := classify(id, s.preds[id], s.done, s.failed, s.dead, s.mainFailed, isAlways); !runIt {
+		s.fr.Nodes[id] = &result.NodeResult{ID: id, Kind: fn.Kind, Status: result.StatusSkipped, SkipReason: reason}
+		s.release(id)
+		return
+	}
+
+	res, assertions, err := e.runNode(ctx, fn, s.store)
+	nr := &result.NodeResult{ID: id, Kind: fn.Kind, Assertions: assertions}
+	if err != nil {
+		nr.Status, nr.Error, nr.Code = result.StatusFailed, err.Error(), codeOrDefault(err)
+		s.fr.Nodes[id] = nr
+		s.failed[id] = true
+		if !isAlways {
+			s.mainFailed, s.fr.Success = true, false
+		}
+		s.release(id)
+		return
+	}
+	s.store[id] = res.Outputs
+	s.done[id] = true
+	nr.Status, nr.Outputs = result.StatusSuccess, res.Outputs
+	s.fr.Nodes[id] = nr
+	recordRouting(id, res.Routed, s.succ[id], s.dead)
+	s.release(id)
+}
+
+// release decrements successors' in-degree and enqueues any that become ready.
+func (s *scheduler) release(id string) {
+	for _, succ := range s.succ[id] {
+		s.indeg[succ]--
+		if s.indeg[succ] == 0 {
+			s.ready = append(s.ready, succ)
+		}
+	}
+	sort.Strings(s.ready)
+}
+
+// classify decides whether a node runs, and if not, why it is skipped. A node
+// runs when it has a live incoming edge (a succeeded predecessor whose edge was
+// not routed away) — unless it is an on_success node and the main phase already
+// failed, in which case cleanup is aborted. run_when=always nodes run for
+// cleanup regardless of a main failure, as long as their inputs are available.
+func classify(
+	id string, preds []string, done, failed map[string]bool,
+	dead map[string]map[string]bool, mainFailed, isAlways bool,
+) (bool, string) {
+	if len(preds) == 0 {
+		if !isAlways && mainFailed {
+			return false, result.SkipNotReachable
+		}
+		return true, ""
+	}
+	live := false
+	reason := result.SkipDependencySkipped
+	for _, p := range preds {
+		switch {
+		case done[p] && !dead[p][id]:
+			live = true
+		case failed[p]:
+			reason = result.SkipDependencyFailed
+		case done[p] && dead[p][id]:
+			if reason == result.SkipDependencySkipped {
+				reason = result.SkipRoutedAway
+			}
+		}
+	}
+	if live {
+		if !isAlways && mainFailed {
+			return false, result.SkipAbortedAfterFail
+		}
+		return true, ""
+	}
+	if isAlways {
+		return false, result.SkipMissingInputs
+	}
+	return false, reason
+}
+
+// runNode resolves the node's templates against the output store, decodes it into
+// typed config, runs it, and applies the uniform assertion/output post-step. It
+// returns the node's result, the assertion results (nil for self-evaluating
+// nodes), and an error (ASSERTION_FAILED when a declared assertion fails).
+func (e *Engine) runNode(
+	ctx context.Context, fn flow.Node, store map[string]value.Map,
+) (node.Result, assert.Results, error) {
+	resolved, err := tmpl.Resolve(fn.Raw, tmpl.Store(store))
+	if err != nil {
+		return node.Result{}, nil, err
+	}
+	b, err := node.Decode(fn.Kind, resolved)
+	if err != nil {
+		return node.Result{}, nil, err
+	}
+	res, err := b.Run(ctx, inputView(store), e.deps)
+	if err != nil {
+		return node.Result{}, nil, err
+	}
+	if res.Assert.IsZero() {
+		return res, nil, nil // node self-evaluated (or has nothing to assert)
+	}
+	results := assert.Run(res.Assert, b.Base.Assertions)
+	if extracted := output.Extract(res.Assert, b.Base.Outputs); len(extracted) > 0 {
+		if res.Outputs == nil {
+			res.Outputs = value.Map{}
+		}
+		maps.Copy(res.Outputs, extracted)
+	}
+	if results.AnyFailed() {
+		return res, results, node.UserErrf("ASSERTION_FAILED", "assertion failed on %s", b.Base.ID)
+	}
+	return res, results, nil
+}
+
+// RunSubflow satisfies node.SubflowRunner: it resolves a child flow by id and
+// runs it, guarding against module cycles via the call stack carried in ctx.
+func (e *Engine) RunSubflow(ctx context.Context, flowID string, in value.Map) (value.Map, error) {
+	if e.resolve == nil {
+		return nil, node.UserErrf("MODULE_FLOW_NOT_FOUND", "no sub-flow resolver configured")
+	}
+	if stackHas(ctx, flowID) {
+		return nil, node.UserErrf("MODULE_CYCLE_DETECTED", "module cycle detected at %q", flowID)
+	}
+	child, ok := e.resolve(flowID)
+	if !ok {
+		return nil, node.UserErrf("MODULE_FLOW_NOT_FOUND", "child flow %q not found", flowID)
+	}
+	res := e.run(pushStack(ctx, flowID), child, in)
+	if !res.Success {
+		return nil, node.UserErrf("MODULE_FAILED", "child flow %q failed", flowID)
+	}
+	return res.Outputs, nil
+}
+
+// RunInline satisfies node.SubflowRunner for embedded body flows (loop, poll).
+func (e *Engine) RunInline(ctx context.Context, f flow.Flow, in value.Map) (value.Map, error) {
+	res := e.run(ctx, f, in)
+	if !res.Success {
+		return nil, node.UserErrf("SUBFLOW_FAILED", "inline body failed")
+	}
+	return res.Outputs, nil
+}
+
+// runWhenOf peeks a node's run_when phase (default on_success).
+func runWhenOf(fn flow.Node) spi.RunWhen {
+	var head struct {
+		RunWhen spi.RunWhen `json:"run_when"`
+	}
+	_ = json.Unmarshal(fn.Raw, &head)
+	if head.RunWhen == "" {
+		return spi.RunWhenOnSuccess
+	}
+	return head.RunWhen
+}
+
+func codeOrDefault(err error) string {
+	if c := node.CodeOf(err); c != "" {
+		return c
+	}
+	return "RUNNER_ERROR"
 }
 
 // recordRouting marks every successor a routing node did NOT route to as dead.
@@ -126,73 +302,15 @@ func recordRouting(id string, routed, successors []string, dead map[string]map[s
 	}
 }
 
-func releaseSuccessors(id string, succ map[string][]string, indeg map[string]int, ready *[]string) {
-	for _, s := range succ[id] {
-		indeg[s]--
-		if indeg[s] == 0 {
-			*ready = append(*ready, s)
-		}
-	}
-	sort.Strings(*ready)
-}
-
-// runNode resolves the node's templates against the output store, decodes it
-// into typed config, runs it, and applies the uniform assertion/output
-// post-step. This is the entire per-node lifecycle — identical for every kind.
-func (e *Engine) runNode(ctx context.Context, fn flow.Node, storeOutputs map[string]value.Map) (node.Result, error) {
-	resolved, err := tmpl.Resolve(fn.Raw, tmpl.Store(storeOutputs))
-	if err != nil {
-		return node.Result{}, err
-	}
-	b, err := node.Decode(fn.Kind, resolved)
-	if err != nil {
-		return node.Result{}, err
-	}
-	res, err := b.Run(ctx, inputView(storeOutputs), e.deps)
-	if err != nil {
-		return node.Result{}, err
-	}
-	if res.Assert.IsZero() {
-		return res, nil // node self-evaluated (or has nothing to assert)
-	}
-	results := assert.Run(res.Assert, b.Base.Assertions)
-	if extracted := output.Extract(res.Assert, b.Base.Outputs); len(extracted) > 0 {
-		if res.Outputs == nil {
-			res.Outputs = value.Map{}
-		}
-		maps.Copy(res.Outputs, extracted)
-	}
-	if results.AnyFailed() {
-		return node.Result{}, fmt.Errorf("assertion failed on %s: %w", b.Base.ID, node.ErrUser)
-	}
-	return res, nil
-}
-
-// RunSubflow satisfies node.SubflowRunner: it resolves a child flow by id and
-// runs it, guarding against module cycles via the call stack carried in ctx.
-func (e *Engine) RunSubflow(ctx context.Context, flowID string, in value.Map) (value.Map, error) {
-	if e.resolve == nil {
-		return nil, fmt.Errorf("no sub-flow resolver configured: %w", node.ErrUser)
-	}
-	if stackHas(ctx, flowID) {
-		return nil, fmt.Errorf("module cycle detected at %q: %w", flowID, node.ErrUser)
-	}
-	child, ok := e.resolve(flowID)
-	if !ok {
-		return nil, fmt.Errorf("child flow %q not found: %w", flowID, node.ErrUser)
-	}
-	return e.RunFlow(pushStack(ctx, flowID), child, in)
-}
-
 // inputView boxes a node's input context as a single Value: flow inputs at the
 // top level, each upstream node's outputs nested under its id. assert/branch
-// evaluate over this when no explicit target is configured.
-func inputView(storeOutputs map[string]value.Map) value.Value {
-	merged := make(map[string]any, len(storeOutputs))
-	for k, v := range storeOutputs[""] { // flow inputs at top level
+// evaluate over this, addressing any already-executed node by path.
+func inputView(store map[string]value.Map) value.Value {
+	merged := make(map[string]any, len(store))
+	for k, v := range store[""] { // flow inputs at top level
 		merged[k] = v.Raw()
 	}
-	for nodeID, m := range storeOutputs {
+	for nodeID, m := range store {
 		if nodeID == "" {
 			continue
 		}
@@ -201,17 +319,11 @@ func inputView(storeOutputs map[string]value.Map) value.Value {
 	return value.Of(merged)
 }
 
-// RunInline satisfies node.SubflowRunner for embedded body flows (loop, poll).
-func (e *Engine) RunInline(ctx context.Context, f flow.Flow, in value.Map) (value.Map, error) {
-	return e.RunFlow(ctx, f, in)
-}
-
 // collect nests each node's outputs under its id, so results are accessed by
-// path ("nodeID.key") uniformly — including a child flow's outputs when a
-// composite node asserts over them.
-func collect(storeOutputs map[string]value.Map) value.Map {
-	out := make(value.Map, len(storeOutputs))
-	for nodeID, m := range storeOutputs {
+// path ("nodeID.key") uniformly — including a child flow's outputs.
+func collect(store map[string]value.Map) value.Map {
+	out := make(value.Map, len(store))
+	for nodeID, m := range store {
 		if nodeID == "" {
 			continue // the synthetic flow-inputs node is not a result
 		}
@@ -221,8 +333,8 @@ func collect(storeOutputs map[string]value.Map) value.Map {
 }
 
 // stackKey carries the module call stack as request-scoped metadata — a
-// legitimate context use (it does not alter what a node computes, only guards
-// recursion).
+// legitimate context use (it guards recursion, it does not alter what a node
+// computes).
 type stackKey struct{}
 
 func pushStack(ctx context.Context, flowID string) context.Context {
