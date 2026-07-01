@@ -506,6 +506,40 @@ func TestTimeoutMiddleware(t *testing.T) {
 	runFail(t, e, f, nil)
 }
 
+// TestModuleCycleUpfront proves an A->B->A module cycle is caught before any
+// node runs (no side effects).
+func TestModuleCycleUpfront(t *testing.T) {
+	a := parse(t, `{"name":"a","nodes":[{"id":"m","type":"module","body_flow_id":"B"}],"edges":[]}`)
+	b := parse(t, `{"name":"b","nodes":[{"id":"m","type":"module","body_flow_id":"A"}],"edges":[]}`)
+	resolve := func(id string) (flow.Flow, bool) {
+		switch id {
+		case "A":
+			return a, true
+		case "B":
+			return b, true
+		}
+		return flow.Flow{}, false
+	}
+	res := runFail(t, engine.New(node.Runtime{Clock: &fakeClock{}}, resolve), a, nil)
+	if res.Code != "FLOW_VALIDATION_FAILED" {
+		t.Fatalf("want FLOW_VALIDATION_FAILED, got %q", res.Code)
+	}
+	if len(res.Nodes) != 0 {
+		t.Fatalf("no node should run on a validation failure, got %v", res.Nodes)
+	}
+}
+
+// TestModuleUnknownFlow proves a module referencing an unresolvable flow fails
+// validation upfront.
+func TestModuleUnknownFlow(t *testing.T) {
+	a := parse(t, `{"name":"a","nodes":[{"id":"m","type":"module","body_flow_id":"ghost"}],"edges":[]}`)
+	resolve := func(string) (flow.Flow, bool) { return flow.Flow{}, false }
+	res := runFail(t, engine.New(node.Runtime{Clock: &fakeClock{}}, resolve), a, nil)
+	if res.Code != "FLOW_VALIDATION_FAILED" {
+		t.Fatalf("want FLOW_VALIDATION_FAILED, got %q", res.Code)
+	}
+}
+
 // TestDirectNodeCall is a smoke test that the production wiring compiles.
 func TestDirectNodeCall(_ *testing.T) {
 	_ = nodes.DefaultRuntime()
