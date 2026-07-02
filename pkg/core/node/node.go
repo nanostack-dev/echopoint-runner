@@ -60,15 +60,16 @@ type hasBase interface{ base() Base }
 type Result struct {
 	// Outputs are the named values the node produces for downstream nodes.
 	Outputs value.Map
-	// Assert is the value the node's declared assertions/outputs run against (a
-	// response body, a computed map, ...) when Provided is true.
+	// Assert is the value the node's declared assertions/outputs run against
+	// when Provided is true. A provider that asserts over its own Outputs leaves
+	// it zero — the engine boxes Outputs once, and only when assertions or
+	// outputs are actually declared. Set it only to assert over something else
+	// (the assert node targets the whole input context).
 	Assert value.Value
 	// Provided is set by nodes that expose a value for the framework's uniform
 	// assertion/output post-step (request, set_variable, assert, loop). Nodes
 	// that evaluate their own assertions (poll, sse) or route (branch) or have
 	// none (delay, module) leave it false, and the engine skips the post-step.
-	// This is explicit rather than inferred from a zero Assert, so asserting over
-	// a JSON null still runs.
 	Provided bool
 	// Assertions is set by self-evaluating nodes (poll, sse) to surface the
 	// assertion outcomes they evaluated internally — the engine records these on

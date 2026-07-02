@@ -20,6 +20,8 @@ import (
 var pathCache sync.Map // map[string]*jsonpath.Path
 
 // Value boxes one decoded-JSON value. The zero Value is absent (see IsZero).
+//
+//nolint:recvcheck // json.Unmarshaler forces one pointer receiver (UnmarshalJSON); every other method is a value receiver
 type Value struct{ raw any }
 
 // Of boxes an arbitrary Go value.
@@ -100,11 +102,14 @@ func (v Value) List() ([]Value, bool) {
 
 // Get resolves an RFC-9535 JSONPath into the value, reporting whether it
 // matched. A bare dotted path ("body.id", "headers.content-type", a hyphenated
-// node id like "create-user.id") is bracket-quoted so every member name is
-// addressable; a path already starting with "$" is used verbatim so full
+// node id like "create-user.id") resolves member-by-member — every member name
+// is addressable; a path already starting with "$" is used verbatim so full
 // JSONPath ("$.items[*].id", "$.data[?@.active]") works. A single match returns
 // that value; multiple matches return a list.
 func (v Value) Get(path string) (Value, bool) {
+	if !strings.HasPrefix(path, "$") {
+		return v.getDotted(path)
+	}
 	p, ok := parsePath(path)
 	if !ok {
 		return Value{}, false
@@ -122,19 +127,43 @@ func (v Value) Get(path string) (Value, bool) {
 	}
 }
 
-// parsePath parses (or returns a cached) JSONPath for a path. A bare dotted path
-// is bracket-quoted; a "$"-prefixed path is used verbatim. Unparseable paths
-// report !ok and are not cached.
+// getDotted resolves a bare dotted path member-by-member — the common
+// "node.key" case — with no JSONPath machinery and no allocation. Semantics
+// match the bracket-quoted JSONPath form each segment used to compile to: an
+// exact member-name lookup in a JSON object (hyphens and other non-shorthand
+// characters are fine), reporting !ok when a segment is missing or the current
+// value is not an object.
+func (v Value) getDotted(path string) (Value, bool) {
+	path = strings.TrimPrefix(path, ".")
+	if path == "" {
+		return v, true // "" compiled to "$": the root itself
+	}
+	cur := v.raw
+	for {
+		seg, rest, more := strings.Cut(path, ".")
+		m, isMap := cur.(map[string]any)
+		if !isMap {
+			return Value{}, false
+		}
+		next, found := m[seg]
+		if !found {
+			return Value{}, false
+		}
+		if !more {
+			return Value{raw: next}, true
+		}
+		cur, path = next, rest
+	}
+}
+
+// parsePath parses (or returns a cached) "$"-prefixed JSONPath. Unparseable
+// paths report !ok and are not cached.
 func parsePath(path string) (*jsonpath.Path, bool) {
 	if cached, ok := pathCache.Load(path); ok {
 		p, _ := cached.(*jsonpath.Path) // only *jsonpath.Path is ever stored
 		return p, true
 	}
-	expr := path
-	if !strings.HasPrefix(expr, "$") {
-		expr = bracketPath(path)
-	}
-	p, err := jsonpath.Parse(expr)
+	p, err := jsonpath.Parse(path)
 	if err != nil {
 		return nil, false
 	}
@@ -155,26 +184,15 @@ func (v Value) String() string {
 	}
 }
 
-// bracketPath turns a dotted path into a bracket-quoted JSONPath, so member
-// names containing hyphens or other non-shorthand characters (e.g.
-// "content-type", "create-user") are addressable — RFC-9535 dot shorthand
-// rejects them.
-func bracketPath(path string) string {
-	path = strings.TrimPrefix(path, ".")
-	if path == "" {
-		return "$"
-	}
-	var b strings.Builder
-	b.WriteByte('$')
-	for seg := range strings.SplitSeq(path, ".") {
-		b.WriteString("['")
-		b.WriteString(strings.ReplaceAll(seg, `'`, `\'`))
-		b.WriteString("']")
-	}
-	return b.String()
-}
-
 // MarshalJSON renders the boxed value back to JSON (for results crossing the
-// wire). Inbound boxing goes through JSON/Of, keeping every method a value
-// receiver.
+// wire).
 func (v Value) MarshalJSON() ([]byte, error) { return json.Marshal(v.raw) }
+
+// UnmarshalJSON boxes decoded JSON directly — the one pointer-receiver method
+// (json must write through). It lets a node config declare value.Value /
+// value.Map fields that decode in a single pass, instead of holding
+// json.RawMessage and re-parsing it on every evaluation.
+func (v *Value) UnmarshalJSON(b []byte) error {
+	v.raw = nil
+	return json.Unmarshal(b, &v.raw)
+}

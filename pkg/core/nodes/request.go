@@ -64,7 +64,7 @@ func runRequest(ctx context.Context, cfg RequestCfg, _ value.Value, rt node.Runt
 		"headers": value.Of(headerMap(resp.Header)),
 		"body":    value.Of(jsonOrString(raw)),
 	}
-	return node.Result{Outputs: respMap, Assert: respMap.Value(), Provided: true}, nil
+	return node.Result{Outputs: respMap, Provided: true}, nil
 }
 
 // headerMap flattens response headers (first value, lowercased key) so

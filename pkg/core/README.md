@@ -346,7 +346,7 @@ pure engine, no HTTP), `BranchFanout` (route past N cascade-skipped successors),
 `Modules` (N parallel sub-flows), `Poll`, `DelayChain`, and `Complex` (a
 kitchen-sink graph combining request + branch + loop + module + assert).
 
-Seven optimizations came out of profiling these:
+Twelve optimizations came out of profiling these:
 
 1. **Incremental input view.** `runNode` used to rebuild the whole output store
    into a fresh map on every node (`inputView`), re-boxing each node's outputs
@@ -377,11 +377,44 @@ Seven optimizations came out of profiling these:
 7. **No empty allocations.** `assert.Run`/`output.Extract` returned an empty
    slice/map for nodes that declare none, and `validateTargets` built an edge index
    for flows with no routing node — all now short-circuit to nil.
+8. **Dotted-path fast walker.** A bare dotted path ("node.key" — the
+   overwhelmingly common case) used to be bracket-quoted, parsed (cached), and
+   evaluated through the JSONPath engine, which allocates per `Select`. `value.Get`
+   now walks bare dotted paths member-by-member with zero allocations; only
+   "$"-prefixed full JSONPath goes through the library. (WideDiamond/DeepChain
+   time ~−20%.)
+9. **Byte-level template rewrite.** `tmpl.Resolve` unmarshalled the whole node
+   config to `any`, walked it, and re-marshalled — then `node.Decode` unmarshalled
+   the result *again* (three JSON passes for a templated node). Templates can only
+   occur inside JSON string values, so Resolve now scans the raw bytes, rewrites
+   only string literals that contain a token (object keys and token-free strings
+   are copied verbatim), and leaves one JSON pass: the typed decode.
+   (VarChain/DeepChain ~−30% time, ~−40% allocs.)
+10. **One boxing per node.** Provider nodes boxed their outputs for the
+    assertion post-step (`Assert: out.Value()`) even when the node declares no
+    assertions or outputs; the engine boxed the same map again for the view and a
+    third time in `collect`. Now: a provider leaves `Assert` zero and the engine
+    boxes outputs once — and only when assertions/outputs are declared — and
+    `collect` reuses the view's boxing.
+11. **Topology derived at parse.** Every run rebuilt nodeByID/succ/preds/indeg
+    maps; loop and poll bodies re-run the same parsed flow once per iteration and
+    module children once per module node. `flow.Parse` now derives an immutable
+    `Topo` (plus sorted roots) that all runs share; a run clones only the
+    in-degrees it decrements. (Loop −7%, Modules −6%, and −9–14% B/op.)
+12. **Decode-once values.** `set_variable`/`module` held `map[string]json.RawMessage`
+    and re-parsed every entry with `value.JSON` at run time, and `assert.Spec.Expected`
+    stayed raw JSON and was re-parsed on *every* evaluation (per poll attempt, per
+    SSE event, per loop iteration). `value.Value` gained `UnmarshalJSON`, so these
+    fields decode straight into `value.Value`/`value.Map` in one pass. (SSE −27%
+    time, −34% allocs.)
 
-Cumulative vs the pre-optimization baseline, **WideDiamond n=256: time −84%
-(11.8ms → 1.9ms), memory −88% (17.3MB → 2.1MB), allocs −82% (139k → 25k)**.
-Beyond this the remaining cost is inherent per-node work — decoding each node's
-config, evaluating JSONPath, boxing outputs — not waste.
+Cumulative vs the pre-optimization baseline, **WideDiamond n=256: time −89%
+(11.8ms → 1.3ms), memory −90% (17.3MB → 1.75MB), allocs −86% (139k → 18.8k)**;
+vs the round-7 numbers: time −30%, allocs −25% (WideDiamond n=256), and −53%
+time / −60% allocs on the pure-engine VarChain n=256. Beyond this the remaining
+cost is inherent per-node work — the single typed `json.Unmarshal` of each
+node's config, evaluating "$" JSONPath, and boxing each node's outputs into the
+pure-`any` view — not waste.
 
 ## Design principles (the invariants worth keeping)
 

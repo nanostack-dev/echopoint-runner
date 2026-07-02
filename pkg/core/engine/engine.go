@@ -178,7 +178,7 @@ func (e *Engine) schedule(ctx context.Context, f flow.Flow, inputs value.Map, fr
 	for len(s.ready) > 0 {
 		if err := ctx.Err(); err != nil {
 			fr.Success, fr.Error, fr.Code = false, "flow cancelled: "+err.Error(), "CANCELLED"
-			fr.Outputs = collect(s.store)
+			fr.Outputs = s.collect()
 			return
 		}
 		id := s.ready[0]
@@ -189,7 +189,7 @@ func (e *Engine) schedule(ctx context.Context, f flow.Flow, inputs value.Map, fr
 		fr.Success, fr.Error, fr.Code = false, fmt.Sprintf(
 			"cycle or unreachable nodes: processed %d of %d", s.processed, len(f.Nodes)), codeFlowValidation
 	}
-	fr.Outputs = collect(s.store)
+	fr.Outputs = s.collect()
 }
 
 // nodeState is a node's terminal state within one run.
@@ -226,12 +226,28 @@ type scheduler struct {
 
 func newScheduler(f flow.Flow, inputs value.Map, fr *result.FlowResult) *scheduler {
 	s := &scheduler{
-		nodeByID: make(map[string]flow.Node, len(f.Nodes)),
-		store:    map[string]value.Map{"": mergeInputs(f.Inputs, inputs)},
-		view:     make(map[string]any, len(f.Nodes)),
-		state:    make(map[string]nodeState, len(f.Nodes)),
-		fr:       fr,
+		store: make(map[string]value.Map, len(f.Nodes)+1),
+		view:  make(map[string]any, len(f.Nodes)),
+		state: make(map[string]nodeState, len(f.Nodes)),
+		ready: make([]string, 0, len(f.Nodes)), // every node is enqueued exactly once
+		fr:    fr,
 	}
+	s.store[""] = mergeInputs(f.Inputs, inputs)
+	if t := f.Topology(); t != nil {
+		// A parsed flow carries its topology; runs share the immutable maps and
+		// clone only the in-degrees they decrement. Loop/poll bodies and module
+		// children re-run the same parsed flow, so this skips a rebuild per run.
+		s.nodeByID, s.succ, s.preds = t.ByID, t.Succ, t.Preds
+		if t.Indeg != nil {
+			s.indeg = maps.Clone(t.Indeg)
+		}
+		s.ready = append(s.ready, t.Roots...)
+		for k, v := range s.store[""] { // seed the view with flow inputs at top level
+			s.view[k] = v.Raw()
+		}
+		return s
+	}
+	s.nodeByID = make(map[string]flow.Node, len(f.Nodes))
 	for _, n := range f.Nodes {
 		s.nodeByID[n.ID] = n
 	}
@@ -324,13 +340,16 @@ func mergeInputs(defaults, override value.Map) value.Map {
 
 // release decrements successors' in-degree and enqueues any that become ready.
 func (s *scheduler) release(id string) {
+	n := len(s.ready)
 	for _, succ := range s.succ[id] {
 		s.indeg[succ]--
 		if s.indeg[succ] == 0 {
 			s.ready = append(s.ready, succ)
 		}
 	}
-	sort.Strings(s.ready)
+	if len(s.ready) > n && len(s.ready) > 1 {
+		sort.Strings(s.ready) // keep the queue deterministic only when it changed
+	}
 }
 
 // classify decides whether a node runs, and if not, why it is skipped. A node
@@ -397,8 +416,15 @@ func (e *Engine) runNode(
 		if !res.Provided {
 			return res, res.Assertions, nil // self-evaluated node's own results (may be nil)
 		}
-		results := assert.Run(res.Assert, b.Base.Assertions)
-		if extracted := output.Extract(res.Assert, b.Base.Outputs); len(extracted) > 0 {
+		if len(b.Base.Assertions) == 0 && len(b.Base.Outputs) == 0 {
+			return res, nil, nil // nothing declared — skip boxing the assert target
+		}
+		target := res.Assert
+		if target.IsZero() {
+			target = res.Outputs.Value() // provider asserts over its own outputs
+		}
+		results := assert.Run(target, b.Base.Assertions)
+		if extracted := output.Extract(target, b.Base.Outputs); len(extracted) > 0 {
 			if res.Outputs == nil {
 				res.Outputs = value.Map{}
 			}
@@ -482,14 +508,16 @@ func (s *scheduler) recordRouting(id string, routed []string) {
 }
 
 // collect nests each node's outputs under its id, so results are accessed by
-// path ("nodeID.key") uniformly — including a child flow's outputs.
-func collect(store map[string]value.Map) value.Map {
-	out := make(value.Map, len(store))
-	for nodeID, m := range store {
+// path ("nodeID.key") uniformly — including a child flow's outputs. Each
+// completed node's outputs were already boxed once when published to the view
+// (step), so collect reuses that boxing instead of re-boxing every map.
+func (s *scheduler) collect() value.Map {
+	out := make(value.Map, len(s.store))
+	for nodeID := range s.store {
 		if nodeID == "" {
 			continue // the synthetic flow-inputs node is not a result
 		}
-		out[nodeID] = m.Value()
+		out[nodeID] = value.Of(s.view[nodeID])
 	}
 	return out
 }
