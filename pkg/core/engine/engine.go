@@ -8,7 +8,6 @@ package engine
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"maps"
 	"slices"
@@ -245,7 +244,7 @@ func newScheduler(f flow.Flow, inputs value.Map, fr *result.FlowResult) *schedul
 func (e *Engine) step(ctx context.Context, s *scheduler, id string) {
 	s.processed++
 	fn := s.nodeByID[id]
-	isAlways := runWhenOf(fn) == spi.RunWhenAlways
+	isAlways := fn.RunWhen == spi.RunWhenAlways
 
 	if runIt, reason := s.classify(id, isAlways); !runIt {
 		nr := &result.NodeResult{ID: id, Kind: fn.Kind, Status: result.StatusSkipped, SkipReason: reason}
@@ -434,18 +433,6 @@ func (e *Engine) dynFunc() tmpl.DynFunc {
 		return nil
 	}
 	return e.deps.Vars.Resolve
-}
-
-// runWhenOf peeks a node's run_when phase (default on_success).
-func runWhenOf(fn flow.Node) spi.RunWhen {
-	var head struct {
-		RunWhen spi.RunWhen `json:"run_when"`
-	}
-	_ = json.Unmarshal(fn.Raw, &head)
-	if head.RunWhen == "" {
-		return spi.RunWhenOnSuccess
-	}
-	return head.RunWhen
 }
 
 // recordRouting marks every successor a routing node did NOT route to as dead.
