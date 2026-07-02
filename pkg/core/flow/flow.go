@@ -20,12 +20,14 @@ type Flow struct {
 	Inputs value.Map
 }
 
-// Node is a raw node definition: its id, kind, and undecoded config. The engine
-// turns Raw into a node.Bound via the registry.
+// Node is a raw node definition: its id, kind, run-phase, and undecoded config.
+// The engine turns Raw into a node.Bound via the registry. RunWhen is lifted here
+// at parse time so the scheduler needn't re-unmarshal it per node.
 type Node struct {
-	ID   string
-	Kind spi.Kind
-	Raw  json.RawMessage
+	ID      string
+	Kind    spi.Kind
+	RunWhen spi.RunWhen
+	Raw     json.RawMessage
 }
 
 // Edge is a directed dependency: To runs after From.
@@ -53,13 +55,17 @@ func Parse(b []byte) (Flow, error) {
 	f := Flow{Name: raw.Name, Inputs: toMap(raw.Inputs)}
 	for _, rn := range raw.Nodes {
 		var head struct {
-			ID   string   `json:"id"`
-			Type spi.Kind `json:"type"`
+			ID      string      `json:"id"`
+			Type    spi.Kind    `json:"type"`
+			RunWhen spi.RunWhen `json:"run_when"`
 		}
 		if err := json.Unmarshal(rn, &head); err != nil {
 			return Flow{}, fmt.Errorf("parse node head: %w", err)
 		}
-		f.Nodes = append(f.Nodes, Node{ID: head.ID, Kind: head.Type, Raw: rn})
+		if head.RunWhen == "" {
+			head.RunWhen = spi.RunWhenOnSuccess
+		}
+		f.Nodes = append(f.Nodes, Node{ID: head.ID, Kind: head.Type, RunWhen: head.RunWhen, Raw: rn})
 	}
 	for _, e := range raw.Edges {
 		f.Edges = append(f.Edges, Edge{From: e.Source, To: e.Target})

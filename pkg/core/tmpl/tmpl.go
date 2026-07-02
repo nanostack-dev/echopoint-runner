@@ -7,6 +7,7 @@
 package tmpl
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"regexp"
@@ -14,6 +15,12 @@ import (
 
 	"github.com/nanostack-dev/echopoint-runner/pkg/core/value"
 )
+
+// token is the opening delimiter every template form starts with; a raw config
+// without it needs no resolution at all.
+//
+//nolint:gochecknoglobals // immutable sentinel — avoids a per-call []byte alloc
+var token = []byte("{{")
 
 // rawPattern matches a whole-string {{{ref}}}: the token is the entire value, so
 // it is replaced structurally (object/number/bool preserved), not stringified.
@@ -30,6 +37,9 @@ type DynFunc func(name string, args []string) (string, error)
 // resolver, returning resolved JSON. Unresolved refs are left verbatim so a typo
 // is visible rather than silently empty.
 func Resolve(raw json.RawMessage, view value.Value, dyn DynFunc) (json.RawMessage, error) {
+	if !bytes.Contains(raw, token) {
+		return raw, nil // no template tokens — skip the unmarshal/walk/remarshal
+	}
 	var v any
 	if err := json.Unmarshal(raw, &v); err != nil {
 		return nil, fmt.Errorf("template parse: %w", err)

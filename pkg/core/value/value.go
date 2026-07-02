@@ -6,9 +6,18 @@ package value
 import (
 	"encoding/json"
 	"strings"
+	"sync"
 
 	"github.com/theory/jsonpath"
 )
+
+// pathCache memoizes parsed JSONPath expressions. The same paths (assertion and
+// template refs) are resolved repeatedly — across loop iterations and flow runs —
+// so parsing each once is a large saving. A *jsonpath.Path is read-only after
+// parse, safe to share; sync.Map fits the write-once/read-many access.
+//
+//nolint:gochecknoglobals // process-wide immutable-after-write parse cache
+var pathCache sync.Map // map[string]*jsonpath.Path
 
 // Value boxes one decoded-JSON value. The zero Value is absent (see IsZero).
 type Value struct{ raw any }
@@ -96,12 +105,8 @@ func (v Value) List() ([]Value, bool) {
 // JSONPath ("$.items[*].id", "$.data[?@.active]") works. A single match returns
 // that value; multiple matches return a list.
 func (v Value) Get(path string) (Value, bool) {
-	expr := path
-	if !strings.HasPrefix(expr, "$") {
-		expr = bracketPath(path)
-	}
-	p, err := jsonpath.Parse(expr)
-	if err != nil {
+	p, ok := parsePath(path)
+	if !ok {
 		return Value{}, false
 	}
 	nodes := p.Select(v.raw)
@@ -115,6 +120,26 @@ func (v Value) Get(path string) (Value, bool) {
 		copy(out, nodes)
 		return Value{raw: out}, true
 	}
+}
+
+// parsePath parses (or returns a cached) JSONPath for a path. A bare dotted path
+// is bracket-quoted; a "$"-prefixed path is used verbatim. Unparseable paths
+// report !ok and are not cached.
+func parsePath(path string) (*jsonpath.Path, bool) {
+	if cached, ok := pathCache.Load(path); ok {
+		p, _ := cached.(*jsonpath.Path) // only *jsonpath.Path is ever stored
+		return p, true
+	}
+	expr := path
+	if !strings.HasPrefix(expr, "$") {
+		expr = bracketPath(path)
+	}
+	p, err := jsonpath.Parse(expr)
+	if err != nil {
+		return nil, false
+	}
+	pathCache.Store(path, p)
+	return p, true
 }
 
 // String renders the value for comparison and interpolation.

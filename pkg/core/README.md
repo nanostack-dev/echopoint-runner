@@ -339,23 +339,36 @@ a `fakeClock`. A separate `BenchmarkRealisticHTTP` drives a real `httptest` serv
 go test ./pkg/core/engine/ -run '^$' -bench . -benchmem
 ```
 
-Graph shapes: `WideDiamond` (root → N parallel → sink asserting over all N),
-`DeepChain` (N templated requests in series), `Loop` (foreach over N items),
-`SSE` (N-event stream).
+Graph shapes cover every node kind: `WideDiamond` (root → N parallel requests →
+sink asserting over all N), `DeepChain` (N templated requests in series), `Loop`
+(foreach over N items), `SSE` (N-event stream), `VarChain` (N `set_variable`s —
+pure engine, no HTTP), `BranchFanout` (route past N cascade-skipped successors),
+`Modules` (N parallel sub-flows), `Poll`, `DelayChain`, and `Complex` (a
+kitchen-sink graph combining request + branch + loop + module + assert).
 
-Two optimizations came out of profiling these:
+Four optimizations came out of profiling these:
 
 1. **Incremental input view.** `runNode` used to rebuild the whole output store
    into a fresh map on every node (`inputView`), re-boxing each node's outputs
    each time — O(n²) allocation, ~74% of all allocs on a wide graph. The
    scheduler now maintains the denormalized view incrementally (publish each
-   node's outputs once on completion; box in O(1) per step). WideDiamond n=256:
-   **−79% memory, −67% time, −52% allocs**; scaling went from quadratic to linear.
+   node's outputs once on completion; box in O(1) per step). Quadratic → linear.
 2. **Capability-indexed validation.** `validateTargets`/`walkRefs` decoded *every*
    node just to check whether it routes or references a flow. Each kind's
    capabilities are now probed once at `Register` (`node.Routes`/`node.References`),
-   so validation skips decoding kinds that can never route/reference — ~8% fewer
-   allocs across the board.
+   so validation skips decoding kinds that can never route/reference.
+3. **Template fast-path + parsed `run_when`.** `tmpl.Resolve` unmarshalled +
+   walked + re-marshalled every node even with no `{{` tokens; it now returns raw
+   untouched when there are none. `run_when` is lifted into `flow.Node` at parse
+   time instead of re-unmarshalled per node. Together: static nodes skip two JSON
+   round-trips (e.g. DelayChain/BranchFanout ~−57% allocs).
+4. **JSONPath parse cache.** `value.Get` re-parsed the path expression on every
+   call; the same assertion/template paths repeat across iterations and runs, so a
+   `sync.Map` memoizes the parsed `*jsonpath.Path`. Biggest win on eval-heavy
+   flows — Loop 1000 items ~−48% allocs.
+
+Cumulative vs the pre-optimization baseline, **WideDiamond n=256: time −82%
+(11.8ms → 2.0ms), memory −87% (17.3MB → 2.2MB), allocs −82% (139k → 26k)**.
 
 ## Design principles (the invariants worth keeping)
 
