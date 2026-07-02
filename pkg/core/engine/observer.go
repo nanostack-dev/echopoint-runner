@@ -7,7 +7,12 @@ import (
 
 // Event is an execution event emitted during a top-level flow run. Node carries
 // the node's result for node.* events; Flow carries the flow result for flow.*
-// events. Sub-flow (module/loop/poll body) runs are silent.
+// events.
+//
+// A node that runs a sub-flow (module/loop/poll body) emits as one node event —
+// its inner nodes are silent. This keeps the wire flat and re-running bodies
+// (poll/loop) from storming events. If nested progress is ever needed, add depth
+// to Event rather than un-silencing the recursion.
 type Event struct {
 	Type   spi.EventType
 	NodeID string
