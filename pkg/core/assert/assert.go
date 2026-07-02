@@ -5,7 +5,6 @@
 package assert
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
@@ -16,12 +15,12 @@ import (
 )
 
 // Spec is one declared assertion: extract Path from the value, compare it with
-// Op against Expected. Expected stays raw JSON until evaluation, where it is
-// boxed into a value.Value — so value.Value needs no custom unmarshaler.
+// Op against Expected. Expected is boxed at decode, so re-evaluating the same
+// spec (poll attempts, SSE events, loop iterations) never re-parses it.
 type Spec struct {
-	Path     string          `json:"path"`
-	Op       Op              `json:"op"`
-	Expected json.RawMessage `json:"expected"`
+	Path     string      `json:"path"`
+	Op       Op          `json:"op"`
+	Expected value.Value `json:"expected"`
 }
 
 // Op is a comparison operator.
@@ -90,7 +89,7 @@ func eval(v value.Value, s Spec) Result {
 		r.Err = fmt.Sprintf("path %q not found", s.Path)
 		return r
 	}
-	passed, err := compare(s.Op, actual, value.JSON(s.Expected))
+	passed, err := compare(s.Op, actual, s.Expected)
 	if err != nil {
 		r.Err = err.Error()
 		return r

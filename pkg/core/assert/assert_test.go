@@ -40,7 +40,7 @@ func TestOperators(t *testing.T) {
 		{"status", "exists", "", true},
 	}
 	for _, c := range cases {
-		spec := assert.Spec{Path: c.path, Op: assert.Op(c.op), Expected: json.RawMessage(quote(c.expected))}
+		spec := assert.Spec{Path: c.path, Op: assert.Op(c.op), Expected: value.JSON([]byte(quote(c.expected)))}
 		got := assert.Run(body, []assert.Spec{spec}).AllPassed()
 		if got != c.want {
 			t.Errorf("%s %s %q: got %v want %v", c.path, c.op, c.expected, got, c.want)
@@ -65,7 +65,7 @@ func TestFractionalNumericOperators(t *testing.T) {
 		{"between", "[1.5,2.0]", true},
 	}
 	for _, c := range cases {
-		spec := assert.Spec{Path: "price", Op: assert.Op(c.op), Expected: json.RawMessage(c.expected)}
+		spec := assert.Spec{Path: "price", Op: assert.Op(c.op), Expected: value.JSON([]byte(c.expected))}
 		if got := assert.Run(body, []assert.Spec{spec}).AllPassed(); got != c.want {
 			t.Errorf("1.9 %s %s: got %v want %v", c.op, c.expected, got, c.want)
 		}
