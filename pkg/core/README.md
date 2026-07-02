@@ -327,6 +327,36 @@ skip cascade, routing, sub-flow recursion, and the middleware.
 
 ---
 
+## Benchmarks
+
+`engine/bench_test.go` stresses the engine with generated graphs. To keep the
+measurement on *engine* overhead rather than the network, HTTP/SSE are served by
+an instant in-memory `node.HTTPDoer` (canned responses, zero latency) and time by
+a `fakeClock`. A separate `BenchmarkRealisticHTTP` drives a real `httptest` server
+(the "wiremock" end-to-end sanity check).
+
+```
+go test ./pkg/core/engine/ -run '^$' -bench . -benchmem
+```
+
+Graph shapes: `WideDiamond` (root → N parallel → sink asserting over all N),
+`DeepChain` (N templated requests in series), `Loop` (foreach over N items),
+`SSE` (N-event stream).
+
+Two optimizations came out of profiling these:
+
+1. **Incremental input view.** `runNode` used to rebuild the whole output store
+   into a fresh map on every node (`inputView`), re-boxing each node's outputs
+   each time — O(n²) allocation, ~74% of all allocs on a wide graph. The
+   scheduler now maintains the denormalized view incrementally (publish each
+   node's outputs once on completion; box in O(1) per step). WideDiamond n=256:
+   **−79% memory, −67% time, −52% allocs**; scaling went from quadratic to linear.
+2. **Capability-indexed validation.** `validateTargets`/`walkRefs` decoded *every*
+   node just to check whether it routes or references a flow. Each kind's
+   capabilities are now probed once at `Register` (`node.Routes`/`node.References`),
+   so validation skips decoding kinds that can never route/reference — ~8% fewer
+   allocs across the board.
+
 ## Design principles (the invariants worth keeping)
 
 - **`any` lives only in `value`.** Every other package is statically typed.

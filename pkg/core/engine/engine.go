@@ -119,6 +119,9 @@ func validateTargets(f flow.Flow) error {
 		succ[ed.From][ed.To] = true
 	}
 	for _, n := range f.Nodes {
+		if !node.Routes(n.Kind) {
+			continue // only routing kinds have targets to validate — skip the decode
+		}
 		b, err := node.Decode(n.Kind, n.Raw)
 		if err != nil {
 			continue // decode errors surface at execution with a node result
@@ -136,6 +139,9 @@ func validateTargets(f flow.Flow) error {
 // cycles and unresolvable flows, with no side effects.
 func (e *Engine) walkRefs(f flow.Flow, stack []string) error {
 	for _, n := range f.Nodes {
+		if !node.References(n.Kind) {
+			continue // only flow-referencing kinds carry child refs — skip the decode
+		}
 		b, err := node.Decode(n.Kind, n.Raw)
 		if err != nil {
 			continue
@@ -180,11 +186,15 @@ func (e *Engine) schedule(ctx context.Context, f flow.Flow, inputs value.Map, fr
 // scheduler holds the mutable state of one run: the graph, the output store, and
 // per-node terminal state (done/failed) plus dead routing edges.
 type scheduler struct {
-	nodeByID   map[string]flow.Node
-	indeg      map[string]int
-	succ       map[string][]string
-	preds      map[string][]string
-	store      map[string]value.Map
+	nodeByID map[string]flow.Node
+	indeg    map[string]int
+	succ     map[string][]string
+	preds    map[string][]string
+	store    map[string]value.Map
+	// view is the denormalized input context (flow inputs at top level, each
+	// completed node's outputs nested under its id), maintained incrementally so
+	// each node reads an O(1)-boxed view instead of rebuilding the whole store.
+	view       map[string]any
 	done       map[string]bool
 	failed     map[string]bool
 	dead       map[string]map[string]bool
@@ -203,6 +213,7 @@ func newScheduler(f flow.Flow, inputs value.Map, fr *result.FlowResult) *schedul
 		preds:    make(map[string][]string, len(f.Nodes)),
 		store:    map[string]value.Map{"": mergeInputs(f.Inputs, inputs)},
 		done:     map[string]bool{},
+		view:     map[string]any{},
 		failed:   map[string]bool{},
 		dead:     map[string]map[string]bool{},
 		fr:       fr,
@@ -222,6 +233,9 @@ func newScheduler(f flow.Flow, inputs value.Map, fr *result.FlowResult) *schedul
 		}
 	}
 	sort.Strings(s.ready)
+	for k, v := range s.store[""] { // seed the view with flow inputs at top level
+		s.view[k] = v.Raw()
+	}
 	return s
 }
 
@@ -242,7 +256,7 @@ func (e *Engine) step(ctx context.Context, s *scheduler, id string) {
 	}
 
 	emit(s.obs, Event{Type: spi.EventNodeStarted, NodeID: id})
-	res, assertions, err := e.runNode(ctx, fn, s.store)
+	res, assertions, err := e.runNode(ctx, fn, value.Of(s.view))
 	nr := &result.NodeResult{ID: id, Kind: fn.Kind, Assertions: assertions}
 	if err != nil {
 		code := node.CodeOf(err)
@@ -265,6 +279,7 @@ func (e *Engine) step(ctx context.Context, s *scheduler, id string) {
 		return
 	}
 	s.store[id] = res.Outputs
+	s.view[id] = res.Outputs.Value().Raw() // publish once; downstream nodes read it in O(1)
 	s.done[id] = true
 	nr.Status, nr.Outputs = result.StatusSuccess, res.Outputs
 	s.fr.Nodes[id] = nr
@@ -340,9 +355,8 @@ func (s *scheduler) classify(id string, isAlways bool) (bool, string) {
 // returns the node's result, the assertion results (nil for self-evaluating
 // nodes), and an error (ASSERTION_FAILED when a declared assertion fails).
 func (e *Engine) runNode(
-	ctx context.Context, fn flow.Node, store map[string]value.Map,
+	ctx context.Context, fn flow.Node, view value.Value,
 ) (node.Result, assert.Results, error) {
-	view := inputView(store)
 	resolved, err := tmpl.Resolve(fn.Raw, view, e.dynFunc())
 	if err != nil {
 		return node.Result{}, nil, node.UserErrf("INVALID_NODE_CONFIG", "template %s: %v", fn.Kind, err)
@@ -451,23 +465,6 @@ func recordRouting(id string, routed, successors []string, dead map[string]map[s
 			dead[id][s] = true
 		}
 	}
-}
-
-// inputView boxes a node's input context as a single Value: flow inputs at the
-// top level, each upstream node's outputs nested under its id. assert/branch
-// evaluate over this, addressing any already-executed node by path.
-func inputView(store map[string]value.Map) value.Value {
-	merged := make(map[string]any, len(store))
-	for k, v := range store[""] { // flow inputs at top level
-		merged[k] = v.Raw()
-	}
-	for nodeID, m := range store {
-		if nodeID == "" {
-			continue
-		}
-		merged[nodeID] = m.Value().Raw()
-	}
-	return value.Of(merged)
 }
 
 // collect nests each node's outputs under its id, so results are accessed by
