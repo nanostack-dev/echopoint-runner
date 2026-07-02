@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"sort"
 
 	"github.com/nanostack-dev/echopoint-runner/pkg/core/value"
 	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
@@ -19,50 +18,6 @@ type Flow struct {
 	Nodes  []Node
 	Edges  []Edge
 	Inputs value.Map
-
-	// topo is the topology derived once at Parse (nil for a hand-built Flow).
-	// It is immutable and shared by every run of this flow — loop/poll bodies
-	// and module children re-run the same parsed Flow many times.
-	topo *Topo
-}
-
-// Topo is a flow's derived, read-only topology: node lookup, adjacency, and
-// in-degrees. Runs must copy Indeg before mutating it.
-type Topo struct {
-	ByID  map[string]Node
-	Succ  map[string][]string
-	Preds map[string][]string
-	Indeg map[string]int
-	Roots []string // in-degree-0 node ids, sorted (deterministic start order)
-}
-
-// Topology returns the topology derived at Parse, or nil for a hand-built Flow.
-func (f Flow) Topology() *Topo { return f.topo }
-
-// deriveTopo builds the derived topology for a parsed flow.
-func deriveTopo(f *Flow) {
-	t := &Topo{ByID: make(map[string]Node, len(f.Nodes))}
-	for _, n := range f.Nodes {
-		t.ByID[n.ID] = n
-	}
-	if len(f.Edges) > 0 {
-		t.Succ = make(map[string][]string, len(f.Nodes))
-		t.Preds = make(map[string][]string, len(f.Nodes))
-		t.Indeg = make(map[string]int, len(f.Nodes))
-		for _, e := range f.Edges {
-			t.Succ[e.From] = append(t.Succ[e.From], e.To)
-			t.Preds[e.To] = append(t.Preds[e.To], e.From)
-			t.Indeg[e.To]++
-		}
-	}
-	t.Roots = make([]string, 0, len(f.Nodes))
-	for _, n := range f.Nodes { // iterate nodes for determinism
-		if t.Indeg[n.ID] == 0 {
-			t.Roots = append(t.Roots, n.ID)
-		}
-	}
-	sort.Strings(t.Roots)
-	f.topo = t
 }
 
 // Node is a raw node definition: its id, kind, run-phase, and undecoded config.
@@ -115,7 +70,6 @@ func Parse(b []byte) (Flow, error) {
 	for _, e := range raw.Edges {
 		f.Edges = append(f.Edges, Edge{From: e.Source, To: e.Target})
 	}
-	deriveTopo(&f)
 	return f, nil
 }
 
