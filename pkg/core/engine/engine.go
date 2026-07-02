@@ -233,20 +233,6 @@ func newScheduler(f flow.Flow, inputs value.Map, fr *result.FlowResult) *schedul
 		fr:    fr,
 	}
 	s.store[""] = mergeInputs(f.Inputs, inputs)
-	if t := f.Topology(); t != nil {
-		// A parsed flow carries its topology; runs share the immutable maps and
-		// clone only the in-degrees they decrement. Loop/poll bodies and module
-		// children re-run the same parsed flow, so this skips a rebuild per run.
-		s.nodeByID, s.succ, s.preds = t.ByID, t.Succ, t.Preds
-		if t.Indeg != nil {
-			s.indeg = maps.Clone(t.Indeg)
-		}
-		s.ready = append(s.ready, t.Roots...)
-		for k, v := range s.store[""] { // seed the view with flow inputs at top level
-			s.view[k] = v.Raw()
-		}
-		return s
-	}
 	s.nodeByID = make(map[string]flow.Node, len(f.Nodes))
 	for _, n := range f.Nodes {
 		s.nodeByID[n.ID] = n
