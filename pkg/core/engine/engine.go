@@ -110,6 +110,16 @@ func (e *Engine) validateFlow(f flow.Flow, topLevel bool) error {
 
 // validateTargets checks every Router node's targets are real successor edges.
 func validateTargets(f flow.Flow) error {
+	hasRouter := false
+	for _, n := range f.Nodes {
+		if node.Routes(n.Kind) {
+			hasRouter = true
+			break
+		}
+	}
+	if !hasRouter {
+		return nil // no routing nodes — nothing to validate, skip building the edge index
+	}
 	succ := make(map[string]map[string]bool, len(f.Nodes))
 	for _, ed := range f.Edges {
 		if succ[ed.From] == nil {
@@ -182,8 +192,19 @@ func (e *Engine) schedule(ctx context.Context, f flow.Flow, inputs value.Map, fr
 	fr.Outputs = collect(s.store)
 }
 
+// nodeState is a node's terminal state within one run.
+type nodeState uint8
+
+const (
+	statePending nodeState = iota
+	stateDone
+	stateFailed
+)
+
 // scheduler holds the mutable state of one run: the graph, the output store, and
-// per-node terminal state (done/failed) plus dead routing edges.
+// per-node terminal state plus dead routing edges. The topology maps
+// (indeg/succ/preds) and dead are allocated lazily — an edgeless body (common for
+// loop/poll/module inline flows) and a branch-free flow skip them entirely.
 type scheduler struct {
 	nodeByID map[string]flow.Node
 	indeg    map[string]int
@@ -194,9 +215,8 @@ type scheduler struct {
 	// completed node's outputs nested under its id), maintained incrementally so
 	// each node reads an O(1)-boxed view instead of rebuilding the whole store.
 	view       map[string]any
-	done       map[string]bool
-	failed     map[string]bool
-	dead       map[string]map[string]bool
+	state      map[string]nodeState
+	dead       map[string]map[string]bool // lazy: nil until a routing node records one
 	mainFailed bool
 	processed  int
 	ready      []string
@@ -207,28 +227,31 @@ type scheduler struct {
 func newScheduler(f flow.Flow, inputs value.Map, fr *result.FlowResult) *scheduler {
 	s := &scheduler{
 		nodeByID: make(map[string]flow.Node, len(f.Nodes)),
-		indeg:    make(map[string]int, len(f.Nodes)),
-		succ:     make(map[string][]string, len(f.Nodes)),
-		preds:    make(map[string][]string, len(f.Nodes)),
 		store:    map[string]value.Map{"": mergeInputs(f.Inputs, inputs)},
-		done:     map[string]bool{},
-		view:     map[string]any{},
-		failed:   map[string]bool{},
-		dead:     map[string]map[string]bool{},
+		view:     make(map[string]any, len(f.Nodes)),
+		state:    make(map[string]nodeState, len(f.Nodes)),
 		fr:       fr,
 	}
 	for _, n := range f.Nodes {
 		s.nodeByID[n.ID] = n
-		s.indeg[n.ID] = 0
 	}
-	for _, ed := range f.Edges {
-		s.succ[ed.From] = append(s.succ[ed.From], ed.To)
-		s.preds[ed.To] = append(s.preds[ed.To], ed.From)
-		s.indeg[ed.To]++
-	}
-	for id, d := range s.indeg {
-		if d == 0 {
-			s.ready = append(s.ready, id)
+	if len(f.Edges) == 0 {
+		for _, n := range f.Nodes { // no edges: every node is a root
+			s.ready = append(s.ready, n.ID)
+		}
+	} else {
+		s.indeg = make(map[string]int, len(f.Nodes))
+		s.succ = make(map[string][]string, len(f.Nodes))
+		s.preds = make(map[string][]string, len(f.Nodes))
+		for _, ed := range f.Edges {
+			s.succ[ed.From] = append(s.succ[ed.From], ed.To)
+			s.preds[ed.To] = append(s.preds[ed.To], ed.From)
+			s.indeg[ed.To]++
+		}
+		for _, n := range f.Nodes { // roots = indegree 0 (iterate nodes for determinism)
+			if s.indeg[n.ID] == 0 {
+				s.ready = append(s.ready, n.ID)
+			}
 		}
 	}
 	sort.Strings(s.ready)
@@ -265,7 +288,7 @@ func (e *Engine) step(ctx context.Context, s *scheduler, id string) {
 		nr.Status, nr.Error, nr.Code = result.StatusFailed, err.Error(), code
 		nr.Outputs = res.Outputs // keep what was produced (e.g. the body that failed an assertion)
 		s.fr.Nodes[id] = nr
-		s.failed[id] = true
+		s.state[id] = stateFailed
 		if !isAlways {
 			s.mainFailed, s.fr.Success = true, false
 			if s.fr.Code == "" { // first main-phase failure wins the flow-level code/message
@@ -279,11 +302,11 @@ func (e *Engine) step(ctx context.Context, s *scheduler, id string) {
 	}
 	s.store[id] = res.Outputs
 	s.view[id] = res.Outputs.Value().Raw() // publish once; downstream nodes read it in O(1)
-	s.done[id] = true
+	s.state[id] = stateDone
 	nr.Status, nr.Outputs = result.StatusSuccess, res.Outputs
 	s.fr.Nodes[id] = nr
 	emit(s.obs, Event{Type: spi.EventNodeCompleted, NodeID: id, Node: nr})
-	recordRouting(id, res.Routed, s.succ[id], s.dead)
+	s.recordRouting(id, res.Routed)
 	s.release(id)
 }
 
@@ -327,11 +350,11 @@ func (s *scheduler) classify(id string, isAlways bool) (bool, string) {
 	reason := result.SkipDependencySkipped
 	for _, p := range preds {
 		switch {
-		case s.done[p] && !s.dead[p][id]:
+		case s.state[p] == stateDone && !s.dead[p][id]:
 			live = true
-		case s.failed[p]:
+		case s.state[p] == stateFailed:
 			reason = result.SkipDependencyFailed
-		case s.done[p] && s.dead[p][id]:
+		case s.state[p] == stateDone && s.dead[p][id]:
 			if reason == result.SkipDependencySkipped {
 				reason = result.SkipRoutedAway
 			}
@@ -436,7 +459,8 @@ func (e *Engine) dynFunc() tmpl.DynFunc {
 }
 
 // recordRouting marks every successor a routing node did NOT route to as dead.
-func recordRouting(id string, routed, successors []string, dead map[string]map[string]bool) {
+// The dead map is allocated lazily here, so branch-free flows never pay for it.
+func (s *scheduler) recordRouting(id string, routed []string) {
 	if routed == nil {
 		return // ordinary node — all successors run; a routing node sets a (possibly empty) slice
 	}
@@ -444,12 +468,15 @@ func recordRouting(id string, routed, successors []string, dead map[string]map[s
 	for _, t := range routed {
 		taken[t] = true
 	}
-	for _, s := range successors {
-		if !taken[s] {
-			if dead[id] == nil {
-				dead[id] = make(map[string]bool)
+	for _, succ := range s.succ[id] {
+		if !taken[succ] {
+			if s.dead == nil {
+				s.dead = make(map[string]map[string]bool)
 			}
-			dead[id][s] = true
+			if s.dead[id] == nil {
+				s.dead[id] = make(map[string]bool)
+			}
+			s.dead[id][succ] = true
 		}
 	}
 }

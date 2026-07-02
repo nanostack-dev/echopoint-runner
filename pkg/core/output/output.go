@@ -13,6 +13,9 @@ type Spec struct {
 // Extract pulls every spec's Path out of v into a named map. Missing paths are
 // skipped — assertions, not outputs, enforce presence.
 func Extract(v value.Value, specs []Spec) value.Map {
+	if len(specs) == 0 {
+		return nil // no declared outputs — avoid allocating an empty map per node
+	}
 	out := make(value.Map, len(specs))
 	for _, s := range specs {
 		if got, ok := v.Get(s.Path); ok {
