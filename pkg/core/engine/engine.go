@@ -255,6 +255,10 @@ func (e *Engine) step(ctx context.Context, s *scheduler, id string) {
 		s.failed[id] = true
 		if !isAlways {
 			s.mainFailed, s.fr.Success = true, false
+			if s.fr.Code == "" { // first main-phase failure wins the flow-level code/message
+				s.fr.Code = code
+				s.fr.Error = fmt.Sprintf("node %q: %s", id, err.Error())
+			}
 		}
 		emit(s.obs, Event{Type: spi.EventNodeFailed, NodeID: id, Node: nr})
 		s.release(id)
@@ -300,9 +304,9 @@ func (s *scheduler) release(id string) {
 func (s *scheduler) classify(id string, isAlways bool) (bool, string) {
 	preds := s.preds[id]
 	if len(preds) == 0 {
-		if !isAlways && s.mainFailed {
-			return false, result.SkipNotReachable
-		}
+		// A root has no dependency that could have failed. The old wave scheduler
+		// ran every root in wave 0 — before any failure was observed — so a failing
+		// independent sibling must not skip an unrelated root. Roots always run.
 		return true, ""
 	}
 	live := false
@@ -387,7 +391,11 @@ func (e *Engine) RunSubflow(ctx context.Context, flowID string, in value.Map) (v
 	}
 	res := e.run(pushStack(ctx, flowID), child, in, nil, false)
 	if !res.Success {
-		return nil, node.UserErrf("MODULE_FAILED", "child flow %q failed", flowID)
+		code := res.Code
+		if code == "" {
+			code = "MODULE_FAILED"
+		}
+		return nil, node.UserErrf(code, "child flow %q failed: %s", flowID, res.Error)
 	}
 	return res.Outputs, nil
 }
@@ -396,7 +404,11 @@ func (e *Engine) RunSubflow(ctx context.Context, flowID string, in value.Map) (v
 func (e *Engine) RunInline(ctx context.Context, f flow.Flow, in value.Map) (value.Map, error) {
 	res := e.run(ctx, f, in, nil, false)
 	if !res.Success {
-		return nil, node.UserErrf("SUBFLOW_FAILED", "inline body failed")
+		code := res.Code
+		if code == "" {
+			code = "SUBFLOW_FAILED"
+		}
+		return nil, node.UserErrf(code, "inline body failed: %s", res.Error)
 	}
 	return res.Outputs, nil
 }

@@ -48,6 +48,30 @@ func TestOperators(t *testing.T) {
 	}
 }
 
+// TestFractionalNumericOperators guards against truncating floats before a
+// numeric comparison (regression: toFloat routed through Int(), so 1.9 -> 1).
+func TestFractionalNumericOperators(t *testing.T) {
+	body := value.Of(map[string]any{"price": 1.9})
+	cases := []struct {
+		op, expected string
+		want         bool
+	}{
+		{"gt", "1.5", true},   // 1.9 > 1.5
+		{"gt", "1.9", false},  // not strictly greater
+		{"lt", "1.2", false},  // 1.9 is not < 1.2 (was true when truncated to 1)
+		{"gte", "1.9", true},  //
+		{"lte", "1.8", false}, // 1.9 <= 1.8 is false (was true when truncated)
+		{"between", "[1.5,1.8]", false},
+		{"between", "[1.5,2.0]", true},
+	}
+	for _, c := range cases {
+		spec := assert.Spec{Path: "price", Op: assert.Op(c.op), Expected: json.RawMessage(c.expected)}
+		if got := assert.Run(body, []assert.Spec{spec}).AllPassed(); got != c.want {
+			t.Errorf("1.9 %s %s: got %v want %v", c.op, c.expected, got, c.want)
+		}
+	}
+}
+
 // quote renders a scalar test value as JSON: bare numbers/arrays stay literal,
 // everything else becomes a JSON string.
 func quote(s string) string {

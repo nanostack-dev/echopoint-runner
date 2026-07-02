@@ -52,7 +52,10 @@ func runRequest(ctx context.Context, cfg RequestCfg, _ value.Value, rt node.Runt
 		return node.Result{}, node.UserErrf("REQUEST_FAILED", "http: %v", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	raw, _ := io.ReadAll(resp.Body)
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return node.Result{}, node.UserErrf("REQUEST_FAILED", "read body: %v", err)
+	}
 
 	// Expose the whole response as {status, headers, body} so this node's own
 	// assertions AND any downstream node can path into status/headers/body.
