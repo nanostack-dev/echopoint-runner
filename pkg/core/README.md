@@ -346,7 +346,7 @@ pure engine, no HTTP), `BranchFanout` (route past N cascade-skipped successors),
 `Modules` (N parallel sub-flows), `Poll`, `DelayChain`, and `Complex` (a
 kitchen-sink graph combining request + branch + loop + module + assert).
 
-Four optimizations came out of profiling these:
+Seven optimizations came out of profiling these:
 
 1. **Incremental input view.** `runNode` used to rebuild the whole output store
    into a fresh map on every node (`inputView`), re-boxing each node's outputs
@@ -366,9 +366,22 @@ Four optimizations came out of profiling these:
    call; the same assertion/template paths repeat across iterations and runs, so a
    `sync.Map` memoizes the parsed `*jsonpath.Path`. Biggest win on eval-heavy
    flows — Loop 1000 items ~−48% allocs.
+5. **Lean scheduler state.** Per run the scheduler allocated nine maps; `done`+
+   `failed` are merged into one `state` map, `dead` is lazy (branch-free flows
+   never allocate it), and the topology maps (indeg/succ/preds) are skipped
+   entirely for an edgeless body. Sub-flow-heavy flows run many schedulers, so
+   this compounds (Loop, Complex ~−6%).
+6. **Per-string template gate.** `resolveString` ran two regexes on every string in
+   a templated node, including static ones. A `strings.Contains(s, "{{")` gate
+   skips both for strings with no token (DeepChain ~−9% allocs).
+7. **No empty allocations.** `assert.Run`/`output.Extract` returned an empty
+   slice/map for nodes that declare none, and `validateTargets` built an edge index
+   for flows with no routing node — all now short-circuit to nil.
 
-Cumulative vs the pre-optimization baseline, **WideDiamond n=256: time −82%
-(11.8ms → 2.0ms), memory −87% (17.3MB → 2.2MB), allocs −82% (139k → 26k)**.
+Cumulative vs the pre-optimization baseline, **WideDiamond n=256: time −84%
+(11.8ms → 1.9ms), memory −88% (17.3MB → 2.1MB), allocs −82% (139k → 25k)**.
+Beyond this the remaining cost is inherent per-node work — decoding each node's
+config, evaluating JSONPath, boxing outputs — not waste.
 
 ## Design principles (the invariants worth keeping)
 

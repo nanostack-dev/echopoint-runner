@@ -69,6 +69,9 @@ func (rs Results) AllPassed() bool {
 
 // Run evaluates every spec against v and returns one Result each.
 func Run(v value.Value, specs []Spec) Results {
+	if len(specs) == 0 {
+		return nil // nothing to assert — avoid allocating an empty slice per node
+	}
 	out := make(Results, 0, len(specs))
 	for _, s := range specs {
 		out = append(out, eval(v, s))

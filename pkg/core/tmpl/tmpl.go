@@ -77,6 +77,9 @@ func (r resolver) walk(v any) any {
 }
 
 func (r resolver) resolveString(s string) any {
+	if !strings.Contains(s, "{{") {
+		return s // static string inside a templated node — skip both regex passes
+	}
 	if m := rawPattern.FindStringSubmatch(s); m != nil {
 		if val, ok := r.value(m[1]); ok {
 			return val
