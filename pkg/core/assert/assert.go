@@ -173,6 +173,12 @@ func isEmpty(v value.Value) bool {
 }
 
 func toFloat(v value.Value) (float64, error) {
+	// float64 first: v.Int() truncates fractional numbers (1.9 -> 1) and reports
+	// ok, so routing through it would compare truncated integers. JSON numbers
+	// decode to float64, so this is the common case.
+	if f, ok := v.Raw().(float64); ok {
+		return f, nil
+	}
 	if i, ok := v.Int(); ok {
 		return float64(i), nil
 	}

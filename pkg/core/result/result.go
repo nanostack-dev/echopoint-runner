@@ -25,7 +25,6 @@ const (
 	SkipRoutedAway        = "routed_away_by_branch"
 	SkipAbortedAfterFail  = "aborted_after_failure"
 	SkipMissingInputs     = "missing_inputs"
-	SkipNotReachable      = "not_reachable_after_main_phase"
 )
 
 // NodeResult records one node's outcome.

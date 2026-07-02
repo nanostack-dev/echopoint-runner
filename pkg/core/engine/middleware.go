@@ -25,8 +25,13 @@ func chainMiddleware(base NodeExec, mws []Middleware) NodeExec {
 	return base
 }
 
+// retryBackoff is the base gap before a retry; attempt i waits (i+1)*base. Kept
+// small and linear — enough to not hammer a flaky endpoint back-to-back.
+const retryBackoff = 100 * time.Millisecond
+
 // Retry re-runs a node up to attempts times while it errors (including on an
-// assertion failure). attempts <= 1 disables retry.
+// assertion failure), pausing a short ctx-respecting backoff between attempts.
+// attempts <= 1 disables retry.
 func Retry(attempts int) Middleware {
 	return func(next NodeExec) NodeExec {
 		return func(ctx context.Context) (node.Result, assert.Results, error) {
@@ -35,9 +40,18 @@ func Retry(attempts int) Middleware {
 				ar  assert.Results
 				err error
 			)
-			for range max(attempts, 1) {
+			n := max(attempts, 1)
+			for i := range n {
 				if res, ar, err = next(ctx); err == nil {
 					return res, ar, nil
+				}
+				if i == n-1 {
+					break
+				}
+				select {
+				case <-ctx.Done(): // cancelled: stop retrying, surface the last error
+					return res, ar, err
+				case <-time.After(time.Duration(i+1) * retryBackoff):
 				}
 			}
 			return res, ar, err

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -129,6 +130,45 @@ func TestModuleRecursion(t *testing.T) {
 	wV, _ := out["m"].Get("wait.delayed_ms")
 	if got, ok := wV.Int(); !ok || got != 5 {
 		t.Fatalf("child output should bubble up: want 5, got %v", got)
+	}
+}
+
+// TestModuleSurfacesInnerFailure proves a child flow's failure detail (the inner
+// node's code + a message naming it) propagates through the module node instead
+// of a generic MODULE_FAILED with no detail (F2 regression).
+func TestModuleSurfacesInnerFailure(t *testing.T) {
+	child := parse(t, `{"name":"child","nodes":[{"id":"chk","type":"set_variable",
+		"variables":{"x":"{{{1}}}"},"assertions":[{"path":"x","op":"equals","expected":2}]}],"edges":[]}`)
+	resolve := func(id string) (flow.Flow, bool) { return child, id == "child" }
+	parent := parse(t, `{"name":"p","nodes":[{"id":"m","type":"module","body_flow_id":"child"}],"edges":[]}`)
+
+	res := runFailOrOK(t, engine.New(node.Runtime{Clock: &fakeClock{}}, resolve), parent, nil)
+	m := res.Nodes["m"]
+	if m.Code != "ASSERTION_FAILED" {
+		t.Fatalf("module should surface inner code, got %q", m.Code)
+	}
+	if !strings.Contains(m.Error, "chk") {
+		t.Fatalf("module error should name the inner node, got %q", m.Error)
+	}
+}
+
+// TestIndependentRootRunsAfterSiblingFails proves a failing root does not skip an
+// unrelated root (F3: old wave-0 ran every root before any failure was observed).
+func TestIndependentRootRunsAfterSiblingFails(t *testing.T) {
+	f := parse(t, `{"name":"iso","nodes":[
+		{"id":"a","type":"set_variable","variables":{"x":"{{{1}}}"},
+			"assertions":[{"path":"x","op":"equals","expected":2}]},
+		{"id":"b","type":"set_variable","variables":{"y":"{{{5}}}"}}],"edges":[]}`)
+	res := runFailOrOK(t, engine.New(node.Runtime{Clock: &fakeClock{}}, nil), f, nil)
+	if res.Nodes["a"].Status != result.StatusFailed {
+		t.Fatalf("a should fail, got %q", res.Nodes["a"].Status)
+	}
+	if res.Nodes["b"].Status != result.StatusSuccess {
+		t.Fatalf("independent root b should still run, got %q (%s)",
+			res.Nodes["b"].Status, res.Nodes["b"].SkipReason)
+	}
+	if res.Success {
+		t.Fatal("flow should be unsuccessful (a failed)")
 	}
 }
 
