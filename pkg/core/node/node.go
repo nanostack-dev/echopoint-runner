@@ -154,6 +154,19 @@ type decoder func(raw json.RawMessage) (Bound, error)
 //nolint:gochecknoglobals // immutable-after-init node-kind registry
 var registry = map[spi.Kind]decoder{}
 
+// kindCaps records, per kind, whether its config type implements the Router /
+// FlowReferencer capability — determined once at Register from a zero config, so
+// validation can skip decoding kinds that can never route or reference.
+//
+//nolint:gochecknoglobals // immutable-after-init capability index
+var kindCaps = map[spi.Kind]struct{ routes, references bool }{}
+
+// Routes reports whether a kind's config can implement Router (branch, ...).
+func Routes(kind spi.Kind) bool { return kindCaps[kind].routes }
+
+// References reports whether a kind's config can implement FlowReferencer (module, ...).
+func References(kind spi.Kind) bool { return kindCaps[kind].references }
+
 // Register binds a kind to its typed Run. Cfg is inferred from fn; the closure
 // erases it so differently-typed nodes share one registry. Call from an init().
 // Registering a kind twice panics — that is a wiring bug, caught at load.
@@ -161,6 +174,10 @@ func Register[Cfg hasBase](kind spi.Kind, fn Run[Cfg]) {
 	if _, dup := registry[kind]; dup {
 		panic(fmt.Sprintf("node: duplicate registration for kind %q", kind))
 	}
+	var zero Cfg // probe the type's capabilities once, so validation need not decode
+	_, routes := any(zero).(Router)
+	_, references := any(zero).(FlowReferencer)
+	kindCaps[kind] = struct{ routes, references bool }{routes, references}
 	registry[kind] = func(raw json.RawMessage) (Bound, error) {
 		var cfg Cfg
 		if err := json.Unmarshal(raw, &cfg); err != nil {
