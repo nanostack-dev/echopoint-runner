@@ -26,6 +26,29 @@ func TestParseInvalidJSON(t *testing.T) {
 	}
 }
 
+func TestSchemaVersion(t *testing.T) {
+	// unstamped → defaults to the current schema
+	f, _ := flow.Parse([]byte(`{"nodes":[{"id":"a","type":"delay"}],"edges":[]}`))
+	if f.SchemaVersion != flow.CurrentSchemaVersion {
+		t.Fatalf("unstamped flow should default to current, got %d", f.SchemaVersion)
+	}
+	if err := flow.Validate(f); err != nil {
+		t.Fatalf("current-version flow should validate: %v", err)
+	}
+
+	// explicit current version is accepted
+	cur, _ := flow.Parse([]byte(`{"schema_version":1,"nodes":[{"id":"a","type":"delay"}],"edges":[]}`))
+	if cur.SchemaVersion != 1 || flow.Validate(cur) != nil {
+		t.Fatalf("explicit v1 should validate, got v%d", cur.SchemaVersion)
+	}
+
+	// a newer version than the runner speaks is rejected loudly
+	future, _ := flow.Parse([]byte(`{"schema_version":999,"nodes":[{"id":"a","type":"delay"}],"edges":[]}`))
+	if err := flow.Validate(future); err == nil {
+		t.Fatal("a newer schema version must be rejected")
+	}
+}
+
 func TestValidate(t *testing.T) {
 	cases := []struct {
 		name, json string

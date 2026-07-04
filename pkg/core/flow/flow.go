@@ -12,12 +12,22 @@ import (
 	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 )
 
+// CurrentSchemaVersion is the flow-definition schema this runner speaks. It is
+// stamped on flows so a breaking wire-format change can be versioned: bump this
+// on such a change, migrate older stored flows up to it, and the runner rejects
+// any flow declaring a newer version than it understands. Version 1 is the flat
+// node format (fields at the node top level, *_ms unit-suffixed durations); the
+// pre-versioning "data"-envelope format is unversioned legacy and must be
+// migrated before this runner will accept it.
+const CurrentSchemaVersion = 1
+
 // Flow is a DAG of nodes plus its initial inputs.
 type Flow struct {
-	Name   string
-	Nodes  []Node
-	Edges  []Edge
-	Inputs value.Map
+	Name          string
+	SchemaVersion int
+	Nodes         []Node
+	Edges         []Edge
+	Inputs        value.Map
 }
 
 // Node is a raw node definition: its id, kind, run-phase, and undecoded config.
@@ -40,9 +50,10 @@ type Edge struct {
 // as Raw so the registry can decode it into the node's typed config.
 func Parse(b []byte) (Flow, error) {
 	var raw struct {
-		Name  string            `json:"name"`
-		Nodes []json.RawMessage `json:"nodes"`
-		Edges []struct {
+		Name          string            `json:"name"`
+		SchemaVersion int               `json:"schema_version"`
+		Nodes         []json.RawMessage `json:"nodes"`
+		Edges         []struct {
 			Source string `json:"source"`
 			Target string `json:"target"`
 		} `json:"edges"`
@@ -52,7 +63,11 @@ func Parse(b []byte) (Flow, error) {
 		return Flow{}, fmt.Errorf("parse flow: %w", err)
 	}
 
-	f := Flow{Name: raw.Name, Inputs: toMap(raw.Inputs)}
+	version := raw.SchemaVersion
+	if version == 0 {
+		version = CurrentSchemaVersion // unstamped flows are authored against the current schema
+	}
+	f := Flow{Name: raw.Name, SchemaVersion: version, Inputs: toMap(raw.Inputs)}
 	for _, rn := range raw.Nodes {
 		var head struct {
 			ID      string      `json:"id"`
@@ -78,6 +93,11 @@ func Parse(b []byte) (Flow, error) {
 // is done by the engine via node capabilities, so flow stays free of node-type
 // knowledge.
 func Validate(f Flow) error {
+	if f.SchemaVersion > CurrentSchemaVersion {
+		return fmt.Errorf(
+			"flow schema version %d is newer than this runner supports (%d); upgrade the runner",
+			f.SchemaVersion, CurrentSchemaVersion)
+	}
 	ids := make(map[string]bool, len(f.Nodes))
 	for _, n := range f.Nodes {
 		if n.ID == "" {
