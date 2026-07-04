@@ -36,6 +36,6 @@ func DefaultRuntime() node.Runtime {
 	return node.Runtime{
 		HTTP:  http.DefaultClient,
 		Clock: WallClock{},
-		Vars:  dynamicvars.New(),
+		Vars:  dynamicvars.NewEphemeral(),
 	}
 }
