@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/nanostack-dev/echopoint-runner/pkg/node"
+	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 )
 
 func TestUnmarshalNode_BuiltinsAndDefaults(t *testing.T) {
@@ -12,11 +13,11 @@ func TestUnmarshalNode_BuiltinsAndDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unmarshal request: %v", err)
 	}
-	if n.GetType() != node.TypeRequest {
+	if n.GetType() != spi.KindRequest {
 		t.Errorf("expected request type, got %s", n.GetType())
 	}
-	if n.GetRunWhen() != node.RunWhenOnSuccess {
-		t.Errorf("RunWhen should default to on_success, got %s", n.GetRunWhen())
+	if n.GetRunWhen() != spi.RunWhenOnSuccess {
+		t.Errorf("spi.RunWhen should default to on_success, got %s", n.GetRunWhen())
 	}
 
 	if _, badErr := node.UnmarshalNode([]byte(`{"id":"x","type":"nope"}`)); badErr == nil {
@@ -25,8 +26,8 @@ func TestUnmarshalNode_BuiltinsAndDefaults(t *testing.T) {
 }
 
 func TestNewSkippedResult(t *testing.T) {
-	base := node.BaseExecutionResult{NodeID: "n", NodeType: node.TypeRequest}
-	if res, ok := node.NewSkippedResult(node.TypeRequest, base); !ok || res == nil {
+	base := spi.BaseExecutionResult{NodeID: "n", NodeType: spi.KindRequest}
+	if res, ok := node.NewSkippedResult(spi.KindRequest, base); !ok || res == nil {
 		t.Error("request skipped result should build")
 	}
 	if _, ok := node.NewSkippedResult("nope", base); ok {
@@ -35,7 +36,7 @@ func TestNewSkippedResult(t *testing.T) {
 }
 
 func TestRegisterNodeKind_Custom(t *testing.T) {
-	const custom node.Type = "custom-test-kind"
+	const custom spi.Kind = "custom-test-kind"
 	node.RegisterNodeKind(custom,
 		func(data []byte) (node.AnyNode, error) {
 			var n node.DelayNode
@@ -44,7 +45,7 @@ func TestRegisterNodeKind_Custom(t *testing.T) {
 			}
 			return &n, nil
 		},
-		func(base node.BaseExecutionResult) node.AnyExecutionResult {
+		func(base spi.BaseExecutionResult) spi.AnyResult {
 			return &node.DelayExecutionResult{BaseExecutionResult: base}
 		},
 	)
@@ -53,7 +54,7 @@ func TestRegisterNodeKind_Custom(t *testing.T) {
 	if err != nil || n == nil {
 		t.Fatalf("custom kind should decode: err=%v", err)
 	}
-	if _, ok := node.NewSkippedResult(custom, node.BaseExecutionResult{NodeID: "c"}); !ok {
+	if _, ok := node.NewSkippedResult(custom, spi.BaseExecutionResult{NodeID: "c"}); !ok {
 		t.Error("custom kind skipped result should build")
 	}
 }

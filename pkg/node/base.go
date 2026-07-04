@@ -1,6 +1,9 @@
 package node
 
-import "github.com/nanostack-dev/echopoint-runner/pkg/extractors"
+import (
+	"github.com/nanostack-dev/echopoint-runner/pkg/extractors"
+	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
+)
 
 // Output represents a named output with an associated extractor.
 type Output struct {
@@ -13,8 +16,8 @@ type Output struct {
 type BaseNode struct {
 	ID          string               `json:"id"`
 	DisplayName string               `json:"display_name"`
-	NodeType    Type                 `json:"type"`
-	RunWhen     RunWhen              `json:"run_when,omitempty"`
+	NodeType    spi.Kind             `json:"type"`
+	RunWhen     spi.RunWhen          `json:"run_when,omitempty"`
 	Assertions  []CompositeAssertion `json:"assertions"`
 	Outputs     []Output             `json:"outputs"`
 }
@@ -30,13 +33,13 @@ func (bn *BaseNode) GetDisplayName() string {
 }
 
 // GetType returns the type of this node (request, delay, assertion, etc.)
-func (bn *BaseNode) GetType() Type {
+func (bn *BaseNode) GetType() spi.Kind {
 	return bn.NodeType
 }
 
-func (bn *BaseNode) GetRunWhen() RunWhen {
+func (bn *BaseNode) GetRunWhen() spi.RunWhen {
 	if bn.RunWhen == "" {
-		return RunWhenOnSuccess
+		return spi.RunWhenOnSuccess
 	}
 	return bn.RunWhen
 }

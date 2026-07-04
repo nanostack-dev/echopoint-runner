@@ -7,6 +7,7 @@ import (
 	"github.com/nanostack-dev/echopoint-runner/pkg/flow"
 	"github.com/nanostack-dev/echopoint-runner/pkg/node"
 	"github.com/nanostack-dev/echopoint-runner/pkg/runner"
+	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 )
 
 func TestMergeInputs_OverrideWinsBaseFills(t *testing.T) {
@@ -99,7 +100,7 @@ func TestBuilder_ProducesRunnableFlow(t *testing.T) {
 	if len(f.Nodes) != 1 {
 		t.Fatalf("expected 1 node, got %d", len(f.Nodes))
 	}
-	if f.Nodes[0].GetID() != "wait" || f.Nodes[0].GetType() != node.TypeDelay {
+	if f.Nodes[0].GetID() != "wait" || f.Nodes[0].GetType() != spi.KindDelay {
 		t.Fatalf("unexpected node: %+v", f.Nodes[0])
 	}
 

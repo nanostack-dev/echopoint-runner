@@ -1,12 +1,16 @@
 package node
 
-import "maps"
+import (
+	"maps"
+
+	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
+)
 
 type outputSnapshot struct {
 	outputs map[string]map[string]any
 }
 
-func NewOutputView(outputs map[string]map[string]any) OutputView {
+func NewOutputView(outputs map[string]map[string]any) spi.OutputView {
 	snapshot := make(map[string]map[string]any, len(outputs))
 	for nodeID, nodeOutputs := range outputs {
 		if nodeOutputs == nil {
