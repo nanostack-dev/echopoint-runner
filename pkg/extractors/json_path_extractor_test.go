@@ -7,6 +7,7 @@ import (
 
 	"github.com/nanostack-dev/echopoint-runner/internal/logger"
 	"github.com/nanostack-dev/echopoint-runner/pkg/extractors"
+	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -18,7 +19,7 @@ func init() {
 
 func TestJSONPathExtractor_GetType(t *testing.T) {
 	extractor := extractors.JSONPathExtractor{Path: "$.user.name"}
-	assert.Equal(t, extractors.ExtractorTypeJSONPath, extractor.GetType())
+	assert.Equal(t, spi.ExtractorTypeJSONPath, extractor.GetType())
 }
 
 func TestJSONPathExtractor_Extract_SimpleField(t *testing.T) {

@@ -68,7 +68,7 @@ func decodePollNode(t *testing.T, raw []byte) node.AnyNode {
 	if err != nil {
 		t.Fatalf("UnmarshalNode: %v", err)
 	}
-	if n.GetType() != node.TypePoll {
+	if n.GetType() != spi.KindPoll {
 		t.Fatalf("expected poll type, got %s", n.GetType())
 	}
 	return n
@@ -76,8 +76,8 @@ func decodePollNode(t *testing.T, raw []byte) node.AnyNode {
 
 func TestPollNode_Decode(t *testing.T) {
 	n := decodePollNode(t, mkPollNodeJSON(t, 5, "$.status", "done", true))
-	if n.GetRunWhen() != node.RunWhenOnSuccess {
-		t.Errorf("RunWhen should default to on_success, got %s", n.GetRunWhen())
+	if n.GetRunWhen() != spi.RunWhenOnSuccess {
+		t.Errorf("spi.RunWhen should default to on_success, got %s", n.GetRunWhen())
 	}
 	pn, ok := node.AsPollNode(n)
 	if !ok {
@@ -99,7 +99,7 @@ func TestPollNode_SucceedsAfterPendingAttempts(t *testing.T) {
 		{"status": "done"},
 	}}
 
-	res, err := n.Execute(node.ExecutionContext{
+	res, err := n.Execute(spi.ExecutionContext{
 		Inputs:         map[string]any{},
 		FlowInputs:     map[string]any{"jobId": "abc"},
 		ModuleExecutor: exec,
@@ -108,7 +108,7 @@ func TestPollNode_SucceedsAfterPendingAttempts(t *testing.T) {
 		t.Fatalf("expected success, got error: %v", err)
 	}
 
-	pollRes, ok := node.As[*node.PollExecutionResult](res)
+	pollRes, ok := spi.As[*node.PollExecutionResult](res)
 	if !ok {
 		t.Fatalf("expected *PollExecutionResult, got %T", res)
 	}
@@ -144,7 +144,7 @@ func TestPollNode_NeverSatisfiedFails(t *testing.T) {
 	n := decodePollNode(t, mkPollNodeJSON(t, 2, "$.status", "done", true))
 	exec := &fakePollExecutor{outputs: []map[string]any{{"status": "pending"}}}
 
-	res, err := n.Execute(node.ExecutionContext{
+	res, err := n.Execute(spi.ExecutionContext{
 		Inputs:         map[string]any{},
 		FlowInputs:     map[string]any{},
 		ModuleExecutor: exec,
@@ -155,7 +155,7 @@ func TestPollNode_NeverSatisfiedFails(t *testing.T) {
 	if exec.calls != 2 {
 		t.Errorf("expected exactly max_attempts=2 body executions, got %d", exec.calls)
 	}
-	pollRes, ok := node.As[*node.PollExecutionResult](res)
+	pollRes, ok := spi.As[*node.PollExecutionResult](res)
 	if !ok {
 		t.Fatalf("expected *PollExecutionResult, got %T", res)
 	}
@@ -174,7 +174,7 @@ func TestPollNode_BodyErrorFails(t *testing.T) {
 	n := decodePollNode(t, mkPollNodeJSON(t, 5, "$.status", "done", true))
 	exec := &fakePollExecutor{err: errors.New("boom")}
 
-	res, err := n.Execute(node.ExecutionContext{
+	res, err := n.Execute(spi.ExecutionContext{
 		Inputs:         map[string]any{},
 		FlowInputs:     map[string]any{},
 		ModuleExecutor: exec,
@@ -185,7 +185,7 @@ func TestPollNode_BodyErrorFails(t *testing.T) {
 	if exec.calls != 1 {
 		t.Errorf("expected to stop after first body failure, got %d calls", exec.calls)
 	}
-	pollRes := node.MustAs[*node.PollExecutionResult](res)
+	pollRes := spi.MustAs[*node.PollExecutionResult](res)
 	if pollRes.ErrorCode == nil || *pollRes.ErrorCode != "POLL_BODY_FAILED" {
 		t.Errorf("expected POLL_BODY_FAILED error code, got %v", pollRes.ErrorCode)
 	}
@@ -198,7 +198,7 @@ func TestPollNode_ContextCancellationAborts(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // already cancelled before the first attempt
 
-	res, err := n.Execute(node.ExecutionContext{
+	res, err := n.Execute(spi.ExecutionContext{
 		Ctx:            ctx,
 		Inputs:         map[string]any{},
 		FlowInputs:     map[string]any{},
@@ -213,7 +213,7 @@ func TestPollNode_ContextCancellationAborts(t *testing.T) {
 	if exec.calls != 0 {
 		t.Errorf("expected no body executions on pre-cancelled context, got %d", exec.calls)
 	}
-	pollRes := node.MustAs[*node.PollExecutionResult](res)
+	pollRes := spi.MustAs[*node.PollExecutionResult](res)
 	if pollRes.ErrorCode == nil || *pollRes.ErrorCode != "POLL_CANCELLED" {
 		t.Errorf("expected POLL_CANCELLED error code, got %v", pollRes.ErrorCode)
 	}
@@ -223,7 +223,7 @@ func TestPollNode_NoAssertionsFails(t *testing.T) {
 	n := decodePollNode(t, mkPollNodeJSON(t, 5, "", "", false))
 	exec := &fakePollExecutor{outputs: []map[string]any{{"status": "done"}}}
 
-	res, err := n.Execute(node.ExecutionContext{
+	res, err := n.Execute(spi.ExecutionContext{
 		Inputs:         map[string]any{},
 		FlowInputs:     map[string]any{},
 		ModuleExecutor: exec,
@@ -234,7 +234,7 @@ func TestPollNode_NoAssertionsFails(t *testing.T) {
 	if exec.calls != 0 {
 		t.Errorf("expected no body executions without an exit condition, got %d", exec.calls)
 	}
-	pollRes := node.MustAs[*node.PollExecutionResult](res)
+	pollRes := spi.MustAs[*node.PollExecutionResult](res)
 	if pollRes.ErrorCode == nil || *pollRes.ErrorCode != "POLL_FAILED" {
 		t.Errorf("expected POLL_FAILED error code, got %v", pollRes.ErrorCode)
 	}
@@ -243,12 +243,12 @@ func TestPollNode_NoAssertionsFails(t *testing.T) {
 func TestPollNode_NoExecutorFails(t *testing.T) {
 	n := decodePollNode(t, mkPollNodeJSON(t, 5, "$.status", "done", true))
 
-	_, err := n.Execute(node.ExecutionContext{
+	_, err := n.Execute(spi.ExecutionContext{
 		Inputs:     map[string]any{},
 		FlowInputs: map[string]any{},
 	})
 	if err == nil {
-		t.Fatal("expected error when ModuleExecutor is nil")
+		t.Fatal("expected error when spi.ModuleExecutor is nil")
 	}
 }
 

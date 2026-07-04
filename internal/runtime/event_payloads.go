@@ -1,6 +1,6 @@
 package runtime
 
-import "github.com/nanostack-dev/echopoint-runner/pkg/node"
+import "github.com/nanostack-dev/echopoint-runner/pkg/spi"
 
 // The structs below are the typed shapes of the progress-event payloads emitted
 // to the control plane. Their JSON tags are the wire contract — they must match
@@ -27,11 +27,11 @@ type nodeStartedPayload struct {
 // (request/response, assertion_results, skip_reason, missing_inputs,
 // error_message, outputs) is preserved without a parallel, lossy struct.
 type nodeFinishedPayload struct {
-	NodeID      string                  `json:"nodeId"`
-	DisplayName string                  `json:"displayName"`
-	Duration    int64                   `json:"duration"`
-	Timestamp   string                  `json:"timestamp"`
-	Success     *bool                   `json:"success,omitempty"`
-	Result      node.AnyExecutionResult `json:"result,omitempty"`
-	Error       string                  `json:"error,omitempty"`
+	NodeID      string        `json:"nodeId"`
+	DisplayName string        `json:"displayName"`
+	Duration    int64         `json:"duration"`
+	Timestamp   string        `json:"timestamp"`
+	Success     *bool         `json:"success,omitempty"`
+	Result      spi.AnyResult `json:"result,omitempty"`
+	Error       string        `json:"error,omitempty"`
 }

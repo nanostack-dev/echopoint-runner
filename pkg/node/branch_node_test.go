@@ -53,8 +53,8 @@ func decodeBranch(t *testing.T, raw string) *node.BranchNode {
 
 func TestBranchNode_DecodeViaUnmarshalNode(t *testing.T) {
 	branchNode := decodeBranch(t, branchWireGT)
-	assert.Equal(t, node.TypeBranch, branchNode.GetType())
-	assert.Equal(t, node.RunWhenOnSuccess, branchNode.GetRunWhen())
+	assert.Equal(t, spi.KindBranch, branchNode.GetType())
+	assert.Equal(t, spi.RunWhenOnSuccess, branchNode.GetRunWhen())
 	require.Len(t, branchNode.GetData().Cases, 2)
 	assert.Equal(t, "activePath", branchNode.GetData().Cases[0].Target)
 	assert.Equal(t, "fallbackPath", branchNode.GetData().Default)
@@ -63,12 +63,12 @@ func TestBranchNode_DecodeViaUnmarshalNode(t *testing.T) {
 func TestBranchNode_Execute_FirstMatchingCaseWins(t *testing.T) {
 	branchNode := decodeBranch(t, branchWireGT)
 
-	result, err := branchNode.Execute(node.ExecutionContext{
+	result, err := branchNode.Execute(spi.ExecutionContext{
 		Inputs: map[string]any{"check.status": "active"},
 	})
 	require.NoError(t, err)
 
-	branchResult, ok := node.As[*node.BranchExecutionResult](result)
+	branchResult, ok := spi.As[*node.BranchExecutionResult](result)
 	require.True(t, ok)
 	assert.Equal(t, "activePath", branchResult.MatchedTarget)
 	assert.Equal(t, []string{"activePath"}, branchResult.RoutedTargets())
@@ -79,12 +79,12 @@ func TestBranchNode_Execute_FirstMatchingCaseWins(t *testing.T) {
 func TestBranchNode_Execute_SecondCaseMatches(t *testing.T) {
 	branchNode := decodeBranch(t, branchWireGT)
 
-	result, err := branchNode.Execute(node.ExecutionContext{
+	result, err := branchNode.Execute(spi.ExecutionContext{
 		Inputs: map[string]any{"check.status": "pending"},
 	})
 	require.NoError(t, err)
 
-	branchResult := node.MustAs[*node.BranchExecutionResult](result)
+	branchResult := spi.MustAs[*node.BranchExecutionResult](result)
 	assert.Equal(t, "pendingPath", branchResult.MatchedTarget)
 	assert.Equal(t, []string{"pendingPath"}, branchResult.RoutedTargets())
 	assert.Equal(t, 1, branchResult.Outputs["matchedIndex"])
@@ -93,12 +93,12 @@ func TestBranchNode_Execute_SecondCaseMatches(t *testing.T) {
 func TestBranchNode_Execute_NoMatchUsesDefault(t *testing.T) {
 	branchNode := decodeBranch(t, branchWireGT)
 
-	result, err := branchNode.Execute(node.ExecutionContext{
+	result, err := branchNode.Execute(spi.ExecutionContext{
 		Inputs: map[string]any{"check.status": "archived"},
 	})
 	require.NoError(t, err)
 
-	branchResult := node.MustAs[*node.BranchExecutionResult](result)
+	branchResult := spi.MustAs[*node.BranchExecutionResult](result)
 	assert.Equal(t, "fallbackPath", branchResult.MatchedTarget)
 	assert.Equal(t, []string{"fallbackPath"}, branchResult.RoutedTargets())
 	assert.Equal(t, -1, branchResult.Outputs["matchedIndex"])
@@ -125,12 +125,12 @@ func TestBranchNode_Execute_NoMatchNoDefaultRoutesNothing(t *testing.T) {
     }`
 	branchNode := decodeBranch(t, noDefault)
 
-	result, err := branchNode.Execute(node.ExecutionContext{
+	result, err := branchNode.Execute(spi.ExecutionContext{
 		Inputs: map[string]any{"check.status": "inactive"},
 	})
 	require.NoError(t, err)
 
-	branchResult := node.MustAs[*node.BranchExecutionResult](result)
+	branchResult := spi.MustAs[*node.BranchExecutionResult](result)
 	assert.Empty(t, branchResult.MatchedTarget)
 	assert.Empty(t, branchResult.RoutedTargets())
 	assert.Empty(t, branchResult.Outputs["matched"])
@@ -159,12 +159,12 @@ func TestBranchNode_Execute_JSONPathOverDefaultInputTarget(t *testing.T) {
     }`
 	branchNode := decodeBranch(t, jsonPathBranch)
 
-	adminResult := node.MustAs[*node.BranchExecutionResult](
+	adminResult := spi.MustAs[*node.BranchExecutionResult](
 		mustExec(t, branchNode, map[string]any{"user.role": "admin"}),
 	)
 	assert.Equal(t, "adminPath", adminResult.MatchedTarget)
 
-	userResult := node.MustAs[*node.BranchExecutionResult](
+	userResult := spi.MustAs[*node.BranchExecutionResult](
 		mustExec(t, branchNode, map[string]any{"user.role": "viewer"}),
 	)
 	assert.Equal(t, "userPath", userResult.MatchedTarget)
@@ -192,10 +192,10 @@ func TestBranchNode_Execute_NumericComparison(t *testing.T) {
     }`
 	branchNode := decodeBranch(t, numeric)
 
-	high := node.MustAs[*node.BranchExecutionResult](mustExec(t, branchNode, map[string]any{"order.total": 250}))
+	high := spi.MustAs[*node.BranchExecutionResult](mustExec(t, branchNode, map[string]any{"order.total": 250}))
 	assert.Equal(t, "highValue", high.MatchedTarget)
 
-	low := node.MustAs[*node.BranchExecutionResult](mustExec(t, branchNode, map[string]any{"order.total": 40}))
+	low := spi.MustAs[*node.BranchExecutionResult](mustExec(t, branchNode, map[string]any{"order.total": 40}))
 	assert.Equal(t, "standard", low.MatchedTarget)
 }
 
@@ -208,9 +208,9 @@ func TestBranchExecutionResult_ImplementsRoutingResult(t *testing.T) {
 	assert.Equal(t, []string{"a"}, routing.RoutedTargets())
 }
 
-func mustExec(t *testing.T, n node.AnyNode, inputs map[string]any) node.AnyExecutionResult {
+func mustExec(t *testing.T, n node.AnyNode, inputs map[string]any) spi.AnyResult {
 	t.Helper()
-	result, err := n.Execute(node.ExecutionContext{Inputs: inputs})
+	result, err := n.Execute(spi.ExecutionContext{Inputs: inputs})
 	require.NoError(t, err)
 	return result
 }

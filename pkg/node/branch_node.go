@@ -7,6 +7,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/nanostack-dev/echopoint-runner/pkg/extractors"
+	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 )
 
 // BranchCase pairs a condition with the successor node ID to route to when the
@@ -32,7 +33,7 @@ type BranchData struct {
 }
 
 // BranchNode routes execution down exactly one downstream path based on a
-// condition evaluated over upstream data. Unlike RunWhen (which gates on
+// condition evaluated over upstream data. Unlike spi.RunWhen (which gates on
 // success/failure), a branch performs value-based routing: the chosen
 // successor runs and the others are skipped by the engine.
 type BranchNode struct {
@@ -41,7 +42,7 @@ type BranchNode struct {
 	Data BranchData `json:"data"`
 
 	// dynamic resolves {{$name}} variables; set per execution, not serialized.
-	dynamic DynamicResolver
+	dynamic spi.DynamicResolver
 }
 
 // AsBranchNode safely casts an AnyNode to a BranchNode.
@@ -70,7 +71,7 @@ func (n *BranchNode) OutputSchema() []string {
 // Execute evaluates the branch cases against the resolved target value and
 // selects exactly one successor (or none). It never fails on a "no match"
 // outcome — that is a valid routing decision recorded in the result.
-func (n *BranchNode) Execute(ctx ExecutionContext) (AnyExecutionResult, error) {
+func (n *BranchNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 	startTime := time.Now()
 	n.dynamic = ctx.DynamicVars
 
@@ -111,10 +112,10 @@ func (n *BranchNode) Execute(ctx ExecutionContext) (AnyExecutionResult, error) {
 	}
 
 	result := &BranchExecutionResult{
-		BaseExecutionResult: BaseExecutionResult{
+		BaseExecutionResult: spi.BaseExecutionResult{
 			NodeID:      n.GetID(),
 			DisplayName: n.GetDisplayName(),
-			NodeType:    TypeBranch,
+			NodeType:    spi.KindBranch,
 			Inputs:      ctx.Inputs,
 			Outputs: map[string]any{
 				"matched":      chosen,

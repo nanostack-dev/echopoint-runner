@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/nanostack-dev/echopoint-runner/pkg/node"
+	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 )
 
 const referencePartCount = 2
@@ -188,7 +189,7 @@ func validateNodeOutputReference(
 ) error {
 	outputs, ok := availableNodeOutputs[sourceNodeID]
 	if !ok {
-		if currentNode.GetRunWhen() == node.RunWhenAlways {
+		if currentNode.GetRunWhen() == spi.RunWhenAlways {
 			return nil
 		}
 		return fmt.Errorf(
@@ -198,7 +199,7 @@ func validateNodeOutputReference(
 			ref,
 		)
 	}
-	if _, outputExists := outputs[outputKey]; outputExists || currentNode.GetRunWhen() == node.RunWhenAlways {
+	if _, outputExists := outputs[outputKey]; outputExists || currentNode.GetRunWhen() == spi.RunWhenAlways {
 		return nil
 	}
 

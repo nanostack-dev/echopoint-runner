@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/nanostack-dev/echopoint-runner/pkg/extractors"
+	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 	"github.com/rs/zerolog/log"
 )
 
@@ -38,7 +39,7 @@ type AssertNode struct {
 	Data AssertData `json:"data"`
 
 	// dynamic resolves {{$name}} variables; set per execution, not serialized.
-	dynamic DynamicResolver
+	dynamic spi.DynamicResolver
 }
 
 // AsAssertNode safely casts an AnyNode to an AssertNode.
@@ -70,7 +71,7 @@ func (n *AssertNode) OutputSchema() []string {
 // engine.applyAssertionsAndOutputs), filling AssertionResults, merging outputs,
 // and flipping the result to failed on a miss. Keeping the node thin means a
 // single shared seam owns assertion/output evaluation and retry behavior.
-func (n *AssertNode) Execute(ctx ExecutionContext) (AnyExecutionResult, error) {
+func (n *AssertNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 	startTime := time.Now()
 	n.dynamic = ctx.DynamicVars
 
@@ -82,10 +83,10 @@ func (n *AssertNode) Execute(ctx ExecutionContext) (AnyExecutionResult, error) {
 	target := n.resolveTarget(ctx)
 
 	result := &AssertExecutionResult{
-		BaseExecutionResult: BaseExecutionResult{
+		BaseExecutionResult: spi.BaseExecutionResult{
 			NodeID:      n.GetID(),
 			DisplayName: n.GetDisplayName(),
-			NodeType:    TypeAssert,
+			NodeType:    spi.KindAssert,
 			Inputs:      ctx.Inputs,
 			ExecutedAt:  time.Now(),
 		},
@@ -108,7 +109,7 @@ func (n *AssertNode) Execute(ctx ExecutionContext) (AnyExecutionResult, error) {
 // InputSchema (derived solely from Target templates), so an omitted target leaves
 // ctx.Inputs empty — ctx.FlowInputs is the real, engine-populated map to assert
 // over by default.
-func (n *AssertNode) resolveTarget(ctx ExecutionContext) any {
+func (n *AssertNode) resolveTarget(ctx spi.ExecutionContext) any {
 	if n.Data.Target == nil {
 		return mapOf(ctx.FlowInputs)
 	}
