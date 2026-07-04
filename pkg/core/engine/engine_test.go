@@ -172,6 +172,24 @@ func TestIndependentRootRunsAfterSiblingFails(t *testing.T) {
 	}
 }
 
+// TestModuleOutputAddressing proves a downstream node reads a module's child
+// output as moduleNode.childNode.outputVar — the module exposes everything the
+// child flow produced, addressed by the child's node id.
+func TestModuleOutputAddressing(t *testing.T) {
+	child := parse(t, `{"name":"login","nodes":[
+		{"id":"auth","type":"set_variable","variables":{"token":"xyz"}}],"edges":[]}`)
+	resolve := func(id string) (flow.Flow, bool) { return child, id == "login" }
+	parent := parse(t, `{"name":"p","nodes":[
+		{"id":"do_login","type":"module","body_flow_id":"login"},
+		{"id":"use","type":"set_variable","variables":{"t":"{{{do_login.auth.token}}}"}}],
+		"edges":[{"source":"do_login","target":"use"}]}`)
+	out := runOK(t, engine.New(node.Runtime{Clock: &fakeClock{}}, resolve), parent, nil)
+	got, _ := out["use"].Get("t")
+	if s, _ := got.Str(); s != "xyz" {
+		t.Fatalf("want token via do_login.auth.token, got %q", s)
+	}
+}
+
 // TestInterNodeTemplating proves node B reads node A's output via {{login.token}}.
 func TestInterNodeTemplating(t *testing.T) {
 	login := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
