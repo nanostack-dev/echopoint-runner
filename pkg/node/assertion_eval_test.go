@@ -171,6 +171,52 @@ func TestEvaluate_CapturesActualAndMetadata(t *testing.T) {
 	}
 }
 
+// A failed assertion is a user-caused outcome (the flow author's expectation did
+// not hold), so EvaluateAssertions must return a spi.UserError carrying the
+// stable ASSERTION_FAILED code. The engine logs UserErrors at debug, keeping
+// expected assertion failures out of the error stream and error-rate alerts.
+func TestEvaluateAssertions_FailureIsUserError(t *testing.T) {
+	results, err := node.EvaluateAssertions(
+		[]node.CompositeAssertion{mkAssertion(t, "statusCode", "", "equals", "200")},
+		fakeCtx{status: 404},
+	)
+	if err == nil {
+		t.Fatal("expected an assertion failure error")
+	}
+	userErr, ok := spi.AsUserError(err)
+	if !ok {
+		t.Fatalf("assertion failure should be a UserError, got %T", err)
+	}
+	if userErr.Code != "ASSERTION_FAILED" {
+		t.Errorf("expected code ASSERTION_FAILED, got %q", userErr.Code)
+	}
+	if !strings.Contains(err.Error(), "assertion 0 failed") {
+		t.Errorf("expected message to contain 'assertion 0 failed', got %q", err.Error())
+	}
+	if len(results) != 1 || results[0].Passed {
+		t.Errorf("expected one recorded failing result, got %+v", results)
+	}
+}
+
+// An extractor/operator that cannot evaluate is likewise a flow-config fault,
+// already surfaced on the node result, so it too must be a UserError (debug
+// logged) rather than a runner fault that trips error alerts.
+func TestEvaluateAssertions_EvalErrorIsUserError(t *testing.T) {
+	results, err := node.EvaluateAssertions(
+		[]node.CompositeAssertion{mkAssertion(t, "jsonPath", "$.missing.deep", "equals", "x")},
+		fakeCtx{status: 200, parsed: "not-an-object"},
+	)
+	if err == nil {
+		t.Fatal("expected an extractor evaluation error")
+	}
+	if _, ok := spi.AsUserError(err); !ok {
+		t.Fatalf("assertion evaluation error should be a UserError, got %T", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected the erroring assertion recorded, got %d", len(results))
+	}
+}
+
 // reqNode builds a RequestNode carrying the given assertions for runAssertions tests.
 func reqNode(assertions ...node.CompositeAssertion) *node.RequestNode {
 	return &node.RequestNode{BaseNode: node.BaseNode{Assertions: assertions}}
