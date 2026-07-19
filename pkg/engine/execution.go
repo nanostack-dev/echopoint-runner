@@ -563,9 +563,10 @@ func (engine *FlowEngine) buildExecutionContext(
 		AllOutputs:     outputView,
 		ModuleResolver: engine.moduleResolver,
 		ModuleExecutor: moduleExecutor{
-			resolver:  engine.moduleResolver,
-			callStack: engine.moduleCallStack,
-			ctx:       engine.ctx,
+			resolver:    engine.moduleResolver,
+			callStack:   engine.moduleCallStack,
+			ctx:         engine.ctx,
+			dynamicVars: engine.dynamicVars,
 		},
 		DynamicVars: engine.dynamicVars,
 	}

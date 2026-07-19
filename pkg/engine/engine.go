@@ -43,9 +43,10 @@ type FlowEngine struct {
 }
 
 type moduleExecutor struct {
-	resolver  spi.ModuleResolver
-	callStack []string
-	ctx       context.Context
+	resolver    spi.ModuleResolver
+	callStack   []string
+	ctx         context.Context
+	dynamicVars spi.DynamicResolver
 }
 
 // ExecuteModule runs a nested module flow. Every failure it returns is caused by
@@ -80,6 +81,8 @@ func (e moduleExecutor) ExecuteModule(request spi.ModuleExecutionRequest) (*spi.
 		ModuleResolver:  e.resolver,
 		ModuleCallStack: append(append([]string{}, e.callStack...), trimmedFlowID),
 		Ctx:             e.ctx,
+		// Propagate dynamic vars so module request nodes resolve {{$runId}} etc.
+		DynamicVars: e.dynamicVars,
 	})
 }
 
