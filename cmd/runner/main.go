@@ -8,9 +8,9 @@ import (
 	"syscall"
 
 	"github.com/nanostack-dev/echopoint-runner/internal/config"
-	"github.com/nanostack-dev/echopoint-runner/internal/ephemeral"
 	internalLogger "github.com/nanostack-dev/echopoint-runner/internal/logger"
 	runnerruntime "github.com/nanostack-dev/echopoint-runner/internal/runtime"
+	"github.com/nanostack-dev/echopoint-runner/pkg/ephemeral"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 )
