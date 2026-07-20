@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nanostack-dev/echopoint-runner/internal/ephemeral"
 	"github.com/nanostack-dev/echopoint-runner/internal/logger"
+	"github.com/nanostack-dev/echopoint-runner/pkg/ephemeral"
 	flowpkg "github.com/nanostack-dev/echopoint-runner/pkg/flow"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
