@@ -346,7 +346,7 @@ pure engine, no HTTP), `BranchFanout` (route past N cascade-skipped successors),
 `Modules` (N parallel sub-flows), `Poll`, `DelayChain`, and `Complex` (a
 kitchen-sink graph combining request + branch + loop + module + assert).
 
-Eleven optimizations came out of profiling these:
+Twelve optimizations came out of profiling these:
 
 1. **Incremental input view.** `runNode` used to rebuild the whole output store
    into a fresh map on every node (`inputView`), re-boxing each node's outputs
@@ -396,22 +396,25 @@ Eleven optimizations came out of profiling these:
     third time in `collect`. Now: a provider leaves `Assert` zero and the engine
     boxes outputs once — and only when assertions/outputs are declared — and
     `collect` reuses the view's boxing.
-11. **Decode-once values.** `set_variable`/`module` held `map[string]json.RawMessage`
+11. **Topology derived at parse.** Every run rebuilt nodeByID/succ/preds/indeg
+    maps; loop and poll bodies re-run the same parsed flow once per iteration and
+    module children once per module node. `flow.Parse` now derives an immutable
+    `Topo` (plus sorted roots) that all runs share; a run clones only the
+    in-degrees it decrements. (Loop −7%, Modules −6%, and −9–14% B/op.)
+12. **Decode-once values.** `set_variable`/`module` held `map[string]json.RawMessage`
     and re-parsed every entry with `value.JSON` at run time, and `assert.Spec.Expected`
     stayed raw JSON and was re-parsed on *every* evaluation (per poll attempt, per
     SSE event, per loop iteration). `value.Value` gained `UnmarshalJSON`, so these
     fields decode straight into `value.Value`/`value.Map` in one pass. (SSE −27%
     time, −34% allocs.)
 
-(A twelfth candidate — caching each flow's topology at parse — was prototyped
-and reverted: it added derived state + a dual code path to the deliberately
-pure-data `flow` package for only a ~7% loop/module gain, not worth the surface.)
-
-Cumulative vs the pre-optimization baseline, **WideDiamond n=256: time −87%,
-memory −90%, allocs −85%**, and −52% time / −58% allocs on the pure-engine
-VarChain n=256. Beyond this the remaining cost is inherent per-node work — the
-single typed `json.Unmarshal` of each node's config, evaluating "$" JSONPath, and
-boxing each node's outputs into the pure-`any` view — not waste.
+Cumulative vs the pre-optimization baseline, **WideDiamond n=256: time −89%
+(11.8ms → 1.3ms), memory −90% (17.3MB → 1.75MB), allocs −86% (139k → 18.8k)**;
+vs the round-7 numbers: time −30%, allocs −25% (WideDiamond n=256), and −53%
+time / −60% allocs on the pure-engine VarChain n=256. Beyond this the remaining
+cost is inherent per-node work — the single typed `json.Unmarshal` of each
+node's config, evaluating "$" JSONPath, and boxing each node's outputs into the
+pure-`any` view — not waste.
 
 ## Design principles (the invariants worth keeping)
 
