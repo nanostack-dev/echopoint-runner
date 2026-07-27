@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/docker/docker/api/types/container"
+	"github.com/moby/moby/api/types/container"
 	internalLog "github.com/nanostack-dev/echopoint-runner/internal/logger"
 	"github.com/rs/zerolog/log"
 	"github.com/testcontainers/testcontainers-go"
