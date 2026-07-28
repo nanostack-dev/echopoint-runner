@@ -77,6 +77,8 @@ jobs:
       contents: read
       packages: write
       id-token: write
+    outputs:
+      deploy_image_tag: ${{ steps.deploy_tag.outputs.tag }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -119,3 +121,32 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # Immutable tag for deploys. `latest` moves, so a redeploy of "latest"
+      # cannot be traced back to a commit; this matches the `type=sha,
+      # prefix={{branch}}-` tag pushed above (docker/metadata-action's short
+      # sha is 7 chars) and doubles as the COMMIT_SHA label infra applies.
+      - name: Resolve deploy image tag
+        id: deploy_tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf 'tag=%s-%s\n' "${GITHUB_REF_NAME}" "${GITHUB_SHA:0:7}" >> "$GITHUB_OUTPUT"
+
+  # Auto-deploy on main: dev first, then infra's router promotes to prod when
+  # the dev deploy succeeds (same contract echopoint and anchor use).
+  dispatch-deploy-dev:
+    name: Dispatch Deploy (dev)
+    needs: docker-push
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    uses: nanostack-dev/ci-workflows/.github/workflows/dispatch-deploy-event.yml@main
+    permissions:
+      contents: read
+    with:
+      runner: ubuntu-latest
+      deploy_repository: nanostack-dev/infra
+      event_type: deploy-service
+      payload: >-
+        {"service":"echopoint-runner","environment":"dev","promote_to_prod":true,"source_repository":"${{ github.repository }}","source_ref":"${{ github.sha }}","image_repository":"ghcr.io/${{ github.repository_owner }}/echopoint-runner","image_tag":"${{ needs.docker-push.outputs.deploy_image_tag }}","git_sha":"${{ github.sha }}"}
+    secrets:
+      DEPLOY_TOKEN: ${{ secrets.DEPLOY_TOKEN }}
