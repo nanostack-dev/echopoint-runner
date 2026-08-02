@@ -119,7 +119,13 @@ func (r *Runtime) runClaimLoop(ctx context.Context) error {
 				continue
 			}
 
-			log.Error().Err(err).Dur("poll_duration", time.Since(claimStartedAt)).Msg("failed to claim runner job")
+			log.Error().
+				Err(err).
+				Str("runner_id", r.config.RunnerID).
+				Str("boot_id", r.bootID.String()).
+				Str("organization_id", r.config.OrganizationID).
+				Dur("poll_duration", time.Since(claimStartedAt)).
+				Msg("failed to claim runner job")
 			if sleepErr := sleepContext(ctx, r.config.ErrorBackoff); sleepErr != nil {
 				return sleepErr
 			}
