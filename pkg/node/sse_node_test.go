@@ -1,12 +1,16 @@
 package node_test
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 
 	"github.com/nanostack-dev/echopoint-runner/pkg/node"
 	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
@@ -303,4 +307,96 @@ func TestSseNode_MultiLineDataAndComments(t *testing.T) {
 	sseRes := spi.MustAs[*node.SseExecutionResult](res)
 	require.Equal(t, 1, sseRes.EventCount)
 	assert.Equal(t, "line1\nline2", sseRes.Events[0])
+}
+
+// captureLogs redirects the global zerolog logger into a buffer for the test's
+// duration, returning the buffer. Nothing here runs in parallel, so swapping the
+// global is safe.
+func captureLogs(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	var buf bytes.Buffer
+	prev := log.Logger
+	prevLevel := zerolog.GlobalLevel()
+	//nolint:reassign // the node logs through zerolog's package-global; capturing it is the only way to assert severity
+	log.Logger = zerolog.New(&buf)
+	zerolog.SetGlobalLevel(zerolog.DebugLevel)
+	t.Cleanup(func() {
+		//nolint:reassign // restores the global captured above
+		log.Logger = prev
+		zerolog.SetGlobalLevel(prevLevel)
+	})
+	return &buf
+}
+
+// With stop_on_assertion_failure off the node survives its failing events and
+// succeeds, so those failures must not reach the error stream: at error level
+// this fires once per failing event and trips error-rate alerts on a node that
+// did exactly what the flow asked.
+func TestSseNode_FailingAssertionLogsAtDebugNotError(t *testing.T) {
+	logs := captureLogs(t)
+
+	srv := sseServer(t, 0,
+		dataFrame(map[string]any{"status": "ok"}),
+		dataFrame(map[string]any{"status": "bad"}),
+		dataFrame(map[string]any{"status": "bad"}),
+	)
+
+	stop := false
+	n := sseNode(t, srv.URL, node.SseData{TimeoutMs: 2000, StopOnAssertionFailure: &stop},
+		mkAssertion(t, "jsonPath", "$.status", "equals", "ok"),
+	)
+
+	_, err := n.Execute(spi.ExecutionContext{Inputs: map[string]any{}})
+	require.NoError(t, err)
+
+	out := logs.String()
+	require.Contains(t, out, "SSE event assertion failed", "the failure is still logged")
+	assert.NotContains(t, out, `"level":"error"`, "an expected assertion failure is not an error")
+	assert.Contains(t, out, `"level":"debug"`)
+}
+
+// The stopping path wraps the assertion error with fmt.Errorf("%w"), which must
+// keep the UserError reachable by errors.As — that is what makes both the node's
+// own failure log and the engine's classify it at debug.
+func TestSseNode_AssertionFailureStaysUserError(t *testing.T) {
+	logs := captureLogs(t)
+
+	srv := sseServer(t, 0,
+		dataFrame(map[string]any{"status": "bad"}),
+	)
+
+	n := sseNode(t, srv.URL, node.SseData{TimeoutMs: 2000},
+		mkAssertion(t, "jsonPath", "$.status", "equals", "ok"),
+	)
+
+	_, err := n.Execute(spi.ExecutionContext{Inputs: map[string]any{}})
+	require.Error(t, err)
+
+	userErr, ok := spi.AsUserError(err)
+	require.True(t, ok, "a failing SSE assertion surfaces as a UserError so it logs at debug")
+	assert.Equal(t, "ASSERTION_FAILED", userErr.Code)
+
+	out := logs.String()
+	require.Contains(t, out, "SSE node execution failed", "the node failure is still logged")
+	assert.NotContains(t, out, `"level":"error"`, "a stopping assertion failure is not a runner fault")
+}
+
+// The classification must not swallow real faults: a non-2xx response is a
+// genuine failure and has to keep error severity.
+func TestSseNode_GenuineFaultStillLogsAtError(t *testing.T) {
+	logs := captureLogs(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	t.Cleanup(srv.Close)
+
+	n := sseNode(t, srv.URL, node.SseData{TimeoutMs: 2000})
+
+	_, err := n.Execute(spi.ExecutionContext{Inputs: map[string]any{}})
+	require.Error(t, err)
+
+	_, isUser := spi.AsUserError(err)
+	require.False(t, isUser, "a 500 from the target is not a user assertion outcome")
+	assert.Contains(t, logs.String(), `"level":"error"`)
 }
