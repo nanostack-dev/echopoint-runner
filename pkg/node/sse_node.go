@@ -391,11 +391,22 @@ func (n *SseNode) evaluateEventAssertions(parsed any, eventIndex int) ([]spi.Ass
 		results[i].Index = eventIndex
 	}
 	if err != nil {
-		log.Error().
+		// A failing event assertion is a user-caused outcome, and one the node
+		// often survives: with stop_on_assertion_failure off the stream keeps
+		// going and the node still succeeds, so this fires per failing event and
+		// at error level would be pure alert noise. Classify like the engine's
+		// node-failure log — UserError at debug, anything else a real fault.
+		event := log.Error()
+		if _, ok := spi.AsUserError(err); ok {
+			event = log.Debug()
+		}
+		event.
 			Str("nodeID", n.GetID()).
 			Int("eventIndex", eventIndex).
 			Err(err).
 			Msg("SSE event assertion failed")
+		// %w keeps the UserError reachable by errors.As, so when this does stop
+		// the stream the engine still classifies the node failure at debug.
 		return results, fmt.Errorf("event %d %w", eventIndex, err)
 	}
 	return results, nil
@@ -474,7 +485,15 @@ func (n *SseNode) createErrorResult(
 	errMsg := err.Error()
 	errCode := "SSE_FAILED"
 
-	log.Error().
+	// This covers both a stopping assertion failure and a genuine fault (refused
+	// connection, non-2xx status, read error), so classify rather than logging
+	// every SSE failure at error. ErrorCode stays SSE_FAILED either way — it is
+	// part of the result contract echopoint consumes.
+	event := log.Error()
+	if _, ok := spi.AsUserError(err); ok {
+		event = log.Debug()
+	}
+	event.
 		Str("nodeID", n.GetID()).
 		Str("url", url).
 		Int("eventCount", len(events)).
