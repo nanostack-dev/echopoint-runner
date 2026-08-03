@@ -171,10 +171,7 @@ func TestEvaluate_CapturesActualAndMetadata(t *testing.T) {
 	}
 }
 
-// A failed assertion is a user-caused outcome (the flow author's expectation did
-// not hold), so EvaluateAssertions must return a spi.UserError carrying the
-// stable ASSERTION_FAILED code. The engine logs UserErrors at debug, keeping
-// expected assertion failures out of the error stream and error-rate alerts.
+// A failed assertion carries ASSERTION_FAILED so the engine logs it at debug.
 func TestEvaluateAssertions_FailureIsUserError(t *testing.T) {
 	results, err := node.EvaluateAssertions(
 		[]node.CompositeAssertion{mkAssertion(t, "statusCode", "", "equals", "200")},
@@ -198,9 +195,7 @@ func TestEvaluateAssertions_FailureIsUserError(t *testing.T) {
 	}
 }
 
-// An extractor/operator that cannot evaluate is likewise a flow-config fault,
-// already surfaced on the node result, so it too must be a UserError (debug
-// logged) rather than a runner fault that trips error alerts.
+// An extractor that cannot evaluate is a flow fault, so it too is a UserError.
 func TestEvaluateAssertions_EvalErrorIsUserError(t *testing.T) {
 	results, err := node.EvaluateAssertions(
 		[]node.CompositeAssertion{mkAssertion(t, "jsonPath", "$.missing.deep", "equals", "x")},

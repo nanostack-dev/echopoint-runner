@@ -32,14 +32,7 @@ func EvaluateAssertions(
 		res.Index = i
 		results = append(results, res)
 
-		// A failed assertion — or an extractor/operator that could not evaluate —
-		// is a user-caused outcome (the flow author's expectation did not hold, or
-		// their assertion referenced data the response does not carry), already
-		// surfaced on the node result as error_message/error_code. Classify it as a
-		// spi.UserError carrying the stable ASSERTION_FAILED code so the engine logs
-		// it at debug rather than error: an expected assertion failure must not
-		// inflate the error stream or trip error-rate alerts. See spi.UserError and
-		// the node-failure logging in pkg/engine/execution.go.
+		// A UserError: an expected assertion failure logs at debug, not error.
 		if res.Error != "" {
 			return results, spi.NewUserError("ASSERTION_FAILED",
 				fmt.Sprintf("assertion %d (%s %s) evaluation error: %s",
