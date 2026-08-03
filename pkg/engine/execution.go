@@ -491,7 +491,13 @@ func applyAssertionsAndOutputs(
 		if failer != nil {
 			failer.Fail(assertErr, "ASSERTION_FAILED")
 		}
-		return res, assertErr
+		// A failed or erroring assertion is a user-caused outcome — the target
+		// endpoint's response did not match the flow's assertions — already
+		// reported on the result above. Return it as a UserError so the engine's
+		// node-failure log classifies it at debug rather than error; a bare error
+		// here surfaces expected assertion failures as error-level "Node execution
+		// failed" logs that trip app-error alerts.
+		return res, spi.NewUserError("ASSERTION_FAILED", assertErr.Error(), nil)
 	}
 
 	produced, extractErr := node.ExtractOutputs(n.GetOutputs(), rc)
@@ -499,7 +505,9 @@ func applyAssertionsAndOutputs(
 		if failer != nil {
 			failer.Fail(extractErr, "OUTPUT_EXTRACTION_FAILED")
 		}
-		return res, extractErr
+		// Output extraction against the target's response is user-caused, same as
+		// an assertion failure: wrap as a UserError so it logs at debug.
+		return res, spi.NewUserError("OUTPUT_EXTRACTION_FAILED", extractErr.Error(), nil)
 	}
 	if failer != nil {
 		failer.MergeOutputs(produced)
@@ -518,7 +526,10 @@ func applyAssertionsAndOutputs(
 		if failer != nil {
 			failer.Fail(validateErr, "OUTPUT_VALIDATION_FAILED")
 		}
-		return res, validateErr
+		// A missing required output is a user-caused outcome (the flow declared an
+		// output its response did not yield): wrap as a UserError so it logs at
+		// debug rather than error.
+		return res, spi.NewUserError("OUTPUT_VALIDATION_FAILED", validateErr.Error(), nil)
 	}
 
 	return res, nil

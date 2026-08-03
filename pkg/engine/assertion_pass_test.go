@@ -154,6 +154,14 @@ func TestEnginePass_AssertionFailureFlipsNodeToFailed(t *testing.T) {
 	require.Error(t, res.GetError(), "the result carries the assertion failure error")
 	require.NotNil(t, res.ErrorCode)
 	assert.Equal(t, "ASSERTION_FAILED", *res.ErrorCode)
+
+	// The error the engine surfaces for a failed assertion must be a UserError:
+	// that is what makes executeNode log it at debug instead of error. A bare
+	// error here regresses expected assertion failures into error-level
+	// "Node execution failed" logs that trip app-error alerts.
+	userErr, ok := spi.AsUserError(result.Error)
+	require.True(t, ok, "a failing assertion surfaces as a UserError so it logs at debug")
+	assert.Equal(t, "ASSERTION_FAILED", userErr.Code)
 }
 
 // (c) Retry middleware still retries when an assertion fails — the pass runs
