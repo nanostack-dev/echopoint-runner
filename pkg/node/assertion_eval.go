@@ -32,15 +32,17 @@ func EvaluateAssertions(
 		res.Index = i
 		results = append(results, res)
 
+		// A UserError: an expected assertion failure logs at debug, not error.
 		if res.Error != "" {
-			return results, fmt.Errorf("assertion %d (%s %s) evaluation error: %s",
-				i, res.Extractor, res.Operator, res.Error)
+			return results, spi.NewUserError("ASSERTION_FAILED",
+				fmt.Sprintf("assertion %d (%s %s) evaluation error: %s",
+					i, res.Extractor, res.Operator, res.Error), nil)
 		}
 
 		if !res.Passed {
-			return results, fmt.Errorf(
-				"assertion %d failed: %s %s expected=%v actual=%v",
-				i, res.Extractor, res.Operator, res.Expected, res.Actual)
+			return results, spi.NewUserError("ASSERTION_FAILED",
+				fmt.Sprintf("assertion %d failed: %s %s expected=%v actual=%v",
+					i, res.Extractor, res.Operator, res.Expected, res.Actual), nil)
 		}
 	}
 
