@@ -201,16 +201,9 @@ func (n *LoopNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 		Msg("Loop node executed successfully")
 
 	return &LoopExecutionResult{
-		BaseExecutionResult: spi.BaseExecutionResult{
-			NodeID:      n.GetID(),
-			DisplayName: n.GetDisplayName(),
-			NodeType:    spi.KindLoop,
-			Inputs:      ctx.Inputs,
-			Outputs:     outputs,
-			ExecutedAt:  time.Now(),
-		},
-		Iterations: len(items),
-		DurationMs: time.Since(startTime).Milliseconds(),
+		BaseExecutionResult: n.baseResult(spi.KindLoop, ctx.Inputs, outputs),
+		Iterations:          len(items),
+		DurationMs:          time.Since(startTime).Milliseconds(),
 		// Expose the aggregate outputs to the engine-level assertion/output pass
 		// so users can assert on the collected results (e.g. results/count).
 		assertionCtx: extractors.NewValueResponseContext(outputs),
@@ -239,22 +232,9 @@ func (n *LoopNode) createErrorResult(
 	startedAt time.Time,
 	iterations int,
 ) spi.AnyResult {
-	errMsg := err.Error()
-	errCode := "LOOP_FAILED"
-
 	return &LoopExecutionResult{
-		BaseExecutionResult: spi.BaseExecutionResult{
-			NodeID:      n.GetID(),
-			DisplayName: n.GetDisplayName(),
-			NodeType:    spi.KindLoop,
-			Inputs:      inputs,
-			Outputs:     nil,
-			Error:       err,
-			ErrorMsg:    &errMsg,
-			ErrorCode:   &errCode,
-			ExecutedAt:  time.Now(),
-		},
-		Iterations: iterations,
-		DurationMs: time.Since(startedAt).Milliseconds(),
+		BaseExecutionResult: n.failedBaseResult(spi.KindLoop, inputs, err, "LOOP_FAILED"),
+		Iterations:          iterations,
+		DurationMs:          time.Since(startedAt).Milliseconds(),
 	}
 }

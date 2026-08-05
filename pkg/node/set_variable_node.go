@@ -82,15 +82,8 @@ func (n *SetVariableNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, erro
 	}
 
 	result := &SetVariableExecutionResult{
-		BaseExecutionResult: spi.BaseExecutionResult{
-			NodeID:      n.GetID(),
-			DisplayName: n.GetDisplayName(),
-			NodeType:    spi.KindSetVariable,
-			Inputs:      ctx.Inputs,
-			Outputs:     outputs,
-			ExecutedAt:  time.Now(),
-		},
-		DurationMs: time.Since(startTime).Milliseconds(),
+		BaseExecutionResult: n.baseResult(spi.KindSetVariable, ctx.Inputs, outputs),
+		DurationMs:          time.Since(startTime).Milliseconds(),
 	}
 
 	log.Info().
@@ -107,21 +100,8 @@ func (n *SetVariableNode) createErrorResult(
 	err error,
 	startedAt time.Time,
 ) spi.AnyResult {
-	errMsg := err.Error()
-	errCode := "SET_VARIABLE_FAILED"
-
 	return &SetVariableExecutionResult{
-		BaseExecutionResult: spi.BaseExecutionResult{
-			NodeID:      n.GetID(),
-			DisplayName: n.GetDisplayName(),
-			NodeType:    spi.KindSetVariable,
-			Inputs:      inputs,
-			Outputs:     nil,
-			Error:       err,
-			ErrorMsg:    &errMsg,
-			ErrorCode:   &errCode,
-			ExecutedAt:  time.Now(),
-		},
-		DurationMs: time.Since(startedAt).Milliseconds(),
+		BaseExecutionResult: n.failedBaseResult(spi.KindSetVariable, inputs, err, "SET_VARIABLE_FAILED"),
+		DurationMs:          time.Since(startedAt).Milliseconds(),
 	}
 }

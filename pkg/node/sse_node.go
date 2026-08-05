@@ -454,23 +454,18 @@ func (n *SseNode) createSuccessResult(
 		"last":         last,
 	}
 
-	return &SseExecutionResult{
-		BaseExecutionResult: spi.BaseExecutionResult{
-			NodeID:           n.GetID(),
-			DisplayName:      n.GetDisplayName(),
-			NodeType:         spi.KindSse,
-			Inputs:           inputs,
-			Outputs:          outputs,
-			ExecutedAt:       time.Now(),
-			AssertionResults: assertionResults,
-		},
-		RequestMethod: method,
-		RequestURL:    url,
-		Events:        events,
-		EventCount:    len(events),
-		StopReason:    stopReason,
-		DurationMs:    time.Since(startTime).Milliseconds(),
+	result := &SseExecutionResult{
+		BaseExecutionResult: n.baseResult(spi.KindSse, inputs, outputs),
+		RequestMethod:       method,
+		RequestURL:          url,
+		Events:              events,
+		EventCount:          len(events),
+		StopReason:          stopReason,
+		DurationMs:          time.Since(startTime).Milliseconds(),
 	}
+	result.AssertionResults = assertionResults
+
+	return result
 }
 
 func (n *SseNode) createErrorResult(
@@ -482,9 +477,6 @@ func (n *SseNode) createErrorResult(
 	err error,
 	startTime time.Time,
 ) spi.AnyResult {
-	errMsg := err.Error()
-	errCode := "SSE_FAILED"
-
 	// This covers both a stopping assertion failure and a genuine fault (refused
 	// connection, non-2xx status, read error), so classify rather than logging
 	// every SSE failure at error. ErrorCode stays SSE_FAILED either way — it is
@@ -500,24 +492,16 @@ func (n *SseNode) createErrorResult(
 		Err(err).
 		Msg("SSE node execution failed")
 
-	return &SseExecutionResult{
-		BaseExecutionResult: spi.BaseExecutionResult{
-			NodeID:           n.GetID(),
-			DisplayName:      n.GetDisplayName(),
-			NodeType:         spi.KindSse,
-			Inputs:           inputs,
-			Outputs:          nil,
-			Error:            err,
-			ErrorMsg:         &errMsg,
-			ErrorCode:        &errCode,
-			ExecutedAt:       time.Now(),
-			AssertionResults: assertionResults,
-		},
-		RequestMethod: method,
-		RequestURL:    url,
-		Events:        events,
-		EventCount:    len(events),
-		StopReason:    stopReason,
-		DurationMs:    time.Since(startTime).Milliseconds(),
+	result := &SseExecutionResult{
+		BaseExecutionResult: n.failedBaseResult(spi.KindSse, inputs, err, "SSE_FAILED"),
+		RequestMethod:       method,
+		RequestURL:          url,
+		Events:              events,
+		EventCount:          len(events),
+		StopReason:          stopReason,
+		DurationMs:          time.Since(startTime).Milliseconds(),
 	}
+	result.AssertionResults = assertionResults
+
+	return result
 }
