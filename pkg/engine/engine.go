@@ -266,13 +266,7 @@ func ExecuteFlowDefinition(
 	if len(flowEngine.nodeEdgeInput) == 0 {
 		result.Error = errors.New("no nodes to execute")
 		result.DurationMS = time.Since(startTime).Milliseconds()
-		flowEngine.observer.FlowFinished(FlowFinishedEvent{
-			FlowName:   flowEngine.flow.Name,
-			StartedAt:  startTime,
-			FinishedAt: time.Now(),
-			DurationMs: result.DurationMS,
-			Result:     result,
-		})
+		flowEngine.finishFlow(result, startTime)
 		log.Error().
 			Str("flowName", flowEngine.flow.Name).
 			Err(result.Error).
@@ -282,23 +276,10 @@ func ExecuteFlowDefinition(
 	}
 
 	execErr := flowEngine.executeNodes(initialInputs, result, startTime)
+	flowEngine.finishFlow(result, startTime)
 	if execErr != nil {
-		flowEngine.observer.FlowFinished(FlowFinishedEvent{
-			FlowName:   flowEngine.flow.Name,
-			StartedAt:  startTime,
-			FinishedAt: time.Now(),
-			DurationMs: result.DurationMS,
-			Result:     result,
-		})
 		return result, execErr
 	}
-	flowEngine.observer.FlowFinished(FlowFinishedEvent{
-		FlowName:   flowEngine.flow.Name,
-		StartedAt:  startTime,
-		FinishedAt: time.Now(),
-		DurationMs: result.DurationMS,
-		Result:     result,
-	})
 
 	return result, nil
 }

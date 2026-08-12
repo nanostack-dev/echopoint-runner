@@ -353,15 +353,7 @@ func (engine *FlowEngine) runNode(
 		if n.GetRunWhen() == spi.RunWhenAlways {
 			state.skippedNodes[nodeID] = true
 			skipped := engine.createSkippedNodeResult(n, err, state)
-			engine.observer.NodeFinished(NodeFinishedEvent{
-				NodeID:      nodeID,
-				DisplayName: displayName,
-				NodeType:    nodeType,
-				StartedAt:   startedAt,
-				FinishedAt:  time.Now(),
-				DurationMs:  time.Since(startedAt).Milliseconds(),
-				Result:      skipped,
-			})
+			engine.finishNode(n, startedAt, time.Now(), skipped)
 			return skipped, nil
 		}
 		// Input validation failure is caused by the user's flow definition, not a
@@ -400,7 +392,6 @@ func (engine *FlowEngine) runNode(
 	if result != nil && !result.GetExecutedAt().IsZero() {
 		finishedAt = result.GetExecutedAt()
 	}
-	durationMs := finishedAt.Sub(startedAt).Milliseconds()
 
 	if err != nil {
 		// Log by error kind: a UserError is a user-caused outcome (their target
@@ -426,15 +417,7 @@ func (engine *FlowEngine) runNode(
 			Msg("Node executed successfully")
 	}
 
-	engine.observer.NodeFinished(NodeFinishedEvent{
-		NodeID:      nodeID,
-		DisplayName: displayName,
-		NodeType:    nodeType,
-		StartedAt:   startedAt,
-		FinishedAt:  finishedAt,
-		DurationMs:  durationMs,
-		Result:      result,
-	})
+	engine.finishNode(n, startedAt, finishedAt, result)
 
 	return result, err
 }
@@ -628,15 +611,7 @@ func (engine *FlowEngine) recordSkippedNode(
 	result := engine.createSkippedNodeResult(n, nil, state)
 	state.result.ExecutionResults[n.GetID()] = result
 	state.skippedNodes[n.GetID()] = true
-	engine.observer.NodeFinished(NodeFinishedEvent{
-		NodeID:      n.GetID(),
-		DisplayName: n.GetDisplayName(),
-		NodeType:    n.GetType(),
-		StartedAt:   startedAt,
-		FinishedAt:  time.Now(),
-		DurationMs:  0,
-		Result:      result,
-	})
+	engine.finishNode(n, startedAt, time.Now(), result)
 	if cascade {
 		engine.markNodeComplete(n, state)
 	}
