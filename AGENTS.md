@@ -8,3 +8,4 @@ Go execution engine for webhook events and logical flows, consumed in-process by
 - `echopoint` owns the accepted API/SSE contract; app/control-plane policy does not belong here.
 - Changing an exported progress/execution event shape breaks the consumer: update `echopoint/cmd/http/openapi.yaml` in the same session.
 - Optimize JSONPath paths only against a test or a measured need.
+- Avoid comments — name variables and functions clearly instead. Comment only a genuinely complex algorithm.
