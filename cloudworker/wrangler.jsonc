@@ -1,0 +1,50 @@
+{
+	"name": "echopoint-cloud-worker",
+	"main": "src/index.ts",
+	"compatibility_date": "2026-08-21",
+	"observability": {
+		"enabled": true,
+		"head_sampling_rate": 1
+	},
+	// The container counts must match max_instances below: they are how many
+	// containers of a tier the Worker will address.
+	"vars": {
+		"ECHOPOINT_API_BASE_URL": "",
+		"CLOUD_WORKER_LITE_CONTAINERS": "2",
+		"CLOUD_WORKER_STANDARD_CONTAINERS": "2"
+	},
+	// One class per size. instance_type belongs to the class, so a tier cannot
+	// be picked per instance or derived from a Durable Object name.
+	"containers": [
+		{
+			"class_name": "CloudWorkerLite",
+			"image": "../Dockerfile.cloudworker",
+			"instance_type": "lite",
+			"max_instances": 2
+		},
+		{
+			"class_name": "CloudWorkerStandard",
+			"image": "../Dockerfile.cloudworker",
+			"instance_type": "basic",
+			"max_instances": 2
+		}
+	],
+	"durable_objects": {
+		"bindings": [
+			{
+				"class_name": "CloudWorkerLite",
+				"name": "CLOUD_WORKER_LITE"
+			},
+			{
+				"class_name": "CloudWorkerStandard",
+				"name": "CLOUD_WORKER_STANDARD"
+			}
+		]
+	},
+	"migrations": [
+		{
+			"tag": "v1",
+			"new_sqlite_classes": ["CloudWorkerLite", "CloudWorkerStandard"]
+		}
+	]
+}

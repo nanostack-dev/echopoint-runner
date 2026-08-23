@@ -18,9 +18,10 @@ import (
 )
 
 const (
-	nextJobPath   = "/runner/jobs/next"
-	eventsPathFmt = "/runner/jobs/%s/events"
-	heartbeatPath = "/runner/jobs/heartbeat"
+	nextJobPath    = "/runner/jobs/next"
+	eventsPathFmt  = "/runner/jobs/%s/events"
+	heartbeatPath  = "/runner/jobs/heartbeat"
+	payloadPathFmt = "/runner/jobs/%s/payload"
 )
 
 var ErrNoJobAvailable = errors.New("no runner job available")
@@ -29,13 +30,18 @@ type Client struct {
 	baseURL        string
 	organizationID string
 	runnerAPIKey   string
+	jobToken       string
 	httpClient     *http.Client
 }
 
+// Config addresses the control plane with one machine credential. A Cloud
+// worker sets JobToken. A self-hosted runner sets OrganizationID and
+// RunnerAPIKey. The control plane rejects a request that carries both.
 type Config struct {
 	BaseURL        string
 	OrganizationID string
 	RunnerAPIKey   string
+	JobToken       string
 	RequestTimeout time.Duration
 }
 
@@ -146,10 +152,67 @@ func NewClient(config Config) *Client {
 		baseURL:        strings.TrimRight(config.BaseURL, "/"),
 		organizationID: config.OrganizationID,
 		runnerAPIKey:   config.RunnerAPIKey,
+		jobToken:       config.JobToken,
 		httpClient: &http.Client{
 			Timeout: config.RequestTimeout,
 		},
 	}
+}
+
+// authorize sends one machine credential. A job token identifies one Cloud job
+// and carries its own organization, so it travels alone.
+func (c *Client) authorize(req *http.Request) {
+	if c.jobToken != "" {
+		req.Header.Set("X-Job-Token", c.jobToken)
+		return
+	}
+	req.Header.Set("X-Api-Key", c.runnerAPIKey)
+	req.Header.Set("X-Organization-Id", c.organizationID)
+}
+
+// JobPayload is the runnable data a Cloud worker fetches after assign.
+type JobPayload struct {
+	JobID                uuid.UUID                      `json:"job_id"`
+	ExecutionID          uuid.UUID                      `json:"execution_id"`
+	FlowID               uuid.UUID                      `json:"flow_id"`
+	FlowSnapshot         json.RawMessage                `json:"flow_snapshot"`
+	RunnerInputs         map[string]any                 `json:"runner_inputs"`
+	ReferencedFlows      flowpkg.ReferencedFlowRegistry `json:"referenced_flows,omitempty"`
+	CloudDurationSeconds int                            `json:"cloud_duration_seconds"`
+}
+
+// GetJobPayload fetches the Cloud job payload with the job token.
+func (c *Client) GetJobPayload(ctx context.Context, jobID uuid.UUID) (*JobPayload, error) {
+	req, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodGet,
+		c.baseURL+fmt.Sprintf(payloadPathFmt, jobID),
+		nil,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("build request: %w", err)
+	}
+	c.authorize(req)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("perform request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		return nil, fmt.Errorf("read response body: %w", readErr)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, readAPIError(resp.StatusCode, body)
+	}
+
+	var payload JobPayload
+	if decodeErr := json.Unmarshal(body, &payload); decodeErr != nil {
+		return nil, fmt.Errorf("decode cloud job payload: %w", decodeErr)
+	}
+	return &payload, nil
 }
 
 func (c *Client) ClaimNext(ctx context.Context, request ClaimNextRequest) (*ClaimedJob, error) {
@@ -274,8 +337,7 @@ func (c *Client) postJSON(ctx context.Context, path string, payload any) (int, [
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Api-Key", c.runnerAPIKey)
-	req.Header.Set("X-Organization-Id", c.organizationID)
+	c.authorize(req)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {

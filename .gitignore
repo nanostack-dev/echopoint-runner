@@ -139,3 +139,9 @@ $RECYCLE.BIN/
 
 /backend/main
 dist/
+
+# Cloudflare Cloud worker local state
+cloudworker/node_modules/
+cloudworker/.wrangler/
+cloudworker/.dev.vars
+cloudworker/worker-configuration.d.ts
