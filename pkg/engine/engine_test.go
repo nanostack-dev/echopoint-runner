@@ -635,7 +635,7 @@ func TestFlowEngine_Execute_AlwaysCleanupChainContinuesAfterIntermediateSkip(t *
 	assert.Equal(t, "token-123", deleteProductResult.GetInputs()["step-login.accessToken"])
 }
 
-func TestFlowEngine_Execute_FrontierAlwaysCleanupRunsWhenInputsAvailable(t *testing.T) {
+func TestFlowEngine_Execute_BlockedAlwaysCleanupRunsWhenInputsAvailable(t *testing.T) {
 	// Mirrors the monitor-flow leak: create-product succeeds, a sibling test
 	// step fails and aborts the main phase, and the ONLY always node is the
 	// cleanup — blocked by aborted on_success predecessors, with its runtime
@@ -660,7 +660,7 @@ func TestFlowEngine_Execute_FrontierAlwaysCleanupRunsWhenInputsAvailable(t *test
 	cleanupProduct.runWhen = spi.RunWhenAlways
 
 	flowInstance := flow.Flow{
-		Name: "Frontier Always Cleanup With Available Inputs",
+		Name: "Blocked Always Cleanup With Available Inputs",
 		Nodes: []node.AnyNode{
 			createProduct,
 			failMidFlow,
@@ -684,7 +684,7 @@ func TestFlowEngine_Execute_FrontierAlwaysCleanupRunsWhenInputsAvailable(t *test
 	require.False(t, result.Success)
 
 	assert.Nil(t, verifyProduct.executedAt)
-	assert.NotNil(t, cleanupProduct.executedAt, "frontier always cleanup must run when its inputs exist")
+	assert.NotNil(t, cleanupProduct.executedAt, "blocked always cleanup must run when its inputs exist")
 
 	require.Contains(t, result.ExecutionResults, "step-cleanup-product")
 	cleanupResult := result.ExecutionResults["step-cleanup-product"]
@@ -692,7 +692,7 @@ func TestFlowEngine_Execute_FrontierAlwaysCleanupRunsWhenInputsAvailable(t *test
 	assert.Equal(t, "prod-123", cleanupResult.GetInputs()["step-create-product.productId"])
 }
 
-func TestFlowEngine_Execute_FrontierAlwaysCleanupSkipsWhenInputsMissing(t *testing.T) {
+func TestFlowEngine_Execute_BlockedAlwaysCleanupSkipsWhenInputsMissing(t *testing.T) {
 	// Counterpart: the cleanup references an output whose producer failed, so
 	// the input genuinely does not exist. The always phase must skip it rather
 	// than hard-fail input validation.
@@ -707,7 +707,7 @@ func TestFlowEngine_Execute_FrontierAlwaysCleanupSkipsWhenInputsMissing(t *testi
 	cleanupProduct.runWhen = spi.RunWhenAlways
 
 	flowInstance := flow.Flow{
-		Name: "Frontier Always Cleanup With Missing Inputs",
+		Name: "Blocked Always Cleanup With Missing Inputs",
 		Nodes: []node.AnyNode{
 			createProduct,
 			cleanupProduct,

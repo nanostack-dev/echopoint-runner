@@ -170,7 +170,7 @@ func (engine *FlowEngine) runAlwaysPhase(state *executionState) {
 	for {
 		ready := engine.readyNodes(state.remainingInputs, spi.RunWhenAlways)
 		if len(ready) == 0 {
-			if !engine.resolveFrontierAlwaysNodes(state) {
+			if !engine.resolveBlockedAlwaysNodes(state) {
 				return
 			}
 			continue
@@ -601,7 +601,7 @@ func (engine *FlowEngine) markNodeFailed(n node.AnyNode, state *executionState) 
 // skipBlockedOnSuccessNodes records a skipped result for every on_success node
 // that never ran after a main-phase failure (still present in remainingInputs).
 // It deliberately does NOT mark them complete: leaving them in remainingInputs
-// preserves the always-phase frontier logic, so downstream cleanup nodes whose
+// preserves the always-phase unblock logic, so downstream cleanup nodes whose
 // real upstream was skipped stay blocked (and get skipped) rather than running.
 func (engine *FlowEngine) skipBlockedOnSuccessNodes(state *executionState) {
 	for _, currentNode := range engine.flow.Nodes {
@@ -674,13 +674,14 @@ func (engine *FlowEngine) finalizeExecution(state *executionState) error {
 	return nil
 }
 
-// resolveFrontierAlwaysNodes handles cleanup nodes that are blocked only by nodes
-// from the already-aborted main phase. A frontier node whose required runtime
-// inputs all exist still RUNS — a cleanup step must not lose its turn just
-// because a sibling test step failed upstream. Only a frontier node genuinely
-// missing an input (its producer never ran) is skipped. Either outcome unblocks
-// later cleanup joins, such as delete_product after an earlier delete_* step.
-func (engine *FlowEngine) resolveFrontierAlwaysNodes(state *executionState) bool {
+// resolveBlockedAlwaysNodes handles always nodes that are stuck: every one of
+// their predecessors finished (ran, failed, or was skipped), yet the abort left
+// their edge count above zero, so readyNodes never offers them. A blocked node
+// whose required runtime inputs all exist still RUNS — a cleanup step must not
+// lose its turn just because a sibling test step failed upstream. Only a node
+// genuinely missing an input (its producer never ran) is skipped. Either outcome
+// unblocks later cleanup joins, such as delete_product after a delete_* step.
+func (engine *FlowEngine) resolveBlockedAlwaysNodes(state *executionState) bool {
 	outputView := node.NewOutputView(state.allOutputs)
 	toRun := make([]node.AnyNode, 0)
 	toSkip := make([]node.AnyNode, 0)
