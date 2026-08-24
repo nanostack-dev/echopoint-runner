@@ -170,7 +170,7 @@ func (engine *FlowEngine) runAlwaysPhase(state *executionState) {
 	for {
 		ready := engine.readyNodes(state.remainingInputs, spi.RunWhenAlways)
 		if len(ready) == 0 {
-			if !engine.skipFrontierAlwaysNodes(state) {
+			if !engine.resolveFrontierAlwaysNodes(state) {
 				return
 			}
 			continue
@@ -674,11 +674,15 @@ func (engine *FlowEngine) finalizeExecution(state *executionState) error {
 	return nil
 }
 
-// skipFrontierAlwaysNodes skips cleanup nodes that are blocked only by nodes from
-// the already-aborted main phase. Skipping those frontier nodes can unblock later
-// cleanup joins that still have all required runtime inputs, such as delete_product
-// after an earlier delete_* step was itself skipped.
-func (engine *FlowEngine) skipFrontierAlwaysNodes(state *executionState) bool {
+// resolveFrontierAlwaysNodes handles cleanup nodes that are blocked only by nodes
+// from the already-aborted main phase. A frontier node whose required runtime
+// inputs all exist still RUNS — a cleanup step must not lose its turn just
+// because a sibling test step failed upstream. Only a frontier node genuinely
+// missing an input (its producer never ran) is skipped. Either outcome unblocks
+// later cleanup joins, such as delete_product after an earlier delete_* step.
+func (engine *FlowEngine) resolveFrontierAlwaysNodes(state *executionState) bool {
+	outputView := node.NewOutputView(state.allOutputs)
+	toRun := make([]node.AnyNode, 0)
 	toSkip := make([]node.AnyNode, 0)
 	for _, currentNode := range engine.flow.Nodes {
 		if currentNode.GetRunWhen() != spi.RunWhenAlways {
@@ -690,15 +694,23 @@ func (engine *FlowEngine) skipFrontierAlwaysNodes(state *executionState) bool {
 		if engine.hasRemainingAlwaysPredecessor(currentNode, state) {
 			continue
 		}
-		toSkip = append(toSkip, currentNode)
+		if len(engine.collectMissingInputs(currentNode, outputView)) == 0 {
+			toRun = append(toRun, currentNode)
+		} else {
+			toSkip = append(toSkip, currentNode)
+		}
 	}
 
-	if len(toSkip) == 0 {
+	if len(toRun) == 0 && len(toSkip) == 0 {
 		return false
 	}
 
 	for _, currentNode := range toSkip {
 		engine.recordSkippedNode(currentNode, state, true)
+	}
+	if len(toRun) > 0 {
+		completed := engine.runReadyNodes(toRun, state)
+		engine.recordAlwaysResults(completed, state)
 	}
 
 	return true

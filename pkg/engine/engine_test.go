@@ -635,6 +635,105 @@ func TestFlowEngine_Execute_AlwaysCleanupChainContinuesAfterIntermediateSkip(t *
 	assert.Equal(t, "token-123", deleteProductResult.GetInputs()["step-login.accessToken"])
 }
 
+func TestFlowEngine_Execute_FrontierAlwaysCleanupRunsWhenInputsAvailable(t *testing.T) {
+	// Mirrors the monitor-flow leak: create-product succeeds, a sibling test
+	// step fails and aborts the main phase, and the ONLY always node is the
+	// cleanup — blocked by aborted on_success predecessors, with its runtime
+	// input (the product id) fully available. It must run, not be skipped.
+	createProduct := newDataContractMockNode("step-create-product", nil, []string{"productId"})
+	createProduct.outputs["productId"] = "prod-123"
+
+	failMidFlow := newDataContractMockNode("step-fail-mid-flow", []string{"step-create-product.productId"}, nil)
+	failMidFlow.shouldError = true
+
+	verifyProduct := newDataContractMockNode(
+		"step-verify-product",
+		[]string{"step-create-product.productId"},
+		nil,
+	)
+
+	cleanupProduct := newDataContractMockNode(
+		"step-cleanup-product",
+		[]string{"step-create-product.productId"},
+		nil,
+	)
+	cleanupProduct.runWhen = spi.RunWhenAlways
+
+	flowInstance := flow.Flow{
+		Name: "Frontier Always Cleanup With Available Inputs",
+		Nodes: []node.AnyNode{
+			createProduct,
+			failMidFlow,
+			verifyProduct,
+			cleanupProduct,
+		},
+		Edges: []edge.Edge{
+			{ID: "e1", Source: "step-create-product", Target: "step-fail-mid-flow", Type: edge.TypeSuccess},
+			{ID: "e2", Source: "step-create-product", Target: "step-verify-product", Type: edge.TypeSuccess},
+			{ID: "e3", Source: "step-fail-mid-flow", Target: "step-verify-product", Type: edge.TypeSuccess},
+			{ID: "e4", Source: "step-verify-product", Target: "step-cleanup-product", Type: edge.TypeSuccess},
+		},
+		Version: "1.0",
+	}
+
+	flowEngine, err := engine.NewFlowEngine(flowInstance, &engine.Options{})
+	require.NoError(t, err)
+
+	result, err := flowEngine.Execute(map[string]any{})
+	require.Error(t, err)
+	require.False(t, result.Success)
+
+	assert.Nil(t, verifyProduct.executedAt)
+	assert.NotNil(t, cleanupProduct.executedAt, "frontier always cleanup must run when its inputs exist")
+
+	require.Contains(t, result.ExecutionResults, "step-cleanup-product")
+	cleanupResult := result.ExecutionResults["step-cleanup-product"]
+	require.NoError(t, cleanupResult.GetError())
+	assert.Equal(t, "prod-123", cleanupResult.GetInputs()["step-create-product.productId"])
+}
+
+func TestFlowEngine_Execute_FrontierAlwaysCleanupSkipsWhenInputsMissing(t *testing.T) {
+	// Counterpart: the cleanup references an output whose producer failed, so
+	// the input genuinely does not exist. The always phase must skip it rather
+	// than hard-fail input validation.
+	createProduct := newDataContractMockNode("step-create-product", nil, []string{"productId"})
+	createProduct.shouldError = true
+
+	cleanupProduct := newDataContractMockNode(
+		"step-cleanup-product",
+		[]string{"step-create-product.productId"},
+		nil,
+	)
+	cleanupProduct.runWhen = spi.RunWhenAlways
+
+	flowInstance := flow.Flow{
+		Name: "Frontier Always Cleanup With Missing Inputs",
+		Nodes: []node.AnyNode{
+			createProduct,
+			cleanupProduct,
+		},
+		Edges: []edge.Edge{
+			{ID: "e1", Source: "step-create-product", Target: "step-cleanup-product", Type: edge.TypeSuccess},
+		},
+		Version: "1.0",
+	}
+
+	flowEngine, err := engine.NewFlowEngine(flowInstance, &engine.Options{})
+	require.NoError(t, err)
+
+	result, err := flowEngine.Execute(map[string]any{})
+	require.Error(t, err)
+	require.False(t, result.Success)
+
+	assert.Nil(t, cleanupProduct.executedAt)
+
+	require.Contains(t, result.ExecutionResults, "step-cleanup-product")
+	cleanupResult, ok := result.ExecutionResults["step-cleanup-product"].(*node.RequestExecutionResult)
+	require.True(t, ok)
+	require.NotNil(t, cleanupResult.SkipReason)
+	assert.Equal(t, []string{"step-create-product.productId"}, cleanupResult.MissingInputs)
+}
+
 func TestFlowEngine_Execute_AlwaysCleanupJoinRunsAfterUpstreamCleanupIsSkipped(t *testing.T) {
 	createProduct := newDataContractMockNode("step-create-product", nil, []string{"productId"})
 	createProduct.outputs["productId"] = "prod-123"
@@ -697,16 +796,17 @@ func TestFlowEngine_Execute_AlwaysCleanupJoinRunsAfterUpstreamCleanupIsSkipped(t
 	assert.NotNil(t, failMidFlow.executedAt)
 	assert.NotNil(t, prepareRoleSearch.executedAt)
 	assert.Nil(t, searchRoles.executedAt)
-	assert.Nil(t, deleteRole.executedAt)
+	// delete-role's only runtime input (the product id) exists, so the always
+	// phase runs it even though its on_success predecessor was aborted.
+	assert.NotNil(t, deleteRole.executedAt)
 	assert.NotNil(t, deleteProduct.executedAt)
 
 	require.Contains(t, result.ExecutionResults, "step-delete-role")
 	require.Contains(t, result.ExecutionResults, "step-delete-product")
 
-	deleteRoleResult, ok := result.ExecutionResults["step-delete-role"].(*node.RequestExecutionResult)
-	require.True(t, ok)
-	require.NotNil(t, deleteRoleResult.SkipReason)
-	assert.Equal(t, "aborted_after_failure", *deleteRoleResult.SkipReason)
+	deleteRoleResult := result.ExecutionResults["step-delete-role"]
+	require.NoError(t, deleteRoleResult.GetError())
+	assert.Equal(t, "prod-123", deleteRoleResult.GetInputs()["step-create-product.productId"])
 
 	deleteProductResult := result.ExecutionResults["step-delete-product"]
 	require.NoError(t, deleteProductResult.GetError())
