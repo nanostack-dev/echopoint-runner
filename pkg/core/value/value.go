@@ -20,8 +20,6 @@ import (
 var pathCache sync.Map // map[string]*jsonpath.Path
 
 // Value boxes one decoded-JSON value. The zero Value is absent (see IsZero).
-//
-//nolint:recvcheck // json.Unmarshaler forces one pointer receiver (UnmarshalJSON); every other method is a value receiver
 type Value struct{ raw any }
 
 // Of boxes an arbitrary Go value.

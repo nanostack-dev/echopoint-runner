@@ -73,7 +73,7 @@ func (r *Runtime) Run(ctx context.Context) error {
 	r.waitForWorkers()
 
 	heartbeatErr := <-heartbeatDone
-	if claimErr != nil && !errors.Is(claimErr, context.Canceled) {
+	if !errors.Is(claimErr, context.Canceled) {
 		return claimErr
 	}
 	if heartbeatErr != nil && !errors.Is(heartbeatErr, context.Canceled) {

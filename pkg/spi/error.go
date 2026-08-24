@@ -46,9 +46,5 @@ func (e *UserError) Unwrap() error {
 
 // AsUserError reports whether err is (or wraps) a UserError, returning it when so.
 func AsUserError(err error) (*UserError, bool) {
-	var target *UserError
-	if errors.As(err, &target) {
-		return target, true
-	}
-	return nil, false
+	return errors.AsType[*UserError](err)
 }
