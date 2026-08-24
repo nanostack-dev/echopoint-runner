@@ -55,8 +55,7 @@ func classifyRequestError(rawURL string, err error) *spi.UserError {
 		)
 	}
 
-	var netErr net.Error
-	if errors.As(err, &netErr) {
+	if _, ok := errors.AsType[net.Error](err); ok {
 		return spi.NewUserError(
 			"CONNECTION_FAILED",
 			fmt.Sprintf("Could not connect to %s", host),
@@ -73,8 +72,7 @@ func isTimeout(err error) bool {
 }
 
 func isTLSError(err error) bool {
-	var certErr *tls.CertificateVerificationError
-	if errors.As(err, &certErr) {
+	if _, ok := errors.AsType[*tls.CertificateVerificationError](err); ok {
 		return true
 	}
 	var recordErr tls.RecordHeaderError
