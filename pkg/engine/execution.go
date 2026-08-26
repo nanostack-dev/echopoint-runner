@@ -59,7 +59,7 @@ func (engine *FlowEngine) executeNodes(
 
 	log.Debug().
 		Str("flowName", engine.flow.Name).
-		Any("initialInputs", initialInputs).
+		Int("initialInputCount", len(initialInputs)).
 		Msg("Initialized flow execution with initial inputs")
 
 	maps.Copy(state.remainingInputs, engine.nodeEdgeInput)
@@ -384,7 +384,7 @@ func (engine *FlowEngine) runNode(
 		Str("flowName", engine.flow.Name).
 		Str("nodeID", nodeID).
 		Str("nodeType", string(nodeType)).
-		Any("inputs", inputs).
+		Int("inputCount", len(inputs)).
 		Msg("Assembled inputs for node")
 
 	engine.observer.NodeStarted(NodeStartedEvent{

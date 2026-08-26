@@ -75,7 +75,6 @@ func (n *RequestNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 
 	log.Debug().
 		Str("nodeID", n.GetID()).
-		Any("inputs", ctx.Inputs).
 		Msg("Starting request node execution")
 
 	if err := n.validateInputsPresent(ctx.Inputs); err != nil {

@@ -55,25 +55,12 @@ func (tr *TemplateResolver) resolveDynamic(varName string) (string, bool) {
 // Resolve recursively resolves all {{variableName}} templates in the given value
 // Supports strings, maps, slices, and nested structures.
 func (tr *TemplateResolver) Resolve(value any) (any, error) {
-	log.Debug().
-		Any("value", value).
-		Msg("Resolving template")
-
 	switch v := value.(type) {
 	case string:
 		if resolved, ok := tr.resolveRawVariable(v); ok {
-			log.Debug().
-				Str("original", v).
-				Any("resolved", resolved).
-				Msg("Raw variable template resolved")
 			return resolved, nil
 		}
-		resolved := tr.resolveString(v)
-		log.Debug().
-			Str("original", v).
-			Str("resolved", resolved).
-			Msg("String template resolved")
-		return resolved, nil
+		return tr.resolveString(v), nil
 	case map[string]any:
 		return tr.resolveMap(v)
 	case []any:

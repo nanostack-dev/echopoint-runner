@@ -39,11 +39,6 @@ func (n *RequestNode) prepareRequest(inputs map[string]any) (string, map[string]
 		return "", nil, nil, err
 	}
 
-	log.Debug().
-		Str("nodeID", n.GetID()).
-		Str("resolvedURL", url).
-		Msg("URL templates resolved successfully")
-
 	// Resolve headers
 	headers := make(map[string]string)
 	for k, v := range n.Data.Headers {
@@ -75,7 +70,6 @@ func (n *RequestNode) prepareRequest(inputs map[string]any) (string, map[string]
 	log.Debug().
 		Str("nodeID", n.GetID()).
 		Str("method", n.Data.Method).
-		Str("url", url).
 		Int("timeout", n.Data.Timeout).
 		Msg("Making HTTP request")
 
