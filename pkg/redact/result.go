@@ -7,9 +7,9 @@ import (
 )
 
 // maskedResult reports a node result whose every field is free of secret
-// values. It serializes as the original result's JSON with the secrets replaced,
-// which is why it needs no knowledge of the concrete result types and their
-// request/response fields.
+// values. It serializes as the original result's JSON tree with the secrets
+// replaced, which is why it needs no knowledge of the concrete result types and
+// their request/response fields.
 type maskedResult struct {
 	spi.BaseExecutionResult
 
@@ -26,22 +26,32 @@ func (r *Redactor) Result(result spi.AnyResult) spi.AnyResult {
 	if r == nil || result == nil {
 		return result
 	}
-	encoded, err := json.Marshal(result)
+	base := spi.BaseExecutionResult{
+		NodeID:      result.GetNodeID(),
+		DisplayName: result.GetDisplayName(),
+		NodeType:    result.GetNodeType(),
+		Inputs:      r.Map(result.GetInputs()),
+		Outputs:     r.Map(result.GetOutputs()),
+		Error:       r.Error(result.GetError()),
+		ExecutedAt:  result.GetExecutedAt(),
+	}
+	return &maskedResult{BaseExecutionResult: base, encoded: r.encodeMasked(result, base)}
+}
+
+// encodeMasked serializes the masked form of result. Any failure falls back to
+// the masked base fields alone: losing the node-kind detail is the closed side
+// of this seam, reporting the unmasked original is not.
+func (r *Redactor) encodeMasked(result spi.AnyResult, base spi.BaseExecutionResult) json.RawMessage {
+	if tree, err := jsonTree(result); err == nil {
+		if encoded, marshalErr := json.Marshal(r.mask(tree)); marshalErr == nil {
+			return encoded
+		}
+	}
+	fallback, err := json.Marshal(base)
 	if err != nil {
-		return result
+		return json.RawMessage(`{}`)
 	}
-	return &maskedResult{
-		BaseExecutionResult: spi.BaseExecutionResult{
-			NodeID:      result.GetNodeID(),
-			DisplayName: result.GetDisplayName(),
-			NodeType:    result.GetNodeType(),
-			Inputs:      r.Map(result.GetInputs()),
-			Outputs:     r.Map(result.GetOutputs()),
-			Error:       r.Error(result.GetError()),
-			ExecutedAt:  result.GetExecutedAt(),
-		},
-		encoded: json.RawMessage(r.Text(string(encoded))),
-	}
+	return fallback
 }
 
 // FlowResult returns a masked copy of the flow result and of every node result

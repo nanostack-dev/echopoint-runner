@@ -1,18 +1,24 @@
 package runner_test
 
 import (
+	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/nanostack-dev/echopoint-runner/pkg/engine"
+	"github.com/nanostack-dev/echopoint-runner/pkg/extractors"
 	"github.com/nanostack-dev/echopoint-runner/pkg/flow"
 	"github.com/nanostack-dev/echopoint-runner/pkg/node"
 	"github.com/nanostack-dev/echopoint-runner/pkg/redact"
 	"github.com/nanostack-dev/echopoint-runner/pkg/runner"
 	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 )
 
 const secretValue = "sk-live-must-never-be-reported"
@@ -38,9 +44,13 @@ func (o *recordingObserver) FlowFinished(evt engine.FlowFinishedEvent) {
 // back: the URL query, a header, and the body. The server reflects it into a
 // response header too.
 func secretFlow(baseURL string) flow.Flow {
+	return secretFlowWith(baseURL, secretValue)
+}
+
+func secretFlowWith(baseURL, secret string) flow.Flow {
 	return flow.NewBuilder("secret").
 		Input("baseURL", baseURL).
-		Input("apiToken", secretValue).
+		Input("apiToken", secret).
 		Add(node.NewRequest("call").
 			POST("{{baseURL}}/resource?token={{apiToken}}").
 			Header("Authorization", "Bearer {{apiToken}}").
@@ -144,4 +154,239 @@ func TestRun_ReportsValuesWhenNoInputIsSecret(t *testing.T) {
 	if encoded := encodeJSON(t, result); !strings.Contains(encoded, secretValue) {
 		t.Errorf("value should be reported when it is not declared secret: %s", encoded)
 	}
+}
+
+// escapedSecret holds every character json.Marshal escapes, so a scan of the
+// encoded bytes cannot find it.
+const escapedSecret = `p@ss&w"rd<x>\y`
+
+// (a) A server that echoes the token into its response body. The raw body is
+// reported as base64 (RequestExecutionResult.ResponseBody is []byte), where a
+// plaintext scan is blind.
+func TestRun_MasksTheSecretEchoedInTheResponseBody(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"echoed": r.URL.Query().Get("token")})
+	}))
+	t.Cleanup(server.Close)
+
+	observer := &recordingObserver{}
+	if _, err := runner.Run(secretFlow(server.URL), nil,
+		runner.WithObserver(observer),
+		runner.WithSecretInputKeys([]string{"apiToken"}),
+	); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+
+	if leaks(t, observer.nodeResults[0], secretValue) {
+		t.Errorf("node result leaked the echoed secret: %s", encodeJSON(t, observer.nodeResults[0]))
+	}
+}
+
+// (b) A secret holding the characters json.Marshal escapes.
+func TestRun_MasksASecretThatJSONEscapes(t *testing.T) {
+	server := echoServer(t)
+	observer := &recordingObserver{}
+
+	result, err := runner.Run(secretFlowWith(server.URL, escapedSecret), nil,
+		runner.WithObserver(observer),
+		runner.WithSecretInputKeys([]string{"apiToken"}),
+	)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+
+	for name, value := range map[string]any{
+		"flow result":         result,
+		"node.finished event": observer.nodeResults,
+	} {
+		if leaks(t, value, escapedSecret) {
+			t.Errorf("%s leaked the escaped secret: %s", name, encodeJSON(t, value))
+		}
+	}
+}
+
+// (c) Logs are never redacted — the redactor runs on results, not on log lines —
+// so no producer may echo a resolved value at any level.
+func TestRun_NoLogLineCarriesTheSecret(t *testing.T) {
+	logs := captureLogs(t)
+
+	// A successful chain (the value flows through inputs, an extracted output and
+	// a downstream header) and a transport failure (the error chain carries the
+	// resolved URL) between them touch every producer that echoed a value.
+	server, _ := chainServer(t)
+	if _, err := runner.Run(chainedSecretFlow(t, server.URL), nil,
+		runner.WithSecretInputKeys([]string{"apiToken"}),
+	); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if _, err := runner.Run(secretFlow("http://127.0.0.1:1"), nil,
+		runner.WithSecretInputKeys([]string{"apiToken"}),
+	); err == nil {
+		t.Fatal("the failing flow should error")
+	}
+
+	for line := range strings.SplitSeq(strings.TrimSpace(logs.String()), "\n") {
+		if strings.Contains(line, secretValue) {
+			t.Errorf("log line carries the secret: %s", line)
+		}
+	}
+}
+
+// (d) A transport failure against a URL carrying the secret. The wire
+// error_message is what echopoint stores and shows.
+func TestRun_MasksTheSecretInTheReportedErrorMessage(t *testing.T) {
+	// Port 1 is never listening, so the request fails during connect.
+	result, err := runner.Run(secretFlowWith("http://127.0.0.1:1", escapedSecret), nil,
+		runner.WithSecretInputKeys([]string{"apiToken"}),
+	)
+	if err == nil {
+		t.Fatal("the flow should fail")
+	}
+	if strings.Contains(err.Error(), escapedSecret) {
+		t.Errorf("returned error leaked the secret: %v", err)
+	}
+	if result.ErrorMsg != nil && strings.Contains(*result.ErrorMsg, escapedSecret) {
+		t.Errorf("wire error_message leaked the secret: %s", *result.ErrorMsg)
+	}
+	if leaks(t, result, escapedSecret) {
+		t.Errorf("failed flow result leaked the secret: %s", encodeJSON(t, result))
+	}
+}
+
+// (e) Masking is applied to a copy at the reporting boundary: a downstream node
+// consuming a secret-derived output still receives the real value.
+func TestRun_MasksACopySoDownstreamNodesKeepTheRealValue(t *testing.T) {
+	server, authorization := chainServer(t)
+
+	observer := &recordingObserver{}
+	result, err := runner.Run(chainedSecretFlow(t, server.URL), nil,
+		runner.WithObserver(observer),
+		runner.WithSecretInputKeys([]string{"apiToken"}),
+	)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("flow should succeed, error=%v", result.Error)
+	}
+
+	if got := authorization(); got != "Bearer "+secretValue {
+		t.Errorf("the second node must receive the real value, got %q", got)
+	}
+	for name, value := range map[string]any{
+		"flow result":          result,
+		"flow.finished event":  observer.flowResult,
+		"node.finished events": observer.nodeResults,
+	} {
+		if leaks(t, value, secretValue) {
+			t.Errorf("%s leaked the secret-derived output: %s", name, encodeJSON(t, value))
+		}
+	}
+}
+
+// chainServer issues the token back on /issue and records the Authorization
+// header it is presented with on /use.
+func chainServer(t *testing.T) (*httptest.Server, func() string) {
+	t.Helper()
+	var mu sync.Mutex
+	var authorization string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/issue" {
+			_ = json.NewEncoder(w).Encode(map[string]any{"token": r.URL.Query().Get("token")})
+			return
+		}
+		mu.Lock()
+		authorization = r.Header.Get("Authorization")
+		mu.Unlock()
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
+	}))
+	t.Cleanup(server.Close)
+	return server, func() string {
+		mu.Lock()
+		defer mu.Unlock()
+		return authorization
+	}
+}
+
+// chainedSecretFlow extracts the secret out of the first node's response and
+// feeds it to the second node's Authorization header.
+func chainedSecretFlow(t *testing.T, baseURL string) flow.Flow {
+	t.Helper()
+	return flow.NewBuilder("chained").
+		Input("baseURL", baseURL).
+		Input("apiToken", secretValue).
+		Add(node.NewRequest("issue").
+			GET("{{baseURL}}/issue?token={{apiToken}}").
+			Output(jsonPathOutput(t, "token", "$.token"))).
+		Add(node.NewRequest("use").
+			GET("{{baseURL}}/use").
+			Header("Authorization", "Bearer {{issue.token}}")).
+		Edge("issue", "use").
+		Build()
+}
+
+// leaks reports whether secret survives anywhere in the JSON value reports on
+// the wire. The search runs on the decoded tree, and decodes base64 leaves:
+// scanning the encoded text would miss a secret json.Marshal escaped, and a
+// secret a server echoed into the base64 response_body, which is exactly how
+// the first redactor missed both.
+func leaks(t *testing.T, value any, secret string) bool {
+	t.Helper()
+	var tree any
+	if err := json.Unmarshal([]byte(encodeJSON(t, value)), &tree); err != nil {
+		t.Fatalf("a reported value must stay valid JSON: %v", err)
+	}
+	return treeLeaks(tree, secret)
+}
+
+func treeLeaks(v any, secret string) bool {
+	switch value := v.(type) {
+	case string:
+		if strings.Contains(value, secret) {
+			return true
+		}
+		decoded, err := base64.StdEncoding.DecodeString(value)
+		return err == nil && strings.Contains(string(decoded), secret)
+	case []any:
+		for _, item := range value {
+			if treeLeaks(item, secret) {
+				return true
+			}
+		}
+	case map[string]any:
+		for key, item := range value {
+			if strings.Contains(key, secret) || treeLeaks(item, secret) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func jsonPathOutput(t *testing.T, name, path string) node.Output {
+	t.Helper()
+	extractor, err := extractors.UnmarshalExtractor([]byte(`{"type":"jsonPath","path":"` + path + `"}`))
+	if err != nil {
+		t.Fatalf("extractor: %v", err)
+	}
+	return node.Output{Name: name, Extractor: extractor}
+}
+
+// captureLogs redirects the global logger into a buffer at trace level, so a
+// leak at any level is visible, and restores it when the test ends.
+func captureLogs(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	buffer := &bytes.Buffer{}
+	previousLogger, previousLevel := log.Logger, zerolog.GlobalLevel()
+	//nolint:reassign // capturing the global logger is the point of this helper
+	log.Logger = zerolog.New(zerolog.SyncWriter(buffer))
+	zerolog.SetGlobalLevel(zerolog.TraceLevel)
+	t.Cleanup(func() {
+		//nolint:reassign // restores what the helper replaced
+		log.Logger = previousLogger
+		zerolog.SetGlobalLevel(previousLevel)
+	})
+	return buffer
 }
