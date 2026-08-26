@@ -154,15 +154,7 @@ func (n *PollNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 			Inputs:         childInputs,
 		})
 		if err != nil {
-			pollErr := fmt.Errorf("poll body failed on attempt %d: %w", attempt, err)
-			log.Error().
-				Str("nodeID", n.GetID()).
-				Int("attempt", attempt).
-				Err(pollErr).
-				Msg("Poll body execution failed")
-			return n.errorResult(
-				ctx.Inputs, pollErr, "POLL_BODY_FAILED", attempt, lastAssertionResults, startTime,
-			), pollErr
+			return n.bodyFailure(ctx.Inputs, err, attempt, lastAssertionResults, startTime)
 		}
 
 		rc := extractors.NewValueResponseContext(res.FinalOutputs)
@@ -203,6 +195,28 @@ func (n *PollNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 	return n.errorResult(
 		ctx.Inputs, notMetErr, "POLL_CONDITION_NOT_MET", maxAttempts, lastAssertionResults, startTime,
 	), notMetErr
+}
+
+// bodyFailure reports a poll attempt whose body flow failed. The child error's
+// cause carries the resolved URL, so the log line takes the stable code and the
+// authored message only — logs are never redacted.
+func (n *PollNode) bodyFailure(
+	inputs map[string]any,
+	err error,
+	attempt int,
+	assertionResults []spi.AssertionResult,
+	startTime time.Time,
+) (spi.AnyResult, error) {
+	pollErr := fmt.Errorf("poll body failed on attempt %d: %w", attempt, err)
+	log.Error().
+		Str("nodeID", n.GetID()).
+		Int("attempt", attempt).
+		Str("errorCode", spi.ErrorCode(err)).
+		Str("error", spi.SafeErrorMessage(err)).
+		Msg("Poll body execution failed")
+	return n.errorResult(
+		inputs, pollErr, "POLL_BODY_FAILED", attempt, assertionResults, startTime,
+	), pollErr
 }
 
 // successResult builds the result for a poll attempt that met its exit condition.

@@ -101,3 +101,20 @@ func TestClassifyRequestError_MessageDropsTheQueryString(t *testing.T) {
 		}
 	}
 }
+
+// A URL the parser cannot split into a host — a relative target, or one holding
+// a control character — falls back to the raw string, which must still be cut at
+// the query.
+func TestClassifyRequestError_UnparseableURLStillDropsTheQueryString(t *testing.T) {
+	const secret = "sk-live-1"
+
+	for _, target := range []string{
+		"/v1/login?token=" + secret,
+		"http://\x7f/v1/login?token=" + secret,
+	} {
+		got := node.ClassifyRequestErrorForTest(target, errors.New("boom"))
+		if strings.Contains(got.Message, secret) {
+			t.Fatalf("message leaked the query of %q: %q", target, got.Message)
+		}
+	}
+}

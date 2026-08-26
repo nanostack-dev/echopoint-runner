@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"strings"
 	"syscall"
 
 	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
@@ -75,7 +76,8 @@ func requestHost(rawURL string) string {
 	if u, err := url.Parse(rawURL); err == nil && u.Host != "" {
 		return u.Host
 	}
-	return rawURL
+	unparseable, _, _ := strings.Cut(rawURL, "?")
+	return unparseable
 }
 
 func isTimeout(err error) bool {

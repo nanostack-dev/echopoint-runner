@@ -225,6 +225,19 @@ func TestRun_NoLogLineCarriesTheSecret(t *testing.T) {
 	); err == nil {
 		t.Fatal("the failing flow should error")
 	}
+	// The two container nodes report a child-flow failure themselves, outside
+	// the engine's node-failure line, and the child error chain carries the
+	// resolved URL.
+	if _, err := runner.Run(unreachablePollFlow(t), nil,
+		runner.WithSecretInputKeys([]string{"apiToken"}),
+	); err == nil {
+		t.Fatal("the failing poll flow should error")
+	}
+	if _, err := runner.Run(unreachableLoopFlow(t), nil,
+		runner.WithSecretInputKeys([]string{"apiToken"}),
+	); err != nil {
+		t.Fatalf("continue_on_error should absorb the iteration failure: %v", err)
+	}
 
 	for line := range strings.SplitSeq(strings.TrimSpace(logs.String()), "\n") {
 		if strings.Contains(line, secretValue) {
@@ -283,6 +296,38 @@ func TestRun_MasksACopySoDownstreamNodesKeepTheRealValue(t *testing.T) {
 			t.Errorf("%s leaked the secret-derived output: %s", name, encodeJSON(t, value))
 		}
 	}
+}
+
+// unreachableBody is an inline body flow whose only request targets a port
+// nothing listens on, with the secret in the query string — so the child flow
+// always fails and its error chain carries the resolved URL.
+const unreachableBody = `{"name":"body","nodes":[{"id":"probe","type":"request",` +
+	`"data":{"method":"GET","url":"http://127.0.0.1:1/status?token={{apiToken}}"}}],"edges":[]}`
+
+func unreachablePollFlow(t *testing.T) flow.Flow {
+	t.Helper()
+	return secretContainerFlow(t, "poll", `{"id":"poll","type":"poll","assertions":[`+
+		`{"extractor_type":"jsonPath","extractor_data":{"path":"$.status"},`+
+		`"operator_type":"equals","operator_data":{"value":"done"}}],`+
+		`"data":{"body":`+unreachableBody+`,"max_attempts":1,"interval_ms":1}}`)
+}
+
+func unreachableLoopFlow(t *testing.T) flow.Flow {
+	t.Helper()
+	return secretContainerFlow(t, "loop", `{"id":"loop","type":"loop","assertions":[],`+
+		`"data":{"items":[1],"body":`+unreachableBody+`,"continue_on_error":true}}`)
+}
+
+func secretContainerFlow(t *testing.T, name, rawNode string) flow.Flow {
+	t.Helper()
+	containerNode, err := node.UnmarshalNode([]byte(rawNode))
+	if err != nil {
+		t.Fatalf("unmarshal %s node: %v", name, err)
+	}
+	return flow.NewBuilder(name).
+		Input("apiToken", secretValue).
+		Add(containerNode).
+		Build()
 }
 
 // chainServer issues the token back on /issue and records the Authorization

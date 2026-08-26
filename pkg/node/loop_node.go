@@ -171,7 +171,8 @@ func (n *LoopNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 				log.Warn().
 					Str("nodeID", n.GetID()).
 					Int("index", i).
-					Err(iterErr).
+					Str("errorCode", spi.ErrorCode(iterErr)).
+					Str("error", spi.SafeErrorMessage(iterErr)).
 					Msg("Loop iteration failed; continuing")
 				results = append(results, map[string]any{"index": i, "error": iterErr.Error()})
 				continue
