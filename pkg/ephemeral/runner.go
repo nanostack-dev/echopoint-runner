@@ -41,6 +41,7 @@ func Run(pkg *Package) Result {
 	execResult, execErr := runner.Run(*flowDef, pkg.Inputs,
 		runner.WithReferencedFlows(pkg.ReferencedFlows),
 		runner.WithDynamicVars(dynamicvars.New(pkg.ExecutionID)),
+		runner.WithSecretInputKeys(pkg.SecretInputKeys),
 	)
 
 	completedAt := time.Now().UTC()
