@@ -164,21 +164,39 @@ const escapedSecret = `p@ss&w"rd<x>\y`
 // reported as base64 (RequestExecutionResult.ResponseBody is []byte), where a
 // plaintext scan is blind.
 func TestRun_MasksTheSecretEchoedInTheResponseBody(t *testing.T) {
+	assertEchoedSecretIsMasked(t, secretValue)
+}
+
+// (a2) Both blind spots at once: a server echoing an escapable secret into its
+// own JSON response. The reported response_body decodes to that JSON, where the
+// server's encoder has escaped the secret — so it has no literal form there
+// either.
+func TestRun_MasksAnEscapableSecretEchoedInTheResponseBody(t *testing.T) {
+	assertEchoedSecretIsMasked(t, escapedSecret)
+}
+
+func assertEchoedSecretIsMasked(t *testing.T, secret string) {
+	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{"echoed": r.URL.Query().Get("token")})
+		// The header, not the query: a secret holding & is cut in two by the query
+		// parser, so only the header carries it back whole.
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"echoed":        r.URL.Query().Get("token"),
+			"authorization": r.Header.Get("Authorization"),
+		})
 	}))
 	t.Cleanup(server.Close)
 
 	observer := &recordingObserver{}
-	if _, err := runner.Run(secretFlow(server.URL), nil,
+	if _, err := runner.Run(secretFlowWith(server.URL, secret), nil,
 		runner.WithObserver(observer),
 		runner.WithSecretInputKeys([]string{"apiToken"}),
 	); err != nil {
 		t.Fatalf("run: %v", err)
 	}
 
-	if leaks(t, observer.nodeResults[0], secretValue) {
+	if leaks(t, observer.nodeResults[0], secret) {
 		t.Errorf("node result leaked the echoed secret: %s", encodeJSON(t, observer.nodeResults[0]))
 	}
 }
@@ -377,13 +395,42 @@ func chainedSecretFlow(t *testing.T, baseURL string) flow.Flow {
 // scanning the encoded text would miss a secret json.Marshal escaped, and a
 // secret a server echoed into the base64 response_body, which is exactly how
 // the first redactor missed both.
+//
+// Every escaped form is searched for too. A decoded response_body is text the
+// target server produced: a secret it echoed into its own JSON response sits
+// there escaped by its encoder, so a scan for the plain form alone is blind —
+// the same blindness the redactor had.
 func leaks(t *testing.T, value any, secret string) bool {
 	t.Helper()
 	var tree any
 	if err := json.Unmarshal([]byte(encodeJSON(t, value)), &tree); err != nil {
 		t.Fatalf("a reported value must stay valid JSON: %v", err)
 	}
-	return treeLeaks(tree, secret)
+	for _, form := range append([]string{secret}, jsonForms(t, secret)...) {
+		if treeLeaks(tree, form) {
+			return true
+		}
+	}
+	return false
+}
+
+// jsonForms returns how secret is written inside JSON text: json.Marshal
+// escapes &, < and > as \u00XX, an encoder with SetEscapeHTML(false) leaves
+// them alone, and both escape " and \.
+func jsonForms(t *testing.T, secret string) []string {
+	t.Helper()
+	forms := make([]string, 0, 2)
+	for _, escapeHTML := range []bool{true, false} {
+		var buffer bytes.Buffer
+		encoder := json.NewEncoder(&buffer)
+		encoder.SetEscapeHTML(escapeHTML)
+		if err := encoder.Encode(secret); err != nil {
+			t.Fatalf("encode secret: %v", err)
+		}
+		quoted := strings.TrimRight(buffer.String(), "\n")
+		forms = append(forms, quoted[1:len(quoted)-1])
+	}
+	return forms
 }
 
 func treeLeaks(v any, secret string) bool {

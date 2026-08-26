@@ -146,6 +146,73 @@ func TestValue_MasksTheBase64ResponseBody(t *testing.T) {
 	}
 }
 
+// Not every response_body is base64 of anything. A value that merely fits the
+// base64 alphabet at a length base64 accepts decodes to bytes the secret is
+// absent from, so the encoded string itself has to be scanned too.
+func TestValue_MasksASecretInAResponseBodyThatOnlyLooksLikeBase64(t *testing.T) {
+	const secret = "absklive12cd" // base64 alphabet, length divisible by 4
+	redactor := redact.New(map[string]any{"token": secret}, []string{"token"})
+
+	masked, ok := redactor.Value(map[string]any{"response_body": secret}).(map[string]any)
+	if !ok {
+		t.Fatal("expected a map back")
+	}
+	if masked["response_body"] != redact.Mask {
+		t.Errorf("plain text in response_body shipped unmasked: %v", masked["response_body"])
+	}
+}
+
+// A body a server produced carries an echoed secret escaped by its encoder, so
+// it has no literal form in those bytes — the same reason Value masks a tree.
+func TestValue_MasksAnEscapedSecretInsideTheBase64ResponseBody(t *testing.T) {
+	const secret = `p@ss&w"rd<x>\y`
+	redactor := redact.New(map[string]any{"token": secret}, []string{"token"})
+
+	echoed, err := json.Marshal(map[string]any{"echoed": secret})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	body := base64.StdEncoding.EncodeToString(echoed)
+	masked, ok := redactor.Value(map[string]any{"response_body": body}).(map[string]any)
+	if !ok {
+		t.Fatal("expected a map back")
+	}
+
+	decoded, err := base64.StdEncoding.DecodeString(masked["response_body"].(string))
+	if err != nil {
+		t.Fatalf("response_body must stay decodable: %v", err)
+	}
+	var reported map[string]any
+	if unmarshalErr := json.Unmarshal(decoded, &reported); unmarshalErr != nil {
+		t.Fatalf("the masked body must stay valid JSON, got %s: %v", decoded, unmarshalErr)
+	}
+	if reported["echoed"] != redact.Mask {
+		t.Errorf("the echoed secret survived: %s", decoded)
+	}
+}
+
+// A body that is not JSON is scanned as text, against the escaped forms too: an
+// event stream carries JSON fragments no whole-body parse accepts.
+func TestValue_MasksAnEscapedSecretInANonJSONResponseBody(t *testing.T) {
+	const secret = `p@ss&w"rd<x>\y`
+	redactor := redact.New(map[string]any{"token": secret}, []string{"token"})
+
+	stream := "data: " + `{"token":"p@ss&w\"rd<x>\\y"}` + "\n\ndata: [DONE]\n\n"
+	body := base64.StdEncoding.EncodeToString([]byte(stream))
+	masked, ok := redactor.Value(map[string]any{"response_body": body}).(map[string]any)
+	if !ok {
+		t.Fatal("expected a map back")
+	}
+
+	decoded, err := base64.StdEncoding.DecodeString(masked["response_body"].(string))
+	if err != nil {
+		t.Fatalf("response_body must stay decodable: %v", err)
+	}
+	if strings.Contains(string(decoded), `p@ss&w\"rd<x>\\y`) {
+		t.Errorf("the escaped secret survived in the stream: %s", decoded)
+	}
+}
+
 // A security seam fails closed: a value the redactor cannot inspect is replaced,
 // never reported as it was.
 func TestValue_FailsClosedOnAnUninspectableValue(t *testing.T) {
