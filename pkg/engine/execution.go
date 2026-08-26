@@ -415,14 +415,15 @@ func (engine *FlowEngine) runNode(
 			Str("flowName", engine.flow.Name).
 			Str("nodeID", nodeID).
 			Str("nodeType", string(nodeType)).
-			Err(err).
+			Str("errorCode", spi.ErrorCode(err)).
+			Str("error", spi.SafeErrorMessage(err)).
 			Msg("Node execution failed")
 	} else {
 		log.Info().
 			Str("flowName", engine.flow.Name).
 			Str("nodeID", nodeID).
 			Str("nodeType", string(nodeType)).
-			Any("outputs", result.GetOutputs()).
+			Int("outputCount", len(result.GetOutputs())).
 			Msg("Node executed successfully")
 	}
 

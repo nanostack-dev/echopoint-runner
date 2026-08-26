@@ -44,6 +44,32 @@ func (e *UserError) Unwrap() error {
 	return e.Cause
 }
 
+// SafeErrorMessage returns the part of err that may be written to a log line.
+//
+// For a UserError that is its authored Message alone. The Cause is dropped: for
+// a request or SSE failure it is the raw Go transport error, which embeds the
+// full target URL — query string, and therefore any secret carried in it,
+// included. Logs are not redacted, so the cause never reaches them; it stays on
+// the error for errors.Is/errors.As, and the failure is reported to the user
+// through the (redacted) node result instead.
+func SafeErrorMessage(err error) string {
+	if err == nil {
+		return ""
+	}
+	if userErr, ok := AsUserError(err); ok {
+		return userErr.Message
+	}
+	return err.Error()
+}
+
+// ErrorCode returns a UserError's stable code, or "" for a runner fault.
+func ErrorCode(err error) string {
+	if userErr, ok := AsUserError(err); ok {
+		return userErr.Code
+	}
+	return ""
+}
+
 // AsUserError reports whether err is (or wraps) a UserError, returning it when so.
 func AsUserError(err error) (*UserError, bool) {
 	var target *UserError

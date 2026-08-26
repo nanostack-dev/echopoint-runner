@@ -77,7 +77,7 @@ func (n *AssertNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 
 	log.Debug().
 		Str("nodeID", n.GetID()).
-		Any("inputs", ctx.Inputs).
+		Int("inputCount", len(ctx.Inputs)).
 		Msg("Starting assert node execution")
 
 	target := n.resolveTarget(ctx)

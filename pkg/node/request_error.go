@@ -20,12 +20,14 @@ import (
 // raw Go error (e.g. `Post "https://...": dial tcp: lookup host: no such host`)
 // is replaced with something actionable and the failure is classified as a
 // UserError. Anything the classifier doesn't recognize falls back to a generic
-// REQUEST_FAILED carrying the original message.
+// REQUEST_FAILED naming the host.
+//
+// Every branch authors its own message from the host, never from the raw error:
+// the raw error carries the full URL, query string included, and a UserError's
+// Message is what both the node result and the failure log line report. The raw
+// error stays available as the Cause.
 func classifyRequestError(rawURL string, err error) *spi.UserError {
-	host := rawURL
-	if u, perr := url.Parse(rawURL); perr == nil && u.Host != "" {
-		host = u.Host
-	}
+	host := requestHost(rawURL)
 
 	var dnsErr *net.DNSError
 	switch {
@@ -64,7 +66,16 @@ func classifyRequestError(rawURL string, err error) *spi.UserError {
 		)
 	}
 
-	return spi.NewUserError("REQUEST_FAILED", err.Error(), err)
+	return spi.NewUserError("REQUEST_FAILED", fmt.Sprintf("Request to %s failed", host), err)
+}
+
+// requestHost is the part of a target URL that is safe to name in a message:
+// the query string, where a secret is most often carried, is left out.
+func requestHost(rawURL string) string {
+	if u, err := url.Parse(rawURL); err == nil && u.Host != "" {
+		return u.Host
+	}
+	return rawURL
 }
 
 func isTimeout(err error) bool {

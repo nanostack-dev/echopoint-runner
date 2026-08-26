@@ -86,7 +86,7 @@ func (n *ModuleNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 	log.Debug().
 		Str("nodeID", n.GetID()).
 		Str("flowID", flowID).
-		Any("moduleInputs", moduleInputs).
+		Int("moduleInputCount", len(moduleInputs)).
 		Msg("Starting module node execution")
 
 	childInputs := make(map[string]any, len(ctx.FlowInputs)+len(resolvedFlow.InputOverrides)+len(moduleInputs))

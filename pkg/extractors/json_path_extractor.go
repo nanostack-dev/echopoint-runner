@@ -82,7 +82,6 @@ func (e JSONPathExtractor) Extract(ctx ResponseContext) (any, error) {
 	if len(nodes) == 1 {
 		log.Debug().
 			Str("path", e.Path).
-			Any("value", nodes[0]).
 			Msg("JSONPath extraction succeeded with single result")
 		return nodes[0], nil
 	}
