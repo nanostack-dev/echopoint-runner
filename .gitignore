@@ -139,3 +139,6 @@ $RECYCLE.BIN/
 
 /backend/main
 dist/
+
+# Agent worktrees, created by git worktree add
+worktrees/
