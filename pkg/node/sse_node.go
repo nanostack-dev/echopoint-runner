@@ -141,7 +141,7 @@ func (n *SseNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 
 	log.Debug().
 		Str("nodeID", n.GetID()).
-		Any("inputs", ctx.Inputs).
+		Int("inputCount", len(ctx.Inputs)).
 		Msg("Starting SSE node execution")
 
 	method := strings.ToUpper(strings.TrimSpace(n.Data.Method))
@@ -160,7 +160,9 @@ func (n *SseNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 
 	req, err := http.NewRequestWithContext(streamCtx, method, url, nil)
 	if err != nil {
-		wrapped := fmt.Errorf("failed to build SSE request: %w", err)
+		wrapped := spi.NewUserError(
+			"SSE_FAILED", fmt.Sprintf("Could not build the SSE request for %s", requestHost(url)), err,
+		)
 		return n.createErrorResult(ctx.Inputs, method, url, nil, nil, "", wrapped, startTime), wrapped
 	}
 	req.Header.Set("Accept", "text/event-stream")
@@ -182,7 +184,7 @@ func (n *SseNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 			result := n.createSuccessResult(ctx.Inputs, method, url, nil, nil, sseStopTimeout, startTime)
 			return result, nil
 		}
-		wrapped := fmt.Errorf("SSE connection failed: %w", err)
+		wrapped := classifyRequestError(url, err)
 		return n.createErrorResult(ctx.Inputs, method, url, nil, nil, "", wrapped, startTime), wrapped
 	}
 	defer resp.Body.Close()
@@ -495,9 +497,9 @@ func (n *SseNode) createErrorResult(
 	}
 	event.
 		Str("nodeID", n.GetID()).
-		Str("url", url).
 		Int("eventCount", len(events)).
-		Err(err).
+		Str("errorCode", errCode).
+		Str("error", spi.SafeErrorMessage(err)).
 		Msg("SSE node execution failed")
 
 	return &SseExecutionResult{

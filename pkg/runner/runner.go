@@ -12,6 +12,7 @@ import (
 
 	"github.com/nanostack-dev/echopoint-runner/pkg/engine"
 	"github.com/nanostack-dev/echopoint-runner/pkg/flow"
+	"github.com/nanostack-dev/echopoint-runner/pkg/redact"
 	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 )
 
@@ -24,6 +25,7 @@ type Options struct {
 	ModuleCallStack []string
 	Ctx             context.Context
 	Middleware      []engine.Middleware
+	SecretInputKeys []string
 }
 
 // Option mutates Options.
@@ -64,24 +66,63 @@ func WithMiddleware(middleware ...engine.Middleware) Option {
 	return func(o *Options) { o.Middleware = append(o.Middleware, middleware...) }
 }
 
+// WithSecretInputKeys names the inputs whose values are secret. Their values are
+// masked in every result and progress event the run reports.
+func WithSecretInputKeys(keys []string) Option {
+	return func(o *Options) { o.SecretInputKeys = keys }
+}
+
 // Run executes flowDef. It overlays inputs on the flow's declared InitialInputs
 // (inputs win), resolves referenced flows into the module resolver, and runs the
 // engine. The returned result is the single source of truth; callers serialize
 // it as their transport requires.
+//
+// Run is also the boundary where secret input values are masked: everything the
+// engine hands back — the flow result and every progress event — passes through
+// the redactor before any caller sees it.
 func Run(flowDef flow.Flow, inputs map[string]any, opts ...Option) (*spi.FlowExecutionResult, error) {
 	options := Options{Observer: engine.NoopObserver{}}
 	for _, opt := range opts {
 		opt(&options)
 	}
 
-	return engine.ExecuteFlowDefinition(flowDef, MergeInputs(flowDef.InitialInputs, inputs), &engine.Options{
-		Observer:        options.Observer,
+	mergedInputs := MergeInputs(flowDef.InitialInputs, inputs)
+	redactor := redact.New(mergedInputs, options.SecretInputKeys)
+
+	result, err := engine.ExecuteFlowDefinition(flowDef, mergedInputs, &engine.Options{
+		Observer:        redactingObserver{inner: options.Observer, redactor: redactor},
 		ModuleResolver:  ModuleResolver(options.ReferencedFlows),
 		ModuleCallStack: options.ModuleCallStack,
 		DynamicVars:     options.DynamicVars,
 		Ctx:             options.Ctx,
 		Middleware:      options.Middleware,
 	})
+	return redactor.FlowResult(result), redactor.Error(err)
+}
+
+// redactingObserver masks secret values in the results carried by progress
+// events, which leave the runner before Run returns.
+type redactingObserver struct {
+	inner    engine.ExecutionObserver
+	redactor *redact.Redactor
+}
+
+func (o redactingObserver) FlowStarted(evt engine.FlowStartedEvent) {
+	o.inner.FlowStarted(evt)
+}
+
+func (o redactingObserver) NodeStarted(evt engine.NodeStartedEvent) {
+	o.inner.NodeStarted(evt)
+}
+
+func (o redactingObserver) NodeFinished(evt engine.NodeFinishedEvent) {
+	evt.Result = o.redactor.Result(evt.Result)
+	o.inner.NodeFinished(evt)
+}
+
+func (o redactingObserver) FlowFinished(evt engine.FlowFinishedEvent) {
+	evt.Result = o.redactor.FlowResult(evt.Result)
+	o.inner.FlowFinished(evt)
 }
 
 // MergeInputs overlays override onto base, returning a new map. base values fill

@@ -170,6 +170,7 @@ func (r *Runtime) executeClaimedJob(active *activeJob) {
 		runner.WithObserver(reporter),
 		runner.WithReferencedFlows(active.job.ReferencedFlows),
 		runner.WithDynamicVars(dynamicvars.New(active.job.ExecutionID.String())),
+		runner.WithSecretInputKeys(active.job.SecretInputKeys),
 	)
 	if execErr != nil {
 		errorMsg := execErr.Error()

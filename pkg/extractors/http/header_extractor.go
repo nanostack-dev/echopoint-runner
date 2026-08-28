@@ -28,7 +28,6 @@ func (e HeaderExtractor) Extract(ctx extractors.ResponseContext) (any, error) {
 			log.Debug().
 				Str("extractorType", string(spi.ExtractorTypeHeader)).
 				Str("headerName", e.HeaderName).
-				Str("value", value).
 				Msg("Header extracted successfully")
 			return value, nil
 		}

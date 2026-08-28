@@ -52,6 +52,7 @@ type ClaimedJob struct {
 	LeaseExpiresAt  time.Time                      `json:"lease_expires_at"`
 	FlowDefinition  json.RawMessage                `json:"flow_definition"`
 	Inputs          map[string]any                 `json:"inputs"`
+	SecretInputKeys []string                       `json:"secret_input_keys,omitempty"`
 	ReferencedFlows flowpkg.ReferencedFlowRegistry `json:"referenced_flows,omitempty"`
 }
 
@@ -64,6 +65,7 @@ func (j *ClaimedJob) UnmarshalJSON(data []byte) error {
 		FlowDefinition  json.RawMessage                `json:"flow_definition"`
 		Inputs          map[string]any                 `json:"inputs"`
 		Environment     map[string]string              `json:"environment"`
+		SecretInputKeys []string                       `json:"secret_input_keys,omitempty"`
 		ReferencedFlows flowpkg.ReferencedFlowRegistry `json:"referenced_flows,omitempty"`
 	}
 
@@ -86,6 +88,7 @@ func (j *ClaimedJob) UnmarshalJSON(data []byte) error {
 	j.LeaseExpiresAt = raw.LeaseExpiresAt
 	j.FlowDefinition = raw.FlowDefinition
 	j.Inputs = inputs
+	j.SecretInputKeys = raw.SecretInputKeys
 	j.ReferencedFlows = raw.ReferencedFlows
 	return nil
 }

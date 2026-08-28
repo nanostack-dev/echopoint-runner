@@ -3,6 +3,7 @@ package node_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"net/url"
 	"strings"
@@ -41,10 +42,13 @@ func TestClassifyRequestError(t *testing.T) {
 			wantMsg:  "Request to anchorapidev.nanostack.dev timed out",
 		},
 		{
-			name:     "unknown falls back to raw message",
+			// The fallback names the host too: the raw error carries the full URL,
+			// query string included, and the message reaches log lines that are
+			// never redacted.
+			name:     "unknown falls back to the host",
 			err:      errors.New("boom"),
 			wantCode: "REQUEST_FAILED",
-			wantMsg:  "boom",
+			wantMsg:  "Request to anchorapidev.nanostack.dev failed",
 		},
 	}
 
@@ -76,6 +80,41 @@ func TestClassifyRequestErrorRawIsNotLeakedForKnownKinds(t *testing.T) {
 	for _, frag := range []string{"dial tcp", "lookup", `Post "`} {
 		if strings.Contains(got.Message, frag) {
 			t.Fatalf("message should be clean of %q, got %q", frag, got.Message)
+		}
+	}
+}
+
+// The message reaches the failure log line, which is never redacted, so it must
+// name the host only — never the query string a secret is usually carried in.
+func TestClassifyRequestError_MessageDropsTheQueryString(t *testing.T) {
+	const secret = "sk-live-1"
+	target := "https://x.example/v1/login?token=" + secret
+
+	for _, cause := range []error{
+		// The raw Go transport error repeats the URL it was given.
+		fmt.Errorf("Post %q: boom", target),
+		&url.Error{Op: "Post", URL: target, Err: errors.New("boom")},
+	} {
+		got := node.ClassifyRequestErrorForTest(target, cause)
+		if strings.Contains(got.Message, secret) {
+			t.Fatalf("message leaked the query: %q", got.Message)
+		}
+	}
+}
+
+// A URL the parser cannot split into a host — a relative target, or one holding
+// a control character — falls back to the raw string, which must still be cut at
+// the query.
+func TestClassifyRequestError_UnparseableURLStillDropsTheQueryString(t *testing.T) {
+	const secret = "sk-live-1"
+
+	for _, target := range []string{
+		"/v1/login?token=" + secret,
+		"http://\x7f/v1/login?token=" + secret,
+	} {
+		got := node.ClassifyRequestErrorForTest(target, errors.New("boom"))
+		if strings.Contains(got.Message, secret) {
+			t.Fatalf("message leaked the query of %q: %q", target, got.Message)
 		}
 	}
 }
