@@ -228,21 +228,15 @@ func (n *PollNode) successResult(
 	startedAt time.Time,
 ) *PollExecutionResult {
 	result := &PollExecutionResult{
-		BaseExecutionResult: spi.BaseExecutionResult{
-			NodeID:      n.GetID(),
-			DisplayName: n.GetDisplayName(),
-			NodeType:    spi.KindPoll,
-			Inputs:      inputs,
-			Outputs: map[string]any{
-				"attempts": attempt,
-				"result":   cloneMap(finalOutputs),
-			},
-			AssertionResults: assertionResults,
-			ExecutedAt:       time.Now(),
-		},
+		BaseExecutionResult: n.baseResult(spi.KindPoll, inputs, map[string]any{
+			"attempts": attempt,
+			"result":   cloneMap(finalOutputs),
+		}),
 		Attempts:   attempt,
 		DurationMs: time.Since(startedAt).Milliseconds(),
 	}
+	result.AssertionResults = assertionResults
+
 	log.Info().
 		Str("nodeID", n.GetID()).
 		Int("attempts", attempt).
@@ -268,24 +262,14 @@ func (n *PollNode) errorResult(
 	assertionResults []spi.AssertionResult,
 	startedAt time.Time,
 ) spi.AnyResult {
-	errMsg := err.Error()
-	errCode := code
-	return &PollExecutionResult{
-		BaseExecutionResult: spi.BaseExecutionResult{
-			NodeID:           n.GetID(),
-			DisplayName:      n.GetDisplayName(),
-			NodeType:         spi.KindPoll,
-			Inputs:           inputs,
-			Outputs:          nil,
-			Error:            err,
-			ErrorMsg:         &errMsg,
-			ErrorCode:        &errCode,
-			AssertionResults: assertionResults,
-			ExecutedAt:       time.Now(),
-		},
-		Attempts:   attempts,
-		DurationMs: time.Since(startedAt).Milliseconds(),
+	result := &PollExecutionResult{
+		BaseExecutionResult: n.failedBaseResult(spi.KindPoll, inputs, err, code),
+		Attempts:            attempts,
+		DurationMs:          time.Since(startedAt).Milliseconds(),
 	}
+	result.AssertionResults = assertionResults
+
+	return result
 }
 
 // sleepCtx waits for d, aborting early (and returning the context error) if the

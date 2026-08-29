@@ -83,15 +83,9 @@ func (n *AssertNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 	target := n.resolveTarget(ctx)
 
 	result := &AssertExecutionResult{
-		BaseExecutionResult: spi.BaseExecutionResult{
-			NodeID:      n.GetID(),
-			DisplayName: n.GetDisplayName(),
-			NodeType:    spi.KindAssert,
-			Inputs:      ctx.Inputs,
-			ExecutedAt:  time.Now(),
-		},
-		assertionCtx: extractors.NewValueResponseContext(target),
-		DurationMs:   time.Since(startTime).Milliseconds(),
+		BaseExecutionResult: n.baseResult(spi.KindAssert, ctx.Inputs, nil),
+		assertionCtx:        extractors.NewValueResponseContext(target),
+		DurationMs:          time.Since(startTime).Milliseconds(),
 	}
 
 	log.Debug().
