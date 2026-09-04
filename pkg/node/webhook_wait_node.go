@@ -248,13 +248,6 @@ func lookupFlowInput(ctx spi.ExecutionContext, key string) string {
 			}
 		}
 	}
-	if ctx.Inputs != nil {
-		if value, ok := ctx.Inputs[key]; ok {
-			if text, isText := value.(string); isText {
-				return text
-			}
-		}
-	}
 	return ""
 }
 
