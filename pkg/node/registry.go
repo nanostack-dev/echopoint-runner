@@ -176,4 +176,17 @@ func registerFlowNodeKinds() {
 			return &SseExecutionResult{BaseExecutionResult: base}
 		},
 	)
+	RegisterNodeKind(spi.KindWebhookWait,
+		func(data []byte) (AnyNode, error) {
+			var n WebhookWaitNode
+			if err := json.Unmarshal(data, &n); err != nil {
+				return nil, err
+			}
+			applyRunWhenDefault(&n.BaseNode)
+			return &n, nil
+		},
+		func(base spi.BaseExecutionResult) spi.AnyResult {
+			return &WebhookWaitExecutionResult{BaseExecutionResult: base}
+		},
+	)
 }
