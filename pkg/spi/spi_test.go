@@ -13,6 +13,7 @@ func TestWireValues(t *testing.T) {
 		string(spi.KindRequest):           "request",
 		string(spi.KindDelay):             "delay",
 		string(spi.KindModule):            "module",
+		string(spi.KindWebhookWait):       "webhook_wait",
 		string(spi.RunWhenOnSuccess):      "on_success",
 		string(spi.RunWhenAlways):         "always",
 		string(spi.ExtractorTypeJSONPath): "jsonPath",

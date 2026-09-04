@@ -44,6 +44,10 @@ func PrepareRequestForTest(
 	return n.prepareRequest(inputs)
 }
 
+func WebhookWaitTimeoutMsForTest(n *WebhookWaitNode) int {
+	return n.timeoutMs()
+}
+
 func CreateResponseBackedErrorResultForTest(
 	n *RequestNode,
 	inputs map[string]any,

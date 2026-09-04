@@ -208,3 +208,11 @@ type SseExecutionResult struct {
 	// Timing
 	DurationMs int64 `json:"duration_ms"`
 }
+
+// WebhookWaitExecutionResult stores webhook-wait node execution data. The node
+// polls this execution's mailbox until a stored request passes its assertions.
+type WebhookWaitExecutionResult struct {
+	spi.BaseExecutionResult
+
+	DurationMs int64 `json:"duration_ms"`
+}
