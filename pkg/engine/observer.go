@@ -4,6 +4,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nanostack-dev/echopoint-runner/pkg/node"
 	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 )
 
@@ -42,6 +43,42 @@ type ExecutionObserver interface {
 	NodeStarted(evt NodeStartedEvent)
 	NodeFinished(evt NodeFinishedEvent)
 	FlowFinished(evt FlowFinishedEvent)
+}
+
+// finishNode notifies the observer that n reached a terminal state. Every way a
+// node can finish — executed, failed, or skipped without running — reports the
+// same identity fields, so they are read off the node here rather than at each
+// call site.
+//
+// DurationMs is derived from the span the caller passes rather than measured
+// separately: the two cannot then disagree about how long the node took.
+func (engine *FlowEngine) finishNode(
+	n node.AnyNode,
+	startedAt, finishedAt time.Time,
+	result spi.AnyResult,
+) {
+	engine.observer.NodeFinished(NodeFinishedEvent{
+		NodeID:      n.GetID(),
+		DisplayName: n.GetDisplayName(),
+		NodeType:    n.GetType(),
+		StartedAt:   startedAt,
+		FinishedAt:  finishedAt,
+		DurationMs:  finishedAt.Sub(startedAt).Milliseconds(),
+		Result:      result,
+	})
+}
+
+// finishFlow notifies the observer that the run is over, whatever the outcome.
+// It reads the duration off the result, which every exit path has already
+// stamped, so the event cannot report a different number than the result does.
+func (engine *FlowEngine) finishFlow(result *spi.FlowExecutionResult, startedAt time.Time) {
+	engine.observer.FlowFinished(FlowFinishedEvent{
+		FlowName:   engine.flow.Name,
+		StartedAt:  startedAt,
+		FinishedAt: time.Now(),
+		DurationMs: result.DurationMS,
+		Result:     result,
+	})
 }
 
 type NoopObserver struct{}
