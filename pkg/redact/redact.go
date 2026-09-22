@@ -34,17 +34,32 @@ type Redactor struct {
 	bodyForms []string
 }
 
+// Source identifies secret-bearing values by key. Callers may provide one
+// source for root inputs and additional sources for referenced-flow overrides.
+type Source struct {
+	Inputs     map[string]any
+	SecretKeys []string
+}
+
 // New returns a Redactor for the values of the inputs named by secretKeys, or
 // nil when none of them holds a non-empty value.
 func New(inputs map[string]any, secretKeys []string) *Redactor {
-	secrets := make([]string, 0, len(secretKeys))
-	for _, key := range secretKeys {
-		value, present := inputs[key]
-		if !present || value == nil {
-			continue
-		}
-		if text := fmt.Sprintf("%v", value); text != "" {
-			secrets = append(secrets, text)
+	return NewFromSources(Source{Inputs: inputs, SecretKeys: secretKeys})
+}
+
+// NewFromSources returns one Redactor for secret values drawn from multiple
+// independent input maps. Duplicate values are kept only once.
+func NewFromSources(sources ...Source) *Redactor {
+	var secrets []string
+	for _, source := range sources {
+		for _, key := range source.SecretKeys {
+			value, present := source.Inputs[key]
+			if !present || value == nil {
+				continue
+			}
+			if text := fmt.Sprintf("%v", value); text != "" && !slices.Contains(secrets, text) {
+				secrets = append(secrets, text)
+			}
 		}
 	}
 	if len(secrets) == 0 {

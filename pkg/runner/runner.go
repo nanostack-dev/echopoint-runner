@@ -87,7 +87,7 @@ func Run(flowDef flow.Flow, inputs map[string]any, opts ...Option) (*spi.FlowExe
 	}
 
 	mergedInputs := MergeInputs(flowDef.InitialInputs, inputs)
-	redactor := redact.New(mergedInputs, options.SecretInputKeys)
+	redactor := runtimeRedactor(mergedInputs, options.SecretInputKeys, options.ReferencedFlows)
 
 	result, err := engine.ExecuteFlowDefinition(flowDef, mergedInputs, &engine.Options{
 		Observer:        redactingObserver{inner: options.Observer, redactor: redactor},
@@ -98,6 +98,22 @@ func Run(flowDef flow.Flow, inputs map[string]any, opts ...Option) (*spi.FlowExe
 		Middleware:      options.Middleware,
 	})
 	return redactor.FlowResult(result), redactor.Error(err)
+}
+
+func runtimeRedactor(
+	inputs map[string]any,
+	secretInputKeys []string,
+	referencedFlows flow.ReferencedFlowRegistry,
+) *redact.Redactor {
+	sources := make([]redact.Source, 0, len(referencedFlows)+1)
+	sources = append(sources, redact.Source{Inputs: inputs, SecretKeys: secretInputKeys})
+	for _, referencedFlow := range referencedFlows {
+		sources = append(sources, redact.Source{
+			Inputs:     referencedFlow.InputOverrides,
+			SecretKeys: referencedFlow.SecretInputKeys,
+		})
+	}
+	return redact.NewFromSources(sources...)
 }
 
 // redactingObserver masks secret values in the results carried by progress

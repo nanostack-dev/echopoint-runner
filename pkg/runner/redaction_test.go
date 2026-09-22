@@ -109,6 +109,42 @@ func TestRun_MasksSecretInputValuesInResultsAndEvents(t *testing.T) {
 	}
 }
 
+func TestRun_MasksReferencedFlowSecretInputValues(t *testing.T) {
+	parent, err := flow.ParseFromJSONWithOptions([]byte(`{
+		"name":"parent",
+		"nodes":[{"id":"module","type":"module","data":{"flow_id":"child"}}],
+		"edges":[]
+	}`), flow.ParseOptions{})
+	if err != nil {
+		t.Fatalf("parse parent: %v", err)
+	}
+
+	child := json.RawMessage(`{
+		"name":"child",
+		"nodes":[{"id":"emit","type":"set_variable","data":{"variables":{"token":"{{apiToken}}"}}}],
+		"edges":[]
+	}`)
+	refs := flow.ReferencedFlowRegistry{
+		"child": {
+			FlowDefinition:  child,
+			InputOverrides:  map[string]any{"apiToken": secretValue},
+			SecretInputKeys: []string{"apiToken"},
+		},
+	}
+
+	result, err := runner.Run(*parent, nil, runner.WithReferencedFlows(refs))
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	encoded := encodeJSON(t, result)
+	if strings.Contains(encoded, secretValue) {
+		t.Errorf("referenced-flow secret leaked: %s", encoded)
+	}
+	if !strings.Contains(encoded, redact.Mask) {
+		t.Errorf("referenced-flow secret should be masked: %s", encoded)
+	}
+}
+
 // The masked node result must still report the node identity, timing and
 // outcome the control plane keys progress events on.
 func TestRun_MaskedNodeResultKeepsNonSecretFields(t *testing.T) {

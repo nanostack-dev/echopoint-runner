@@ -8,8 +8,9 @@ import (
 // ReferencedFlow contains the extra flow definitions the runner can execute from
 // module nodes without calling back into the control plane at runtime.
 type ReferencedFlow struct {
-	FlowDefinition json.RawMessage `json:"flow_definition"`
-	InputOverrides map[string]any  `json:"input_overrides,omitempty"`
+	FlowDefinition  json.RawMessage `json:"flow_definition"`
+	InputOverrides  map[string]any  `json:"input_overrides,omitempty"`
+	SecretInputKeys []string        `json:"secret_input_keys,omitempty"`
 }
 
 // ReferencedFlowRegistry stores module targets by flow ID.
@@ -17,9 +18,10 @@ type ReferencedFlowRegistry map[string]ReferencedFlow
 
 func (r *ReferencedFlow) UnmarshalJSON(data []byte) error {
 	type referencedFlowAlias struct {
-		FlowDefinition json.RawMessage   `json:"flow_definition"`
-		InputOverrides map[string]any    `json:"input_overrides,omitempty"`
-		Environment    map[string]string `json:"environment,omitempty"`
+		FlowDefinition  json.RawMessage   `json:"flow_definition"`
+		InputOverrides  map[string]any    `json:"input_overrides,omitempty"`
+		SecretInputKeys []string          `json:"secret_input_keys,omitempty"`
+		Environment     map[string]string `json:"environment,omitempty"`
 	}
 
 	var raw referencedFlowAlias
@@ -37,5 +39,6 @@ func (r *ReferencedFlow) UnmarshalJSON(data []byte) error {
 
 	r.FlowDefinition = raw.FlowDefinition
 	r.InputOverrides = inputOverrides
+	r.SecretInputKeys = raw.SecretInputKeys
 	return nil
 }
