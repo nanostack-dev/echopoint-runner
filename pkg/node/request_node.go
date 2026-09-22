@@ -149,24 +149,17 @@ func (n *RequestNode) createSuccessResult(
 	startTime time.Time,
 ) *RequestExecutionResult {
 	return &RequestExecutionResult{
-		BaseExecutionResult: spi.BaseExecutionResult{
-			NodeID:      n.GetID(),
-			DisplayName: n.GetDisplayName(),
-			NodeType:    spi.KindRequest,
-			Inputs:      inputs,
-			Outputs:     map[string]any{},
-			ExecutedAt:  time.Now(),
-		},
-		RequestMethod:      n.Data.Method,
-		RequestURL:         url,
-		RequestHeaders:     headers,
-		RequestBody:        body,
-		ResponseStatusCode: resp.StatusCode,
-		ResponseHeaders:    resp.Header,
-		ResponseBody:       respBody,
-		ResponseBodyParsed: parsedBody,
-		assertionCtx:       respCtx,
-		DurationMs:         time.Since(startTime).Milliseconds(),
+		BaseExecutionResult: n.baseResult(spi.KindRequest, inputs, map[string]any{}),
+		RequestMethod:       n.Data.Method,
+		RequestURL:          url,
+		RequestHeaders:      headers,
+		RequestBody:         body,
+		ResponseStatusCode:  resp.StatusCode,
+		ResponseHeaders:     resp.Header,
+		ResponseBody:        respBody,
+		ResponseBodyParsed:  parsedBody,
+		assertionCtx:        respCtx,
+		DurationMs:          time.Since(startTime).Milliseconds(),
 	}
 }
 
@@ -176,28 +169,15 @@ func (n *RequestNode) createErrorResult(
 	err error,
 	duration time.Duration,
 ) spi.AnyResult {
-	errMsg := err.Error()
-	errCode := "REQUEST_FAILED"
-	// A classified UserError carries a clean, user-facing message and a stable
-	// code; surface those instead of the raw Go error string.
-	if userErr, ok := spi.AsUserError(err); ok {
-		errMsg = userErr.Message
-		errCode = userErr.Code
-	}
+	base := n.baseResult(spi.KindRequest, inputs, nil)
+	// Fail, unlike failedBaseResult, prefers a classified spi.UserError's clean
+	// user-facing message and stable code over the raw Go error string. The
+	// request node is the one kind that wants that substitution.
+	base.Fail(err, "REQUEST_FAILED")
 
 	return &RequestExecutionResult{
-		BaseExecutionResult: spi.BaseExecutionResult{
-			NodeID:      n.GetID(),
-			DisplayName: n.GetDisplayName(),
-			NodeType:    spi.KindRequest,
-			Inputs:      inputs,
-			Outputs:     nil,
-			Error:       err,
-			ErrorMsg:    &errMsg,
-			ErrorCode:   &errCode,
-			ExecutedAt:  time.Now(),
-		},
-		DurationMs: duration.Milliseconds(),
+		BaseExecutionResult: base,
+		DurationMs:          duration.Milliseconds(),
 	}
 }
 

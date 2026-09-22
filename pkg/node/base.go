@@ -1,6 +1,8 @@
 package node
 
 import (
+	"time"
+
 	"github.com/nanostack-dev/echopoint-runner/pkg/extractors"
 	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 )
@@ -70,4 +72,48 @@ func (bn *BaseNode) GetAssertions() []CompositeAssertion {
 // Outputs should be evaluated after assertions pass.
 func (bn *BaseNode) GetOutputs() []Output {
 	return bn.Outputs
+}
+
+// baseResult builds the envelope every node result carries: which node ran, of
+// what kind, over which inputs, producing which outputs, and when. Concrete node
+// types embed the returned value and add only their own fields.
+//
+// kind is passed rather than read from bn.NodeType because the field is
+// populated from the wire and a node built in code may leave it empty; each node
+// type knows its own kind statically.
+func (bn *BaseNode) baseResult(kind spi.Kind, inputs, outputs map[string]any) spi.BaseExecutionResult {
+	return spi.BaseExecutionResult{
+		NodeID:      bn.GetID(),
+		DisplayName: bn.GetDisplayName(),
+		NodeType:    kind,
+		Inputs:      inputs,
+		Outputs:     outputs,
+		ExecutedAt:  time.Now(),
+	}
+}
+
+// failedBaseResult is baseResult for a node that failed: no outputs, plus the
+// failure recorded the three ways the result contract wants it — the live Go
+// error for errors.Is/As, and the message/code pointers echopoint reads as
+// error_message/error_code.
+//
+// It deliberately does NOT classify: the message is always err.Error() and the
+// code is always the one passed in. That preserves each node kind's published
+// contract — the SSE node, for one, documents that its code stays SSE_FAILED
+// even when the failure is a spi.UserError. Reach for
+// spi.BaseExecutionResult.Fail instead where a UserError's own message and code
+// should win, as the request node and the engine's assertion pass do.
+func (bn *BaseNode) failedBaseResult(
+	kind spi.Kind,
+	inputs map[string]any,
+	err error,
+	code string,
+) spi.BaseExecutionResult {
+	message := err.Error()
+
+	result := bn.baseResult(kind, inputs, nil)
+	result.Error = err
+	result.ErrorMsg = &message
+	result.ErrorCode = &code
+	return result
 }

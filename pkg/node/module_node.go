@@ -109,17 +109,10 @@ func (n *ModuleNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 	}
 
 	return &ModuleExecutionResult{
-		BaseExecutionResult: spi.BaseExecutionResult{
-			NodeID:      n.GetID(),
-			DisplayName: n.GetDisplayName(),
-			NodeType:    spi.KindModule,
-			Inputs:      ctx.Inputs,
-			Outputs:     exportedOutputs,
-			ExecutedAt:  time.Now(),
-		},
-		FlowID:            flowID,
-		ChildFinalOutputs: cloneMap(result.FinalOutputs),
-		DurationMs:        time.Since(startTime).Milliseconds(),
+		BaseExecutionResult: n.baseResult(spi.KindModule, ctx.Inputs, exportedOutputs),
+		FlowID:              flowID,
+		ChildFinalOutputs:   cloneMap(result.FinalOutputs),
+		DurationMs:          time.Since(startTime).Milliseconds(),
 	}, nil
 }
 
@@ -168,28 +161,16 @@ func (n *ModuleNode) createErrorResult(
 	startedAt time.Time,
 	childResult *spi.FlowExecutionResult,
 ) spi.AnyResult {
-	errMsg := err.Error()
-	errCode := "MODULE_FAILED"
 	childOutputs := map[string]any{}
 	if childResult != nil {
 		childOutputs = cloneMap(childResult.FinalOutputs)
 	}
 
 	return &ModuleExecutionResult{
-		BaseExecutionResult: spi.BaseExecutionResult{
-			NodeID:      n.GetID(),
-			DisplayName: n.GetDisplayName(),
-			NodeType:    spi.KindModule,
-			Inputs:      inputs,
-			Outputs:     nil,
-			Error:       err,
-			ErrorMsg:    &errMsg,
-			ErrorCode:   &errCode,
-			ExecutedAt:  time.Now(),
-		},
-		FlowID:            flowID,
-		ChildFinalOutputs: childOutputs,
-		DurationMs:        time.Since(startedAt).Milliseconds(),
+		BaseExecutionResult: n.failedBaseResult(spi.KindModule, inputs, err, "MODULE_FAILED"),
+		FlowID:              flowID,
+		ChildFinalOutputs:   childOutputs,
+		DurationMs:          time.Since(startedAt).Milliseconds(),
 	}
 }
 
