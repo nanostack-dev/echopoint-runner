@@ -184,3 +184,37 @@ func TestWebhookWaitNode_TimeoutWithoutMatch(t *testing.T) {
 		t.Errorf("code=%s", spi.ErrorCode(err))
 	}
 }
+
+func TestWebhookWaitNode_AssertsOnARequestHeader(t *testing.T) {
+	raw := []byte(`{"id":"wait-1","display_name":"Wait for webhook","type":"webhook_wait",` +
+		`"assertions":[{"extractor_type":"header","extractor_data":{"headerName":"x-github-event"},` +
+		`"operator_type":"equals","operator_data":{"value":"push"}}],"data":{"timeout_ms":2000}}`)
+	wait := decodeWebhookWait(t, raw)
+
+	ping := capturedRequest("req-1", `{"zen":"ping"}`)
+	ping["headers"] = map[string]string{"X-Github-Event": "ping"}
+	push := capturedRequest("req-2", `{"ref":"refs/heads/main"}`)
+	push["headers"] = map[string]string{"X-Github-Event": "push"}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(webhookRequestsJSON(ping, push))
+	}))
+	defer srv.Close()
+
+	res, err := wait.Execute(spi.ExecutionContext{
+		FlowInputs: map[string]any{
+			"webhook.requests_url": srv.URL,
+			"webhook.read_token":   "tok",
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected success, got %v", err)
+	}
+	waitRes, ok := spi.As[*node.WebhookWaitExecutionResult](res)
+	if !ok {
+		t.Fatalf("got %T", res)
+	}
+	if waitRes.Outputs["id"] != "req-2" {
+		t.Errorf("expected the push delivery req-2, got %v", waitRes.Outputs["id"])
+	}
+}

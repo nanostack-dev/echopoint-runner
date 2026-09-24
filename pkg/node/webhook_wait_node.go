@@ -19,6 +19,7 @@ const (
 	webhookWaitPollInterval     = 250 * time.Millisecond
 	webhookRequestsURLInputKey  = "webhook.requests_url"
 	webhookReadInputKey         = "webhook.read_token"
+	headersCapability           = "headers"
 )
 
 // WebhookWaitData configures a wait on the webhook requests captured for this execution.
@@ -132,7 +133,7 @@ func firstMatchingWebhookRequest(
 	var last []spi.AssertionResult
 	for _, item := range items {
 		results, assertErr := EvaluateAssertions(
-			assertions, extractors.NewValueResponseContext(item.assertionValue()),
+			assertions, item.assertionContext(),
 		)
 		last = results
 		if assertErr == nil {
@@ -305,4 +306,54 @@ func (item capturedRequest) outputs() map[string]any {
 		"body":        item.assertionValue(),
 		"received_at": receivedAt,
 	}
+}
+
+// assertionContext lets the node's assertions read the captured request the
+// way a request node reads a response: jsonPath, xmlPath and body see the
+// body, header sees the request headers. A webhook has no status code.
+func (item capturedRequest) assertionContext() extractors.ResponseContext {
+	headers := make(http.Header, len(item.Headers))
+	for name, value := range item.Headers {
+		headers.Set(name, value)
+	}
+	return capturedRequestContext{
+		body:    extractors.NewValueResponseContext(item.assertionValue()),
+		headers: headers,
+	}
+}
+
+type capturedRequestContext struct {
+	body    extractors.ResponseContext
+	headers http.Header
+}
+
+func (c capturedRequestContext) HasCapability(capability string) bool {
+	if capability == headersCapability {
+		return true
+	}
+	return c.body.HasCapability(capability)
+}
+
+func (c capturedRequestContext) GetHeader(key string) string {
+	return c.headers.Get(key)
+}
+
+func (c capturedRequestContext) Headers() http.Header {
+	return c.headers
+}
+
+func (c capturedRequestContext) GetParsedBody() any {
+	reader, isReader := c.body.(extractors.ParsedBodyReader)
+	if !isReader {
+		return nil
+	}
+	return reader.GetParsedBody()
+}
+
+func (c capturedRequestContext) GetRawBody() []byte {
+	reader, isReader := c.body.(extractors.ParsedBodyReader)
+	if !isReader {
+		return nil
+	}
+	return reader.GetRawBody()
 }
