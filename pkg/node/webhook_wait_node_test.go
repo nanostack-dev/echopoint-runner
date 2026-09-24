@@ -40,7 +40,7 @@ func decodeWebhookWait(t *testing.T, raw []byte) *node.WebhookWaitNode {
 	return wait
 }
 
-func mailboxJSON(items ...map[string]any) []byte {
+func webhookRequestsJSON(items ...map[string]any) []byte {
 	raw, err := json.Marshal(map[string]any{"items": items, "count": len(items), "total": len(items)})
 	if err != nil {
 		panic(err)
@@ -48,7 +48,7 @@ func mailboxJSON(items ...map[string]any) []byte {
 	return raw
 }
 
-func mailboxItem(id, body string) map[string]any {
+func capturedRequest(id, body string) map[string]any {
 	return map[string]any{
 		"id":           id,
 		"method":       http.MethodPost,
@@ -76,8 +76,8 @@ func TestWebhookWaitNode_RequiresAssertion(t *testing.T) {
 	n := decodeWebhookWait(t, mkWebhookWaitJSON(t, 50, false))
 	_, err := n.Execute(spi.ExecutionContext{
 		FlowInputs: map[string]any{
-			"webhook.mailbox_url":   "http://example.invalid/mailbox",
-			"webhook.mailbox_token": "tok",
+			"webhook.requests_url": "http://example.invalid/webhook-requests",
+			"webhook.read_token":   "tok",
 		},
 	})
 	if err == nil {
@@ -94,20 +94,20 @@ func TestWebhookWaitNode_SucceedsOnFirstMatchingRequest(t *testing.T) {
 		if r.Method != http.MethodGet {
 			t.Errorf("method=%s", r.Method)
 		}
-		if r.Header.Get("X-Mailbox-Token") != "tok" {
+		if r.Header.Get("X-Webhook-Read-Token") != "tok" {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
 		switch calls.Add(1) {
 		case 1:
-			_, _ = w.Write(mailboxJSON())
+			_, _ = w.Write(webhookRequestsJSON())
 		case 2:
-			_, _ = w.Write(mailboxJSON(mailboxItem("req-1", `{"event":"other"}`)))
+			_, _ = w.Write(webhookRequestsJSON(capturedRequest("req-1", `{"event":"other"}`)))
 		default:
-			_, _ = w.Write(mailboxJSON(
-				mailboxItem("req-1", `{"event":"other"}`),
-				mailboxItem("req-2", `{"event":"order.created"}`),
+			_, _ = w.Write(webhookRequestsJSON(
+				capturedRequest("req-1", `{"event":"other"}`),
+				capturedRequest("req-2", `{"event":"order.created"}`),
 			))
 		}
 	}))
@@ -116,8 +116,8 @@ func TestWebhookWaitNode_SucceedsOnFirstMatchingRequest(t *testing.T) {
 	n := decodeWebhookWait(t, mkWebhookWaitJSON(t, 2000, true))
 	res, err := n.Execute(spi.ExecutionContext{
 		FlowInputs: map[string]any{
-			"webhook.mailbox_url":   srv.URL,
-			"webhook.mailbox_token": "tok",
+			"webhook.requests_url": srv.URL,
+			"webhook.read_token":   "tok",
 		},
 	})
 	if err != nil {
@@ -151,8 +151,8 @@ func TestWebhookWaitNode_RejectedTokenIsFatal(t *testing.T) {
 	n := decodeWebhookWait(t, mkWebhookWaitJSON(t, 2000, true))
 	_, err := n.Execute(spi.ExecutionContext{
 		FlowInputs: map[string]any{
-			"webhook.mailbox_url":   srv.URL,
-			"webhook.mailbox_token": "bad",
+			"webhook.requests_url": srv.URL,
+			"webhook.read_token":   "bad",
 		},
 	})
 	if err == nil {
@@ -166,15 +166,15 @@ func TestWebhookWaitNode_RejectedTokenIsFatal(t *testing.T) {
 func TestWebhookWaitNode_TimeoutWithoutMatch(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(mailboxJSON(mailboxItem("req-1", `{"event":"other"}`)))
+		_, _ = w.Write(webhookRequestsJSON(capturedRequest("req-1", `{"event":"other"}`)))
 	}))
 	defer srv.Close()
 
 	n := decodeWebhookWait(t, mkWebhookWaitJSON(t, 400, true))
 	_, err := n.Execute(spi.ExecutionContext{
 		FlowInputs: map[string]any{
-			"webhook.mailbox_url":   srv.URL,
-			"webhook.mailbox_token": "tok",
+			"webhook.requests_url": srv.URL,
+			"webhook.read_token":   "tok",
 		},
 	})
 	if err == nil {

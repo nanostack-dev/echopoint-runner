@@ -17,16 +17,16 @@ import (
 const (
 	defaultWebhookWaitTimeoutMs = 30000
 	webhookWaitPollInterval     = 250 * time.Millisecond
-	webhookMailboxURLInputKey   = "webhook.mailbox_url"
-	webhookMailboxInputKey      = "webhook.mailbox_token"
+	webhookRequestsURLInputKey  = "webhook.requests_url"
+	webhookReadInputKey         = "webhook.read_token"
 )
 
-// WebhookWaitData configures a wait on this execution's webhook mailbox.
+// WebhookWaitData configures a wait on the webhook requests captured for this execution.
 type WebhookWaitData struct {
 	TimeoutMs int `json:"timeout_ms"`
 }
 
-// WebhookWaitNode polls GET webhook.mailbox_url with X-Mailbox-Token until a stored
+// WebhookWaitNode polls GET webhook.requests_url with X-Webhook-Read-Token until a stored
 // request passes the node's assertions. Authors never set a history URL or key.
 type WebhookWaitNode struct {
 	BaseNode
@@ -61,7 +61,7 @@ func (n *WebhookWaitNode) timeoutMs() int {
 
 func (n *WebhookWaitNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 	startTime := time.Now()
-	mailboxURL, token, err := n.waitInputs(ctx)
+	requestsURL, token, err := n.waitInputs(ctx)
 	if err != nil {
 		return n.errorResult(ctx.Inputs, err, startTime, nil), err
 	}
@@ -69,7 +69,7 @@ func (n *WebhookWaitNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, erro
 	waitCtx, cancel := context.WithTimeout(ctx.Context(), time.Duration(n.timeoutMs())*time.Millisecond)
 	defer cancel()
 
-	item, results, waitErr := n.pollMailbox(waitCtx, mailboxURL, token, n.GetAssertions())
+	item, results, waitErr := n.pollWebhookRequests(waitCtx, requestsURL, token, n.GetAssertions())
 	if waitErr != nil {
 		return n.errorResult(ctx.Inputs, waitErr, startTime, results), waitErr
 	}
@@ -84,51 +84,51 @@ func (n *WebhookWaitNode) waitInputs(ctx spi.ExecutionContext) (string, string, 
 			nil,
 		)
 	}
-	mailboxURL := lookupFlowInput(ctx, webhookMailboxURLInputKey)
-	token := lookupFlowInput(ctx, webhookMailboxInputKey)
-	if mailboxURL == "" || token == "" {
+	requestsURL := lookupFlowInput(ctx, webhookRequestsURLInputKey)
+	token := lookupFlowInput(ctx, webhookReadInputKey)
+	if requestsURL == "" || token == "" {
 		return "", "", spi.NewUserError(
 			"WEBHOOK_WAIT_FAILED",
-			"webhook.mailbox_url and webhook.mailbox_token are required",
+			"webhook.requests_url and webhook.read_token are required",
 			nil,
 		)
 	}
-	return mailboxURL, token, nil
+	return requestsURL, token, nil
 }
 
-func (n *WebhookWaitNode) pollMailbox(
+func (n *WebhookWaitNode) pollWebhookRequests(
 	waitCtx context.Context,
-	mailboxURL, token string,
+	requestsURL, token string,
 	assertions []CompositeAssertion,
-) (mailboxItem, []spi.AssertionResult, error) {
+) (capturedRequest, []spi.AssertionResult, error) {
 	client := &http.Client{}
 	var last []spi.AssertionResult
 	for {
 		if err := waitCtx.Err(); err != nil {
-			return mailboxItem{}, last, webhookWaitTimeout(err)
+			return capturedRequest{}, last, webhookWaitTimeout(err)
 		}
-		items, fetchErr := n.fetchMailbox(waitCtx, client, mailboxURL, token)
+		items, fetchErr := n.fetchWebhookRequests(waitCtx, client, requestsURL, token)
 		if fetchErr != nil {
 			if waitCtx.Err() != nil {
-				return mailboxItem{}, last, webhookWaitTimeout(waitCtx.Err())
+				return capturedRequest{}, last, webhookWaitTimeout(waitCtx.Err())
 			}
-			if mailboxFetchFatal(fetchErr) {
-				return mailboxItem{}, last, fetchErr
+			if webhookRequestsFetchFatal(fetchErr) {
+				return capturedRequest{}, last, fetchErr
 			}
-		} else if item, results, ok := firstMatchingMailboxRequest(assertions, items); ok {
+		} else if item, results, ok := firstMatchingWebhookRequest(assertions, items); ok {
 			return item, results, nil
 		} else {
 			last = results
 		}
 		if sleepErr := sleepCtx(waitCtx, webhookWaitPollInterval); sleepErr != nil {
-			return mailboxItem{}, last, webhookWaitTimeout(sleepErr)
+			return capturedRequest{}, last, webhookWaitTimeout(sleepErr)
 		}
 	}
 }
 
-func firstMatchingMailboxRequest(
-	assertions []CompositeAssertion, items []mailboxItem,
-) (mailboxItem, []spi.AssertionResult, bool) {
+func firstMatchingWebhookRequest(
+	assertions []CompositeAssertion, items []capturedRequest,
+) (capturedRequest, []spi.AssertionResult, bool) {
 	var last []spi.AssertionResult
 	for _, item := range items {
 		results, assertErr := EvaluateAssertions(
@@ -139,7 +139,7 @@ func firstMatchingMailboxRequest(
 			return item, results, true
 		}
 	}
-	return mailboxItem{}, last, false
+	return capturedRequest{}, last, false
 }
 
 func webhookWaitTimeout(err error) error {
@@ -150,46 +150,50 @@ func webhookWaitTimeout(err error) error {
 	)
 }
 
-func (n *WebhookWaitNode) fetchMailbox(
-	ctx context.Context, client *http.Client, mailboxURL, token string,
-) ([]mailboxItem, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, mailboxURL, nil)
+func (n *WebhookWaitNode) fetchWebhookRequests(
+	ctx context.Context, client *http.Client, requestsURL, token string,
+) ([]capturedRequest, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestsURL, nil)
 	if err != nil {
-		return nil, spi.NewUserError("WEBHOOK_WAIT_FAILED", "could not build mailbox request", err)
+		return nil, spi.NewUserError("WEBHOOK_WAIT_FAILED", "could not build the webhook requests request", err)
 	}
-	req.Header.Set("X-Mailbox-Token", token)
+	req.Header.Set("X-Webhook-Read-Token", token)
 	req.Header.Set("Accept", "application/json")
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("mailbox get: %w", err)
+		return nil, fmt.Errorf("webhook requests get: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("mailbox read: %w", err)
+		return nil, fmt.Errorf("webhook requests read: %w", err)
 	}
 
 	switch resp.StatusCode {
 	case http.StatusOK:
-		var list mailboxList
+		var list webhookRequestList
 		if unmarshalErr := json.Unmarshal(raw, &list); unmarshalErr != nil {
-			return nil, spi.NewUserError("WEBHOOK_WAIT_FAILED", "mailbox response is not valid JSON", unmarshalErr)
+			return nil, spi.NewUserError(
+				"WEBHOOK_WAIT_FAILED",
+				"webhook requests response is not valid JSON",
+				unmarshalErr,
+			)
 		}
 		return list.Items, nil
 	case http.StatusUnauthorized, http.StatusForbidden:
-		return nil, spi.NewUserError("WEBHOOK_WAIT_FAILED", "mailbox token was rejected", nil)
+		return nil, spi.NewUserError("WEBHOOK_WAIT_FAILED", "webhook read token was rejected", nil)
 	case http.StatusNotFound:
-		return nil, spi.NewUserError("WEBHOOK_WAIT_FAILED", "execution mailbox was not found", nil)
+		return nil, spi.NewUserError("WEBHOOK_WAIT_FAILED", "execution webhook requests were not found", nil)
 	default:
-		return nil, fmt.Errorf("mailbox get status %d", resp.StatusCode)
+		return nil, fmt.Errorf("webhook requests get status %d", resp.StatusCode)
 	}
 }
 
 func (n *WebhookWaitNode) successResult(
 	inputs map[string]any,
-	item mailboxItem,
+	item capturedRequest,
 	assertionResults []spi.AssertionResult,
 	startedAt time.Time,
 ) *WebhookWaitExecutionResult {
@@ -251,16 +255,16 @@ func lookupFlowInput(ctx spi.ExecutionContext, key string) string {
 	return ""
 }
 
-func mailboxFetchFatal(err error) bool {
+func webhookRequestsFetchFatal(err error) bool {
 	_, ok := spi.AsUserError(err)
 	return ok
 }
 
-type mailboxList struct {
-	Items []mailboxItem `json:"items"`
+type webhookRequestList struct {
+	Items []capturedRequest `json:"items"`
 }
 
-type mailboxItem struct {
+type capturedRequest struct {
 	ID          string            `json:"id"`
 	Method      string            `json:"method"`
 	Headers     map[string]string `json:"headers"`
@@ -269,7 +273,7 @@ type mailboxItem struct {
 	ReceivedAt  time.Time         `json:"received_at"`
 }
 
-func (item mailboxItem) assertionValue() any {
+func (item capturedRequest) assertionValue() any {
 	if item.Body == nil || *item.Body == "" {
 		return map[string]any{}
 	}
@@ -280,7 +284,7 @@ func (item mailboxItem) assertionValue() any {
 	return *item.Body
 }
 
-func (item mailboxItem) outputs() map[string]any {
+func (item capturedRequest) outputs() map[string]any {
 	headers := item.Headers
 	if headers == nil {
 		headers = map[string]string{}
