@@ -14,6 +14,7 @@ import (
 	"github.com/nanostack-dev/echopoint-runner/pkg/dynamicvars"
 	flowpkg "github.com/nanostack-dev/echopoint-runner/pkg/flow"
 	"github.com/nanostack-dev/echopoint-runner/pkg/runner"
+	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 	"github.com/rs/zerolog/log"
 )
 
@@ -44,6 +45,7 @@ func New(config configpkg.Config) *Runtime {
 			BaseURL:        config.BaseURL,
 			OrganizationID: config.OrganizationID,
 			RunnerAPIKey:   config.RunnerAPIKey,
+			JobToken:       config.JobToken,
 			RequestTimeout: config.RequestTimeout,
 		}),
 		bootID:   uuid.Must(uuid.NewV7()),
@@ -147,12 +149,43 @@ func (r *Runtime) runClaimLoop(ctx context.Context) error {
 			Msg("claimed runner job")
 
 		r.workers.Go(func() {
-			r.executeClaimedJob(jobState)
+			_, _ = r.executeClaimedJob(context.Background(), jobState)
 		})
 	}
 }
 
-func (r *Runtime) executeClaimedJob(active *activeJob) {
+type Outcome struct {
+	Status       string
+	Result       *spi.FlowExecutionResult
+	ErrorMessage *string
+}
+
+const (
+	jobStatusFailed    = "failed"
+	jobStatusCompleted = "completed"
+)
+
+// RunOne executes a Job already claimed by a short-lived caller and then exits.
+func RunOne(
+	ctx context.Context,
+	config configpkg.Config,
+	bootID uuid.UUID,
+	job *controlplane.ClaimedJob,
+) (Outcome, error) {
+	r := New(config)
+	r.bootID = bootID
+	active := &activeJob{job: job, startedAt: time.Now().UTC()}
+	r.storeActiveJob(active)
+	heartbeatCtx, stop := context.WithCancel(ctx)
+	heartbeatDone := make(chan error, 1)
+	go func() { heartbeatDone <- r.runHeartbeatLoop(heartbeatCtx) }()
+	outcome, err := r.executeClaimedJob(ctx, active)
+	stop()
+	<-heartbeatDone
+	return outcome, err
+}
+
+func (r *Runtime) executeClaimedJob(ctx context.Context, active *activeJob) (Outcome, error) {
 	defer r.releaseSlot()
 	defer r.removeActiveJob(active.job.JobID)
 	reporter := newJobEventReporter(r.client, active.job, r.config.RunnerID, r.bootID, r.config.RequestTimeout)
@@ -162,8 +195,9 @@ func (r *Runtime) executeClaimedJob(active *activeJob) {
 		AllowedInitialInputKeys: sortedInputKeys(active.job.Inputs),
 	})
 	if err != nil {
-		r.completeWithFailure(active, reporter, fmt.Sprintf("parse flow definition: %v", err), nil)
-		return
+		message := fmt.Sprintf("parse flow definition: %v", err)
+		completeErr := r.completeWithFailure(active, reporter, message, nil)
+		return Outcome{Status: jobStatusFailed, ErrorMessage: &message}, completeErr
 	}
 
 	result, execErr := runner.Run(*flowDef, active.job.Inputs,
@@ -171,6 +205,7 @@ func (r *Runtime) executeClaimedJob(active *activeJob) {
 		runner.WithReferencedFlows(active.job.ReferencedFlows),
 		runner.WithDynamicVars(dynamicvars.New(active.job.ExecutionID.String())),
 		runner.WithSecretInputKeys(active.job.SecretInputKeys),
+		runner.WithContext(ctx),
 	)
 	if execErr != nil {
 		errorMsg := execErr.Error()
@@ -187,14 +222,15 @@ func (r *Runtime) executeClaimedJob(active *activeJob) {
 				Str("job_id", active.job.JobID.String()).
 				Msg("failed to flush runner progress before failed completion")
 		}
-		r.completeWithFailure(active, reporter, errorMsg, errorCode)
-		return
+		completeErr := r.completeWithFailure(active, reporter, errorMsg, errorCode)
+		return Outcome{Status: jobStatusFailed, Result: result, ErrorMessage: &errorMsg}, completeErr
 	}
 
 	payload, err := controlplane.FlowExecutionResultToPayload(result)
 	if err != nil {
-		r.completeWithFailure(active, reporter, fmt.Sprintf("encode execution result: %v", err), nil)
-		return
+		message := fmt.Sprintf("encode execution result: %v", err)
+		completeErr := r.completeWithFailure(active, reporter, message, nil)
+		return Outcome{Status: jobStatusFailed, Result: result, ErrorMessage: &message}, completeErr
 	}
 	if flushErr := reporter.FlushWithRetry(context.Background()); flushErr != nil {
 		log.Error().
@@ -206,14 +242,14 @@ func (r *Runtime) executeClaimedJob(active *activeJob) {
 		log.Warn().
 			Str("job_id", active.job.JobID.String()).
 			Msg("skipping completion for rejected runner job")
-		return
+		return Outcome{Status: jobStatusFailed, Result: result}, errors.New("runner Job lease was rejected")
 	}
 
 	completedAt := time.Now().UTC()
 	if completeErr := r.completeJob(active.job.JobID, controlplane.CompleteJobRequest{
 		RunnerID:          r.config.RunnerID,
 		BootID:            r.bootID,
-		Status:            "completed",
+		Status:            jobStatusCompleted,
 		StartedAt:         active.startedAt,
 		CompletedAt:       completedAt,
 		DurationMs:        completedAt.Sub(active.startedAt).Milliseconds(),
@@ -221,7 +257,7 @@ func (r *Runtime) executeClaimedJob(active *activeJob) {
 		LastEventSequence: reporter.LastSequencePtr(),
 	}); completeErr != nil {
 		log.Error().Err(completeErr).Str("job_id", active.job.JobID.String()).Msg("failed to complete runner job")
-		return
+		return Outcome{Status: jobStatusCompleted, Result: result}, completeErr
 	}
 
 	log.Info().
@@ -229,6 +265,7 @@ func (r *Runtime) executeClaimedJob(active *activeJob) {
 		Str("execution_id", active.job.ExecutionID.String()).
 		Int64("duration_ms", completedAt.Sub(active.startedAt).Milliseconds()).
 		Msg("runner job completed")
+	return Outcome{Status: jobStatusCompleted, Result: result}, nil
 }
 
 func sortedInputKeys(inputs map[string]any) []string {
@@ -245,19 +282,19 @@ func (r *Runtime) completeWithFailure(
 	reporter *jobEventReporter,
 	errorMsg string,
 	errorCode *string,
-) {
+) error {
 	if r.isRejected(active.job.JobID) {
 		log.Warn().
 			Str("job_id", active.job.JobID.String()).
 			Msg("skipping failure completion for rejected runner job")
-		return
+		return errors.New("runner Job lease was rejected")
 	}
 
 	completedAt := time.Now().UTC()
 	err := r.completeJob(active.job.JobID, controlplane.CompleteJobRequest{
 		RunnerID:          r.config.RunnerID,
 		BootID:            r.bootID,
-		Status:            "failed",
+		Status:            jobStatusFailed,
 		StartedAt:         active.startedAt,
 		CompletedAt:       completedAt,
 		DurationMs:        completedAt.Sub(active.startedAt).Milliseconds(),
@@ -267,7 +304,7 @@ func (r *Runtime) completeWithFailure(
 	})
 	if err != nil {
 		log.Error().Err(err).Str("job_id", active.job.JobID.String()).Msg("failed to report runner job failure")
-		return
+		return err
 	}
 
 	log.Error().
@@ -275,6 +312,7 @@ func (r *Runtime) completeWithFailure(
 		Str("execution_id", active.job.ExecutionID.String()).
 		Str("error_message", errorMsg).
 		Msg("runner job failed")
+	return nil
 }
 
 func (r *Runtime) runHeartbeatLoop(ctx context.Context) error {

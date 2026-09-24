@@ -29,6 +29,7 @@ type Client struct {
 	baseURL        string
 	organizationID string
 	runnerAPIKey   string
+	jobToken       string
 	httpClient     *http.Client
 }
 
@@ -36,6 +37,7 @@ type Config struct {
 	BaseURL        string
 	OrganizationID string
 	RunnerAPIKey   string
+	JobToken       string
 	RequestTimeout time.Duration
 }
 
@@ -149,6 +151,7 @@ func NewClient(config Config) *Client {
 		baseURL:        strings.TrimRight(config.BaseURL, "/"),
 		organizationID: config.OrganizationID,
 		runnerAPIKey:   config.RunnerAPIKey,
+		jobToken:       config.JobToken,
 		httpClient: &http.Client{
 			Timeout: config.RequestTimeout,
 		},
@@ -189,16 +192,29 @@ func (c *Client) ClaimNext(ctx context.Context, request ClaimNextRequest) (*Clai
 
 func (c *Client) Complete(ctx context.Context, jobID uuid.UUID, request CompleteJobRequest) error {
 	path := fmt.Sprintf("/runner/jobs/%s/complete", jobID.String())
-	statusCode, responseBody, requestErr := c.postJSON(ctx, path, request)
-	if requestErr != nil {
-		return requestErr
+	var lastErr error
+	for attempt := range 3 {
+		if attempt > 0 {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(time.Duration(attempt) * 200 * time.Millisecond):
+			}
+		}
+		statusCode, responseBody, requestErr := c.postJSON(ctx, path, request)
+		if requestErr != nil {
+			lastErr = requestErr
+			continue
+		}
+		if statusCode == http.StatusNoContent {
+			return nil
+		}
+		lastErr = readAPIError(statusCode, responseBody)
+		if statusCode < http.StatusInternalServerError {
+			return lastErr
+		}
 	}
-
-	if statusCode != http.StatusNoContent {
-		return readAPIError(statusCode, responseBody)
-	}
-
-	return nil
+	return lastErr
 }
 
 func (c *Client) SendJobEvents(
@@ -277,8 +293,12 @@ func (c *Client) postJSON(ctx context.Context, path string, payload any) (int, [
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Api-Key", c.runnerAPIKey)
-	req.Header.Set("X-Organization-Id", c.organizationID)
+	if c.jobToken != "" {
+		req.Header.Set("X-Job-Token", c.jobToken)
+	} else {
+		req.Header.Set("X-Api-Key", c.runnerAPIKey)
+		req.Header.Set("X-Organization-Id", c.organizationID)
+	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
