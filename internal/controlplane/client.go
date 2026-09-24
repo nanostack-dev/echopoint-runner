@@ -26,10 +26,9 @@ const (
 var ErrNoJobAvailable = errors.New("no runner job available")
 
 type Client struct {
-	baseURL        string
-	organizationID string
-	runnerAPIKey   string
-	httpClient     *http.Client
+	baseURL    string
+	headers    http.Header
+	httpClient *http.Client
 }
 
 type Config struct {
@@ -144,13 +143,25 @@ type APIErrorResponse struct {
 	} `json:"errors"`
 }
 
-func NewClient(config Config) *Client {
+func NewRunnerClient(config Config) *Client {
+	headers := http.Header{}
+	headers.Set("X-Api-Key", config.RunnerAPIKey)
+	headers.Set("X-Organization-Id", config.OrganizationID)
+	return newClient(config.BaseURL, config.RequestTimeout, headers)
+}
+
+func NewJobClient(baseURL, jobToken string, timeout time.Duration) *Client {
+	headers := http.Header{}
+	headers.Set("X-Job-Token", jobToken)
+	return newClient(baseURL, timeout, headers)
+}
+
+func newClient(baseURL string, timeout time.Duration, headers http.Header) *Client {
 	return &Client{
-		baseURL:        strings.TrimRight(config.BaseURL, "/"),
-		organizationID: config.OrganizationID,
-		runnerAPIKey:   config.RunnerAPIKey,
+		baseURL: strings.TrimRight(baseURL, "/"),
+		headers: headers,
 		httpClient: &http.Client{
-			Timeout: config.RequestTimeout,
+			Timeout: timeout,
 		},
 	}
 }
@@ -189,16 +200,29 @@ func (c *Client) ClaimNext(ctx context.Context, request ClaimNextRequest) (*Clai
 
 func (c *Client) Complete(ctx context.Context, jobID uuid.UUID, request CompleteJobRequest) error {
 	path := fmt.Sprintf("/runner/jobs/%s/complete", jobID.String())
-	statusCode, responseBody, requestErr := c.postJSON(ctx, path, request)
-	if requestErr != nil {
-		return requestErr
+	var lastErr error
+	for attempt := range 3 {
+		if attempt > 0 {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(time.Duration(attempt) * 200 * time.Millisecond):
+			}
+		}
+		statusCode, responseBody, requestErr := c.postJSON(ctx, path, request)
+		if requestErr != nil {
+			lastErr = requestErr
+			continue
+		}
+		if statusCode == http.StatusNoContent {
+			return nil
+		}
+		lastErr = readAPIError(statusCode, responseBody)
+		if statusCode < http.StatusInternalServerError {
+			return lastErr
+		}
 	}
-
-	if statusCode != http.StatusNoContent {
-		return readAPIError(statusCode, responseBody)
-	}
-
-	return nil
+	return lastErr
 }
 
 func (c *Client) SendJobEvents(
@@ -276,9 +300,8 @@ func (c *Client) postJSON(ctx context.Context, path string, payload any) (int, [
 		return 0, nil, fmt.Errorf("build request: %w", err)
 	}
 
+	req.Header = c.headers.Clone()
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Api-Key", c.runnerAPIKey)
-	req.Header.Set("X-Organization-Id", c.organizationID)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
