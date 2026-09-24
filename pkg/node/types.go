@@ -210,7 +210,7 @@ type SseExecutionResult struct {
 }
 
 // WebhookWaitExecutionResult stores webhook-wait node execution data. The node
-// polls this execution's mailbox until a stored request passes its assertions.
+// polls the webhook requests captured for this execution until a stored request passes its assertions.
 type WebhookWaitExecutionResult struct {
 	spi.BaseExecutionResult
 
