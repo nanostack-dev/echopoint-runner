@@ -53,6 +53,8 @@ type ClaimedJob struct {
 	Inputs          map[string]any                 `json:"inputs"`
 	SecretInputKeys []string                       `json:"secret_input_keys,omitempty"`
 	ReferencedFlows flowpkg.ReferencedFlowRegistry `json:"referenced_flows,omitempty"`
+	// JobToken is set by a self-hosted claim. A one-shot Job gets it from its own claim.
+	JobToken string `json:"job_token,omitempty"`
 }
 
 func (j *ClaimedJob) UnmarshalJSON(data []byte) error {
@@ -66,6 +68,7 @@ func (j *ClaimedJob) UnmarshalJSON(data []byte) error {
 		Environment     map[string]string              `json:"environment"`
 		SecretInputKeys []string                       `json:"secret_input_keys,omitempty"`
 		ReferencedFlows flowpkg.ReferencedFlowRegistry `json:"referenced_flows,omitempty"`
+		JobToken        string                         `json:"job_token,omitempty"`
 	}
 
 	var raw claimedJobAlias
@@ -88,6 +91,7 @@ func (j *ClaimedJob) UnmarshalJSON(data []byte) error {
 	j.FlowDefinition = raw.FlowDefinition
 	j.Inputs = inputs
 	j.SecretInputKeys = raw.SecretInputKeys
+	j.JobToken = raw.JobToken
 	j.ReferencedFlows = raw.ReferencedFlows
 	return nil
 }

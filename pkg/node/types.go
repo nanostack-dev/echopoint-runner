@@ -215,4 +215,6 @@ type WebhookWaitExecutionResult struct {
 	spi.BaseExecutionResult
 
 	DurationMs int64 `json:"duration_ms"`
+	// RecentRequests holds the newest requests a failed wait saw, at most five.
+	RecentRequests []map[string]any `json:"recent_requests,omitempty"`
 }

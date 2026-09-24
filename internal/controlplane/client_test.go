@@ -96,3 +96,14 @@ func TestClaimedJob_UnmarshalLegacyEnvironmentFallback(t *testing.T) {
 	assert.Equal(t, "https://api.example.com", claimedJob.Inputs["BASE_URL"])
 	assert.Equal(t, "root-token", claimedJob.Inputs["TOKEN"])
 }
+
+func TestClaimedJobKeepsTheSelfHostedJobToken(t *testing.T) {
+	var job controlplane.ClaimedJob
+	raw := `{"job_id":"0192f0d6-0000-7000-8000-000000000001","inputs":{},"job_token":"jt-self-hosted"}`
+	if err := json.Unmarshal([]byte(raw), &job); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if job.JobToken != "jt-self-hosted" {
+		t.Fatalf("expected the claim job token, got %q", job.JobToken)
+	}
+}
