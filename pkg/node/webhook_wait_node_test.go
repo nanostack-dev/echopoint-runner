@@ -76,7 +76,7 @@ func TestWebhookWaitNode_RequiresAssertion(t *testing.T) {
 	n := decodeWebhookWait(t, mkWebhookWaitJSON(t, 50, false))
 	_, err := n.Execute(spi.ExecutionContext{
 		FlowInputs: map[string]any{
-			"webhook.url":           "http://example.invalid/mailbox",
+			"webhook.mailbox_url":   "http://example.invalid/mailbox",
 			"webhook.mailbox_token": "tok",
 		},
 	})
@@ -116,7 +116,7 @@ func TestWebhookWaitNode_SucceedsOnFirstMatchingRequest(t *testing.T) {
 	n := decodeWebhookWait(t, mkWebhookWaitJSON(t, 2000, true))
 	res, err := n.Execute(spi.ExecutionContext{
 		FlowInputs: map[string]any{
-			"webhook.url":           srv.URL,
+			"webhook.mailbox_url":   srv.URL,
 			"webhook.mailbox_token": "tok",
 		},
 	})
@@ -151,7 +151,7 @@ func TestWebhookWaitNode_RejectedTokenIsFatal(t *testing.T) {
 	n := decodeWebhookWait(t, mkWebhookWaitJSON(t, 2000, true))
 	_, err := n.Execute(spi.ExecutionContext{
 		FlowInputs: map[string]any{
-			"webhook.url":           srv.URL,
+			"webhook.mailbox_url":   srv.URL,
 			"webhook.mailbox_token": "bad",
 		},
 	})
@@ -173,7 +173,7 @@ func TestWebhookWaitNode_TimeoutWithoutMatch(t *testing.T) {
 	n := decodeWebhookWait(t, mkWebhookWaitJSON(t, 400, true))
 	_, err := n.Execute(spi.ExecutionContext{
 		FlowInputs: map[string]any{
-			"webhook.url":           srv.URL,
+			"webhook.mailbox_url":   srv.URL,
 			"webhook.mailbox_token": "tok",
 		},
 	})

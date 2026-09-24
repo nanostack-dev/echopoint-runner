@@ -17,7 +17,7 @@ import (
 const (
 	defaultWebhookWaitTimeoutMs = 30000
 	webhookWaitPollInterval     = 250 * time.Millisecond
-	webhookURLInputKey          = "webhook.url"
+	webhookMailboxURLInputKey   = "webhook.mailbox_url"
 	webhookMailboxInputKey      = "webhook.mailbox_token"
 )
 
@@ -26,7 +26,7 @@ type WebhookWaitData struct {
 	TimeoutMs int `json:"timeout_ms"`
 }
 
-// WebhookWaitNode polls GET webhook.url with X-Mailbox-Token until a stored
+// WebhookWaitNode polls GET webhook.mailbox_url with X-Mailbox-Token until a stored
 // request passes the node's assertions. Authors never set a history URL or key.
 type WebhookWaitNode struct {
 	BaseNode
@@ -84,12 +84,12 @@ func (n *WebhookWaitNode) waitInputs(ctx spi.ExecutionContext) (string, string, 
 			nil,
 		)
 	}
-	mailboxURL := lookupFlowInput(ctx, webhookURLInputKey)
+	mailboxURL := lookupFlowInput(ctx, webhookMailboxURLInputKey)
 	token := lookupFlowInput(ctx, webhookMailboxInputKey)
 	if mailboxURL == "" || token == "" {
 		return "", "", spi.NewUserError(
 			"WEBHOOK_WAIT_FAILED",
-			"webhook.url and webhook.mailbox_token are required",
+			"webhook.mailbox_url and webhook.mailbox_token are required",
 			nil,
 		)
 	}
