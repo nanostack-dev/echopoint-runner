@@ -39,15 +39,18 @@ type activeJob struct {
 }
 
 func New(config configpkg.Config) *Runtime {
+	return newRuntime(config, controlplane.NewRunnerClient(controlplane.Config{
+		BaseURL:        config.BaseURL,
+		OrganizationID: config.OrganizationID,
+		RunnerAPIKey:   config.RunnerAPIKey,
+		RequestTimeout: config.RequestTimeout,
+	}))
+}
+
+func newRuntime(config configpkg.Config, client *controlplane.Client) *Runtime {
 	return &Runtime{
-		config: config,
-		client: controlplane.NewClient(controlplane.Config{
-			BaseURL:        config.BaseURL,
-			OrganizationID: config.OrganizationID,
-			RunnerAPIKey:   config.RunnerAPIKey,
-			JobToken:       config.JobToken,
-			RequestTimeout: config.RequestTimeout,
-		}),
+		config:   config,
+		client:   client,
 		bootID:   uuid.Must(uuid.NewV7()),
 		sem:      make(chan struct{}, config.MaxParallelFlows),
 		active:   make(map[uuid.UUID]*activeJob),
@@ -169,10 +172,11 @@ const (
 func RunOne(
 	ctx context.Context,
 	config configpkg.Config,
+	jobToken string,
 	bootID uuid.UUID,
 	job *controlplane.ClaimedJob,
 ) (Outcome, error) {
-	r := New(config)
+	r := newRuntime(config, controlplane.NewJobClient(config.BaseURL, jobToken, config.RequestTimeout))
 	r.bootID = bootID
 	active := &activeJob{job: job, startedAt: time.Now().UTC()}
 	r.storeActiveJob(active)

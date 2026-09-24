@@ -26,18 +26,15 @@ const (
 var ErrNoJobAvailable = errors.New("no runner job available")
 
 type Client struct {
-	baseURL        string
-	organizationID string
-	runnerAPIKey   string
-	jobToken       string
-	httpClient     *http.Client
+	baseURL    string
+	headers    http.Header
+	httpClient *http.Client
 }
 
 type Config struct {
 	BaseURL        string
 	OrganizationID string
 	RunnerAPIKey   string
-	JobToken       string
 	RequestTimeout time.Duration
 }
 
@@ -146,14 +143,25 @@ type APIErrorResponse struct {
 	} `json:"errors"`
 }
 
-func NewClient(config Config) *Client {
+func NewRunnerClient(config Config) *Client {
+	headers := http.Header{}
+	headers.Set("X-Api-Key", config.RunnerAPIKey)
+	headers.Set("X-Organization-Id", config.OrganizationID)
+	return newClient(config.BaseURL, config.RequestTimeout, headers)
+}
+
+func NewJobClient(baseURL, jobToken string, timeout time.Duration) *Client {
+	headers := http.Header{}
+	headers.Set("X-Job-Token", jobToken)
+	return newClient(baseURL, timeout, headers)
+}
+
+func newClient(baseURL string, timeout time.Duration, headers http.Header) *Client {
 	return &Client{
-		baseURL:        strings.TrimRight(config.BaseURL, "/"),
-		organizationID: config.OrganizationID,
-		runnerAPIKey:   config.RunnerAPIKey,
-		jobToken:       config.JobToken,
+		baseURL: strings.TrimRight(baseURL, "/"),
+		headers: headers,
 		httpClient: &http.Client{
-			Timeout: config.RequestTimeout,
+			Timeout: timeout,
 		},
 	}
 }
@@ -292,13 +300,8 @@ func (c *Client) postJSON(ctx context.Context, path string, payload any) (int, [
 		return 0, nil, fmt.Errorf("build request: %w", err)
 	}
 
+	req.Header = c.headers.Clone()
 	req.Header.Set("Content-Type", "application/json")
-	if c.jobToken != "" {
-		req.Header.Set("X-Job-Token", c.jobToken)
-	} else {
-		req.Header.Set("X-Api-Key", c.runnerAPIKey)
-		req.Header.Set("X-Organization-Id", c.organizationID)
-	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {

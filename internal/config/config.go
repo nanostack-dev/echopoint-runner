@@ -29,7 +29,6 @@ type Config struct {
 	BaseURL             string
 	OrganizationID      string
 	RunnerAPIKey        string
-	JobToken            string
 	RunnerID            string
 	MaxParallelFlows    int
 	HeartbeatInterval   time.Duration

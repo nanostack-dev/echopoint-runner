@@ -1,13 +1,32 @@
 package controlplane_test
 
 import (
+	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/nanostack-dev/echopoint-runner/internal/controlplane"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestRunnerClientUsesAPIKeyWithoutJobToken(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "runner-key", r.Header.Get("X-Api-Key"))
+		assert.Equal(t, "organization", r.Header.Get("X-Organization-Id"))
+		assert.Empty(t, r.Header.Get("X-Job-Token"))
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	defer server.Close()
+
+	client := controlplane.NewRunnerClient(controlplane.Config{
+		BaseURL: server.URL, OrganizationID: "organization", RunnerAPIKey: "runner-key",
+	})
+	_, err := client.Heartbeat(context.Background(), controlplane.HeartbeatRequest{})
+	require.NoError(t, err)
+}
 
 func TestClaimedJob_UnmarshalReferencedFlows(t *testing.T) {
 	payload := []byte(`{

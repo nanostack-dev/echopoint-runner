@@ -36,6 +36,10 @@ type Config struct {
 	Heartbeat time.Duration
 }
 
+type Client struct {
+	config Config
+}
+
 type Result struct {
 	Status       string
 	Execution    *spi.FlowExecutionResult
@@ -47,10 +51,10 @@ const (
 	defaultHeartbeat = 10 * time.Second
 )
 
-func Run(ctx context.Context, cfg Config, job Job) (Result, error) {
+func NewClient(cfg Config) (*Client, error) {
 	if cfg.BaseURL == "" || cfg.JobToken == "" || cfg.RunnerID == "" ||
-		cfg.BootID == uuid.Nil || job.JobID == uuid.Nil {
-		return Result{}, errors.New("one-shot Job runner requires a URL, token, runner identity, and Job ID")
+		cfg.BootID == uuid.Nil {
+		return nil, errors.New("one-shot Job runner requires a URL, token, and runner identity")
 	}
 	if cfg.Timeout <= 0 {
 		cfg.Timeout = defaultTimeout
@@ -58,14 +62,21 @@ func Run(ctx context.Context, cfg Config, job Job) (Result, error) {
 	if cfg.Heartbeat <= 0 {
 		cfg.Heartbeat = defaultHeartbeat
 	}
+	return &Client{config: cfg}, nil
+}
+
+func (c *Client) Run(ctx context.Context, job Job) (Result, error) {
+	if job.JobID == uuid.Nil {
+		return Result{}, errors.New("one-shot Job runner requires a Job ID")
+	}
+	cfg := c.config
 	outcome, err := runtime.RunOne(ctx, config.Config{
 		BaseURL:           cfg.BaseURL,
-		JobToken:          cfg.JobToken,
 		RunnerID:          cfg.RunnerID,
 		MaxParallelFlows:  1,
 		RequestTimeout:    cfg.Timeout,
 		HeartbeatInterval: cfg.Heartbeat,
-	}, cfg.BootID, &controlplane.ClaimedJob{
+	}, cfg.JobToken, cfg.BootID, &controlplane.ClaimedJob{
 		JobID:           job.JobID,
 		ExecutionID:     job.ExecutionID,
 		FlowID:          job.FlowID,

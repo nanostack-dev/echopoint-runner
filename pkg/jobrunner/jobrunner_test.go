@@ -34,7 +34,11 @@ func TestRunReportsOneClaimedJobWithItsToken(t *testing.T) {
 		FlowID:         uuid.New(),
 		FlowDefinition: flowDefinition,
 	}
-	result, err := jobrunner.Run(context.Background(), config, job)
+	client, err := jobrunner.NewClient(config)
+	if err != nil {
+		t.Fatalf("create Job client: %v", err)
+	}
+	result, err := client.Run(context.Background(), job)
 	if err != nil {
 		t.Fatalf("run one Job: %v", err)
 	}
