@@ -18,7 +18,7 @@ const (
 	defaultWebhookWaitTimeoutMs = 30000
 	webhookWaitPollInterval     = 250 * time.Millisecond
 	webhookRequestsURLInputKey  = "webhook.requests_url"
-	webhookReadInputKey         = "webhook.read_token"
+	webhookRecentRequestsKept   = 5
 	headersCapability           = "headers"
 )
 
@@ -27,7 +27,7 @@ type WebhookWaitData struct {
 	TimeoutMs int `json:"timeout_ms"`
 }
 
-// WebhookWaitNode polls GET webhook.requests_url with X-Webhook-Read-Token until a stored
+// WebhookWaitNode polls GET webhook.requests_url with the job token until a stored
 // request passes the node's assertions. Authors never set a history URL or key.
 type WebhookWaitNode struct {
 	BaseNode
@@ -70,9 +70,11 @@ func (n *WebhookWaitNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, erro
 	waitCtx, cancel := context.WithTimeout(ctx.Context(), time.Duration(n.timeoutMs())*time.Millisecond)
 	defer cancel()
 
-	item, results, waitErr := n.pollWebhookRequests(waitCtx, requestsURL, token, n.GetAssertions())
+	item, results, seen, waitErr := n.pollWebhookRequests(waitCtx, requestsURL, token, n.GetAssertions())
 	if waitErr != nil {
-		return n.errorResult(ctx.Inputs, waitErr, startTime, results), waitErr
+		failed := n.errorResult(ctx.Inputs, waitErr, startTime, results)
+		failed.RecentRequests = recentRequestOutputs(seen)
+		return failed, waitErr
 	}
 	return n.successResult(ctx.Inputs, item, results, startTime), nil
 }
@@ -86,11 +88,11 @@ func (n *WebhookWaitNode) waitInputs(ctx spi.ExecutionContext) (string, string, 
 		)
 	}
 	requestsURL := lookupFlowInput(ctx, webhookRequestsURLInputKey)
-	token := lookupFlowInput(ctx, webhookReadInputKey)
-	if requestsURL == "" || token == "" {
+	token, hasToken := spi.JobTokenFromContext(ctx.Context())
+	if requestsURL == "" || !hasToken {
 		return "", "", spi.NewUserError(
 			"WEBHOOK_WAIT_FAILED",
-			"webhook.requests_url and webhook.read_token are required",
+			"a webhook wait needs webhook.requests_url and the job token of a claimed job",
 			nil,
 		)
 	}
@@ -101,30 +103,47 @@ func (n *WebhookWaitNode) pollWebhookRequests(
 	waitCtx context.Context,
 	requestsURL, token string,
 	assertions []CompositeAssertion,
-) (capturedRequest, []spi.AssertionResult, error) {
+) (capturedRequest, []spi.AssertionResult, []capturedRequest, error) {
 	client := &http.Client{}
 	var last []spi.AssertionResult
+	var seen []capturedRequest
 	for {
 		if err := waitCtx.Err(); err != nil {
-			return capturedRequest{}, last, webhookWaitTimeout(err)
+			return capturedRequest{}, last, seen, webhookWaitTimeout(err)
 		}
 		items, fetchErr := n.fetchWebhookRequests(waitCtx, client, requestsURL, token)
 		if fetchErr != nil {
 			if waitCtx.Err() != nil {
-				return capturedRequest{}, last, webhookWaitTimeout(waitCtx.Err())
+				return capturedRequest{}, last, seen, webhookWaitTimeout(waitCtx.Err())
 			}
 			if webhookRequestsFetchFatal(fetchErr) {
-				return capturedRequest{}, last, fetchErr
+				return capturedRequest{}, last, seen, fetchErr
 			}
 		} else if item, results, ok := firstMatchingWebhookRequest(assertions, items); ok {
-			return item, results, nil
+			return item, results, nil, nil
 		} else {
 			last = results
+			seen = items
 		}
 		if sleepErr := sleepCtx(waitCtx, webhookWaitPollInterval); sleepErr != nil {
-			return capturedRequest{}, last, webhookWaitTimeout(sleepErr)
+			return capturedRequest{}, last, seen, webhookWaitTimeout(sleepErr)
 		}
 	}
+}
+
+// recentRequestOutputs keeps the newest requests a failed wait saw. The control
+// plane deletes the run webhook when the run ends, so this is the only record of
+// what arrived and did not match.
+func recentRequestOutputs(seen []capturedRequest) []map[string]any {
+	if len(seen) == 0 {
+		return nil
+	}
+	newest := seen[max(0, len(seen)-webhookRecentRequestsKept):]
+	outputs := make([]map[string]any, 0, len(newest))
+	for _, item := range newest {
+		outputs = append(outputs, item.outputs())
+	}
+	return outputs
 }
 
 func firstMatchingWebhookRequest(
@@ -158,7 +177,7 @@ func (n *WebhookWaitNode) fetchWebhookRequests(
 	if err != nil {
 		return nil, spi.NewUserError("WEBHOOK_WAIT_FAILED", "could not build the webhook requests request", err)
 	}
-	req.Header.Set("X-Webhook-Read-Token", token)
+	req.Header.Set("X-Job-Token", token)
 	req.Header.Set("Accept", "application/json")
 
 	resp, err := client.Do(req)
@@ -184,7 +203,7 @@ func (n *WebhookWaitNode) fetchWebhookRequests(
 		}
 		return list.Items, nil
 	case http.StatusUnauthorized, http.StatusForbidden:
-		return nil, spi.NewUserError("WEBHOOK_WAIT_FAILED", "webhook read token was rejected", nil)
+		return nil, spi.NewUserError("WEBHOOK_WAIT_FAILED", "the job token was rejected", nil)
 	case http.StatusNotFound:
 		return nil, spi.NewUserError("WEBHOOK_WAIT_FAILED", "execution webhook requests were not found", nil)
 	default:
@@ -223,7 +242,7 @@ func (n *WebhookWaitNode) errorResult(
 	err error,
 	startedAt time.Time,
 	assertionResults []spi.AssertionResult,
-) spi.AnyResult {
+) *WebhookWaitExecutionResult {
 	errMsg := err.Error()
 	errCode := spi.ErrorCode(err)
 	if errCode == "" {

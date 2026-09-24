@@ -178,6 +178,9 @@ func RunOne(
 ) (Outcome, error) {
 	r := newRuntime(config, controlplane.NewJobClient(config.BaseURL, jobToken, config.RequestTimeout))
 	r.bootID = bootID
+	if job.JobToken == "" {
+		job.JobToken = jobToken
+	}
 	active := &activeJob{job: job, startedAt: time.Now().UTC()}
 	r.storeActiveJob(active)
 	heartbeatCtx, stop := context.WithCancel(ctx)
@@ -209,7 +212,7 @@ func (r *Runtime) executeClaimedJob(ctx context.Context, active *activeJob) (Out
 		runner.WithReferencedFlows(active.job.ReferencedFlows),
 		runner.WithDynamicVars(dynamicvars.New(active.job.ExecutionID.String())),
 		runner.WithSecretInputKeys(active.job.SecretInputKeys),
-		runner.WithContext(ctx),
+		runner.WithContext(spi.WithJobToken(ctx, active.job.JobToken)),
 	)
 	if execErr != nil {
 		errorMsg := execErr.Error()

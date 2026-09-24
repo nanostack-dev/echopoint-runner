@@ -1,6 +1,7 @@
 package node_test
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -75,9 +76,9 @@ func TestWebhookWaitNode_DecodeDefaults(t *testing.T) {
 func TestWebhookWaitNode_RequiresAssertion(t *testing.T) {
 	n := decodeWebhookWait(t, mkWebhookWaitJSON(t, 50, false))
 	_, err := n.Execute(spi.ExecutionContext{
+		Ctx: spi.WithJobToken(context.Background(), "tok"),
 		FlowInputs: map[string]any{
 			"webhook.requests_url": "http://example.invalid/webhook-requests",
-			"webhook.read_token":   "tok",
 		},
 	})
 	if err == nil {
@@ -94,7 +95,7 @@ func TestWebhookWaitNode_SucceedsOnFirstMatchingRequest(t *testing.T) {
 		if r.Method != http.MethodGet {
 			t.Errorf("method=%s", r.Method)
 		}
-		if r.Header.Get("X-Webhook-Read-Token") != "tok" {
+		if r.Header.Get("X-Job-Token") != "tok" {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
@@ -115,9 +116,9 @@ func TestWebhookWaitNode_SucceedsOnFirstMatchingRequest(t *testing.T) {
 
 	n := decodeWebhookWait(t, mkWebhookWaitJSON(t, 2000, true))
 	res, err := n.Execute(spi.ExecutionContext{
+		Ctx: spi.WithJobToken(context.Background(), "tok"),
 		FlowInputs: map[string]any{
 			"webhook.requests_url": srv.URL,
-			"webhook.read_token":   "tok",
 		},
 	})
 	if err != nil {
@@ -150,9 +151,9 @@ func TestWebhookWaitNode_RejectedTokenIsFatal(t *testing.T) {
 
 	n := decodeWebhookWait(t, mkWebhookWaitJSON(t, 2000, true))
 	_, err := n.Execute(spi.ExecutionContext{
+		Ctx: spi.WithJobToken(context.Background(), "tok"),
 		FlowInputs: map[string]any{
 			"webhook.requests_url": srv.URL,
-			"webhook.read_token":   "bad",
 		},
 	})
 	if err == nil {
@@ -172,9 +173,9 @@ func TestWebhookWaitNode_TimeoutWithoutMatch(t *testing.T) {
 
 	n := decodeWebhookWait(t, mkWebhookWaitJSON(t, 400, true))
 	_, err := n.Execute(spi.ExecutionContext{
+		Ctx: spi.WithJobToken(context.Background(), "tok"),
 		FlowInputs: map[string]any{
 			"webhook.requests_url": srv.URL,
-			"webhook.read_token":   "tok",
 		},
 	})
 	if err == nil {
@@ -202,9 +203,9 @@ func TestWebhookWaitNode_AssertsOnARequestHeader(t *testing.T) {
 	defer srv.Close()
 
 	res, err := wait.Execute(spi.ExecutionContext{
+		Ctx: spi.WithJobToken(context.Background(), "tok"),
 		FlowInputs: map[string]any{
 			"webhook.requests_url": srv.URL,
-			"webhook.read_token":   "tok",
 		},
 	})
 	if err != nil {
@@ -216,5 +217,49 @@ func TestWebhookWaitNode_AssertsOnARequestHeader(t *testing.T) {
 	}
 	if waitRes.Outputs["id"] != "req-2" {
 		t.Errorf("expected the push delivery req-2, got %v", waitRes.Outputs["id"])
+	}
+}
+
+func TestWebhookWaitNode_RequiresAJobToken(t *testing.T) {
+	n := decodeWebhookWait(t, mkWebhookWaitJSON(t, 1000, true))
+	_, err := n.Execute(spi.ExecutionContext{
+		FlowInputs: map[string]any{"webhook.requests_url": "http://example.invalid/webhook-requests"},
+	})
+	if err == nil {
+		t.Fatal("expected an error without a job token")
+	}
+}
+
+func TestWebhookWaitNode_TimeoutKeepsTheNewestRequests(t *testing.T) {
+	items := make([]map[string]any, 0, 7)
+	for i := 1; i <= 7; i++ {
+		items = append(items, capturedRequest(fmt.Sprintf("req-%d", i), `{"event":"other"}`))
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(webhookRequestsJSON(items...))
+	}))
+	defer srv.Close()
+
+	n := decodeWebhookWait(t, mkWebhookWaitJSON(t, 300, true))
+	res, err := n.Execute(spi.ExecutionContext{
+		Ctx:        spi.WithJobToken(context.Background(), "tok"),
+		FlowInputs: map[string]any{"webhook.requests_url": srv.URL},
+	})
+	if err == nil {
+		t.Fatal("expected a timeout")
+	}
+	waitRes, ok := spi.As[*node.WebhookWaitExecutionResult](res)
+	if !ok {
+		t.Fatalf("got %T", res)
+	}
+	if len(waitRes.RecentRequests) != 5 {
+		t.Fatalf("expected the 5 newest requests, got %d", len(waitRes.RecentRequests))
+	}
+	if first := waitRes.RecentRequests[0]["id"]; first != "req-3" {
+		t.Errorf("expected req-3 first, got %v", first)
+	}
+	if newest := waitRes.RecentRequests[4]["id"]; newest != "req-7" {
+		t.Errorf("expected req-7 last, got %v", newest)
 	}
 }
