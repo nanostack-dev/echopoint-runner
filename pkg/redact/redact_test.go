@@ -42,6 +42,17 @@ func TestText_MasksTheLongestSecretWhole(t *testing.T) {
 	}
 }
 
+func TestNewFromSources_MasksSecretsFromEveryInputMap(t *testing.T) {
+	redactor := redact.NewFromSources(
+		redact.Source{Inputs: map[string]any{"root": "root-secret"}, SecretKeys: []string{"root"}},
+		redact.Source{Inputs: map[string]any{"child": "child-secret"}, SecretKeys: []string{"child"}},
+	)
+
+	if got := redactor.Text("root-secret child-secret"); got != redact.Mask+" "+redact.Mask {
+		t.Errorf("all sources must be masked: %q", got)
+	}
+}
+
 func TestValue_KeepsNumbersExact(t *testing.T) {
 	redactor := redact.New(map[string]any{"token": "secret"}, []string{"token"})
 	masked, ok := redactor.Value(map[string]any{"id": int64(9007199254740993)}).(map[string]any)
