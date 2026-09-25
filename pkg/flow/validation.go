@@ -129,6 +129,9 @@ func validateNodeReferences(
 ) error {
 	nodeID := currentNode.GetID()
 	for _, ref := range currentNode.InputSchema() {
+		if _, isFlowInput := availableInitialInputs[strings.TrimSpace(ref)]; isFlowInput {
+			continue
+		}
 		sourceNodeID, outputKey, err := parseReference(ref)
 		if err != nil {
 			return fmt.Errorf("node %s: invalid input reference '%s': %w", nodeID, ref, err)
