@@ -344,7 +344,7 @@ func (engine *FlowEngine) validateInputs(
 	nodeToExecute node.AnyNode, allOutputs spi.OutputView,
 ) error {
 	for _, inputKey := range nodeToExecute.InputSchema() {
-		sourceNodeID, outputKey, err := parseDataRef(inputKey)
+		sourceNodeID, outputKey, err := resolveDataRef(inputKey, allOutputs)
 		if err != nil {
 			log.Error().
 				Str("flowName", engine.flow.Name).
@@ -394,13 +394,27 @@ func (engine *FlowEngine) assembleInputs(
 	inputs := make(map[string]any)
 
 	for _, inputKey := range nodeToExecute.InputSchema() {
-		sourceNodeID, outputKey, _ := parseDataRef(inputKey)
+		sourceNodeID, outputKey, _ := resolveDataRef(inputKey, allOutputs)
 		value, _ := allOutputs.Get(sourceNodeID, outputKey)
 		// Store with full reference key (e.g., "create-user.userId")
 		inputs[inputKey] = value
 	}
 
 	return inputs
+}
+
+// resolveDataRef reads "a.b" as output b of node a, unless no node a has run
+// and the whole reference names a flow input, such as the launch-injected
+// webhook.url.
+func resolveDataRef(ref string, allOutputs spi.OutputView) (string, string, error) {
+	sourceNodeID, outputKey, err := parseDataRef(ref)
+	if err != nil || sourceNodeID == "" || allOutputs.HasNode(sourceNodeID) {
+		return sourceNodeID, outputKey, err
+	}
+	if _, isFlowInput := allOutputs.Get("", ref); isFlowInput {
+		return "", ref, nil
+	}
+	return sourceNodeID, outputKey, nil
 }
 
 // parseDataRef parses input references in two formats:

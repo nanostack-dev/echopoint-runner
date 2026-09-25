@@ -655,3 +655,24 @@ func TestParseFromJSON_AcceptsBranchTargetsWithSuccessorEdges(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, flowResult)
 }
+
+func TestParseAcceptsADottedFlowInputOnlyWhenItIsKnown(t *testing.T) {
+	flowJSON := []byte(`{
+		"name": "dotted input",
+		"version": "1.0",
+		"nodes": [{
+			"id": "register",
+			"type": "request",
+			"data": {"method": "POST", "url": "{{webhook.url}}"}
+		}],
+		"edges": []
+	}`)
+
+	_, err := flow.ParseFromJSONWithOptions(flowJSON, flow.ParseOptions{
+		AllowedInitialInputKeys: []string{"webhook.url"},
+	})
+	require.NoError(t, err, "a known flow input may contain a dot")
+
+	_, err = flow.ParseFromJSONWithOptions(flowJSON, flow.ParseOptions{})
+	require.Error(t, err, "an unknown dotted reference is still a missing node")
+}
