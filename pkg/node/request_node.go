@@ -304,7 +304,7 @@ func (n *RequestNode) makeRequestAndReadBody(
 		req.ContentLength = int64(len(jsonBody))
 	}
 
-	client := &http.Client{}
+	client := nodeHTTPClient()
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, nil, err

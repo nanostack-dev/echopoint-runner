@@ -1,7 +1,11 @@
 package node
 
 import (
+	"context"
+	"errors"
+	"net"
 	"net/http"
+	"net/netip"
 	"time"
 
 	"github.com/nanostack-dev/echopoint-runner/pkg/extractors"
@@ -35,6 +39,60 @@ func ProcessResponseForTest(
 	startTime time.Time,
 ) (spi.AnyResult, error) {
 	return n.processResponse(inputs, url, headers, body, resp, respBody, startTime)
+}
+
+func NodeHTTPClientForTest() *http.Client {
+	return nodeHTTPClient()
+}
+
+func CloudLocalDialGuardEnvForTest() string {
+	return cloudLocalDialGuardEnv
+}
+
+func CloudLocalAddressErrorForTest() error {
+	return errCloudLocalAddress
+}
+
+func CloudDialMaxRedirectsForTest() int {
+	return cloudDialMaxRedirects
+}
+
+// CloudDialHooksForTest drives the Cloud dial guard with fixed answers.
+type CloudDialHooksForTest struct {
+	IPs       []netip.Addr
+	LookupErr error
+	Local     []netip.Addr
+	LocalErr  error
+	Dial      func(ctx context.Context, network, addr string) (net.Conn, error)
+}
+
+func (h CloudDialHooksForTest) guard() dialGuard {
+	return dialGuard{
+		lookupIP: func(context.Context, string) ([]netip.Addr, error) {
+			return h.IPs, h.LookupErr
+		},
+		localIPs: func() ([]netip.Addr, error) {
+			return h.Local, h.LocalErr
+		},
+		dial: h.Dial,
+	}
+}
+
+func (h CloudDialHooksForTest) DialContext(
+	ctx context.Context, network, addr string,
+) (net.Conn, error) {
+	return h.guard().DialContext(ctx, network, addr)
+}
+
+func (h CloudDialHooksForTest) CheckRedirect(req *http.Request, via []*http.Request) error {
+	return h.guard().CheckRedirect(req, via)
+}
+
+func StoppedDialForTest(record func(addr string)) func(context.Context, string, string) (net.Conn, error) {
+	return func(_ context.Context, _ string, addr string) (net.Conn, error) {
+		record(addr)
+		return nil, errors.New("dial stopped")
+	}
 }
 
 func PrepareRequestForTest(
