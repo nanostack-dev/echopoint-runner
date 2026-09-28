@@ -49,10 +49,110 @@ func Client() *http.Client {
 	}
 }
 
-// Local reports whether ip is in a reserved address block.
-//
+const (
+	bits4   = 4
+	bits7   = 7
+	bits8   = 8
+	bits10  = 10
+	bits12  = 12
+	bits15  = 15
+	bits16  = 16
+	bits20  = 20
+	bits24  = 24
+	bits28  = 28
+	bits32  = 32
+	bits48  = 48
+	bits64  = 64
+	bits96  = 96
+	bits128 = 128
+)
+
+// reservedNets maps a prefix length to the network addresses of that length.
+// Local masks the IP to each used length and reads that map. The table is not rebuilt.
 // The blocks are the IANA special-purpose list:
 // https://en.wikipedia.org/wiki/Reserved_IP_addresses
+//
+//nolint:gochecknoglobals // the table is read on every dial and must not be rebuilt
+var reservedNets = struct {
+	v4 [bits32 + 1]map[netip.Addr]struct{}
+	v6 [bits128 + 1]map[netip.Addr]struct{}
+}{
+	v4: [bits32 + 1]map[netip.Addr]struct{}{
+		bits4: {
+			network("224.0.0.0/4"): {},
+			network("240.0.0.0/4"): {},
+		},
+		bits8: {
+			network("0.0.0.0/8"):   {},
+			network("10.0.0.0/8"):  {},
+			network("127.0.0.0/8"): {},
+		},
+		bits10: {
+			network("100.64.0.0/10"): {},
+		},
+		bits12: {
+			network("172.16.0.0/12"): {},
+		},
+		bits15: {
+			network("198.18.0.0/15"): {},
+		},
+		bits16: {
+			network("169.254.0.0/16"): {},
+			network("192.168.0.0/16"): {},
+		},
+		bits24: {
+			network("192.0.0.0/24"):    {},
+			network("192.0.2.0/24"):    {},
+			network("192.88.99.0/24"):  {},
+			network("198.51.100.0/24"): {},
+			network("203.0.113.0/24"):  {},
+		},
+	},
+	v6: [bits128 + 1]map[netip.Addr]struct{}{
+		bits7: {
+			network("fc00::/7"): {},
+		},
+		bits8: {
+			network("ff00::/8"): {},
+		},
+		bits10: {
+			network("fe80::/10"): {},
+		},
+		bits16: {
+			network("2002::/16"): {},
+			network("5f00::/16"): {},
+		},
+		bits20: {
+			network("3fff::/20"): {},
+		},
+		bits28: {
+			network("2001:20::/28"): {},
+		},
+		bits32: {
+			network("2001::/32"):     {},
+			network("2001:db8::/32"): {},
+		},
+		bits48: {
+			network("64:ff9b:1::/48"): {},
+		},
+		bits64: {
+			network("100::/64"): {},
+		},
+		bits96: {
+			network("64:ff9b::/96"): {},
+		},
+		bits128: {
+			network("::/128"):  {},
+			network("::1/128"): {},
+		},
+	},
+}
+
+func network(cidr string) netip.Addr {
+	return netip.MustParsePrefix(cidr).Addr()
+}
+
+// Local reports whether ip is in a reserved address block.
 //
 // 10.1.2.3 and 203.0.113.5 are reserved. 1.1.1.1 is not.
 // ::ffff:10.1.2.3 is reserved. ::ffff:1.1.1.1 is not.
@@ -61,51 +161,31 @@ func Local(ip netip.Addr) bool {
 		return true
 	}
 	ip = ip.Unmap()
-	for _, prefix := range reservedPrefixes() {
-		if prefix.Contains(ip) {
-			return true
-		}
+	if ip.Is4() {
+		return at(reservedNets.v4[bits4], ip, bits4) ||
+			at(reservedNets.v4[bits8], ip, bits8) ||
+			at(reservedNets.v4[bits10], ip, bits10) ||
+			at(reservedNets.v4[bits12], ip, bits12) ||
+			at(reservedNets.v4[bits15], ip, bits15) ||
+			at(reservedNets.v4[bits16], ip, bits16) ||
+			at(reservedNets.v4[bits24], ip, bits24)
 	}
-	return false
+	return at(reservedNets.v6[bits7], ip, bits7) ||
+		at(reservedNets.v6[bits8], ip, bits8) ||
+		at(reservedNets.v6[bits10], ip, bits10) ||
+		at(reservedNets.v6[bits16], ip, bits16) ||
+		at(reservedNets.v6[bits20], ip, bits20) ||
+		at(reservedNets.v6[bits28], ip, bits28) ||
+		at(reservedNets.v6[bits32], ip, bits32) ||
+		at(reservedNets.v6[bits48], ip, bits48) ||
+		at(reservedNets.v6[bits64], ip, bits64) ||
+		at(reservedNets.v6[bits96], ip, bits96) ||
+		at(reservedNets.v6[bits128], ip, bits128)
 }
 
-func reservedPrefixes() []netip.Prefix {
-	raw := []string{
-		"0.0.0.0/8",
-		"10.0.0.0/8",
-		"100.64.0.0/10",
-		"127.0.0.0/8",
-		"169.254.0.0/16",
-		"172.16.0.0/12",
-		"192.0.0.0/24",
-		"192.0.2.0/24",
-		"192.88.99.0/24",
-		"192.168.0.0/16",
-		"198.18.0.0/15",
-		"198.51.100.0/24",
-		"203.0.113.0/24",
-		"224.0.0.0/4",
-		"240.0.0.0/4",
-		"::/128",
-		"::1/128",
-		"64:ff9b::/96",
-		"64:ff9b:1::/48",
-		"100::/64",
-		"2001::/32",
-		"2001:20::/28",
-		"2001:db8::/32",
-		"2002::/16",
-		"3fff::/20",
-		"5f00::/16",
-		"fc00::/7",
-		"fe80::/10",
-		"ff00::/8",
-	}
-	prefixes := make([]netip.Prefix, 0, len(raw))
-	for _, cidr := range raw {
-		prefixes = append(prefixes, netip.MustParsePrefix(cidr))
-	}
-	return prefixes
+func at(networks map[netip.Addr]struct{}, ip netip.Addr, bits int) bool {
+	_, ok := networks[netip.PrefixFrom(ip, bits).Masked().Addr()]
+	return ok
 }
 
 func dialChecked(ctx context.Context, dialer *net.Dialer, network, addr string) (net.Conn, error) {
