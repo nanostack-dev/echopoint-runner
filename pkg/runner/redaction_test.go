@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync"
 	"testing"
@@ -22,6 +23,14 @@ import (
 )
 
 const secretValue = "sk-live-must-never-be-reported"
+
+func allowAPIToken(rawURL string) runner.Option {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return runner.WithSecretHosts(nil)
+	}
+	return runner.WithSecretHosts(map[string][]string{"apiToken": {parsed.Hostname()}})
+}
 
 // recordingObserver keeps the results carried by the progress events, which are
 // what a transport ships to the control plane.
@@ -52,7 +61,7 @@ func secretFlowWith(baseURL, secret string) flow.Flow {
 		Input("baseURL", baseURL).
 		Input("apiToken", secret).
 		Add(node.NewRequest("call").
-			POST("{{baseURL}}/resource?token={{apiToken}}").
+			POST("{{baseURL}}/resource").
 			Header("Authorization", "Bearer {{apiToken}}").
 			Body(map[string]any{"token": "{{apiToken}}"})).
 		Build()
@@ -62,7 +71,7 @@ func echoServer(t *testing.T) *httptest.Server {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("X-Echoed-Token", r.URL.Query().Get("token"))
+		w.Header().Set("X-Echoed-Token", strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	}))
 	t.Cleanup(server.Close)
@@ -85,6 +94,7 @@ func TestRun_MasksSecretInputValuesInResultsAndEvents(t *testing.T) {
 	result, err := runner.Run(secretFlow(server.URL), nil,
 		runner.WithObserver(observer),
 		runner.WithSecretInputKeys([]string{"apiToken"}),
+		allowAPIToken(server.URL),
 	)
 	if err != nil {
 		t.Fatalf("run: %v", err)
@@ -154,6 +164,7 @@ func TestRun_MaskedNodeResultKeepsNonSecretFields(t *testing.T) {
 	if _, err := runner.Run(secretFlow(server.URL), nil,
 		runner.WithObserver(observer),
 		runner.WithSecretInputKeys([]string{"apiToken"}),
+		allowAPIToken(server.URL),
 	); err != nil {
 		t.Fatalf("run: %v", err)
 	}
@@ -226,6 +237,7 @@ func assertEchoedSecretIsMasked(t *testing.T, secret string) {
 
 	observer := &recordingObserver{}
 	if _, err := runner.Run(secretFlowWith(server.URL, secret), nil,
+		allowAPIToken(server.URL),
 		runner.WithObserver(observer),
 		runner.WithSecretInputKeys([]string{"apiToken"}),
 	); err != nil {
@@ -243,6 +255,7 @@ func TestRun_MasksASecretThatJSONEscapes(t *testing.T) {
 	observer := &recordingObserver{}
 
 	result, err := runner.Run(secretFlowWith(server.URL, escapedSecret), nil,
+		allowAPIToken(server.URL),
 		runner.WithObserver(observer),
 		runner.WithSecretInputKeys([]string{"apiToken"}),
 	)
@@ -270,6 +283,7 @@ func TestRun_NoLogLineCarriesTheSecret(t *testing.T) {
 	// resolved URL) between them touch every producer that echoed a value.
 	server, _ := chainServer(t)
 	if _, err := runner.Run(chainedSecretFlow(t, server.URL), nil,
+		allowAPIToken(server.URL),
 		runner.WithSecretInputKeys([]string{"apiToken"}),
 	); err != nil {
 		t.Fatalf("run: %v", err)
@@ -328,6 +342,7 @@ func TestRun_MasksACopySoDownstreamNodesKeepTheRealValue(t *testing.T) {
 
 	observer := &recordingObserver{}
 	result, err := runner.Run(chainedSecretFlow(t, server.URL), nil,
+		allowAPIToken(server.URL),
 		runner.WithObserver(observer),
 		runner.WithSecretInputKeys([]string{"apiToken"}),
 	)
@@ -393,7 +408,8 @@ func chainServer(t *testing.T) (*httptest.Server, func() string) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.URL.Path == "/issue" {
-			_ = json.NewEncoder(w).Encode(map[string]any{"token": r.URL.Query().Get("token")})
+			token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+			_ = json.NewEncoder(w).Encode(map[string]any{"token": token})
 			return
 		}
 		mu.Lock()
@@ -417,7 +433,8 @@ func chainedSecretFlow(t *testing.T, baseURL string) flow.Flow {
 		Input("baseURL", baseURL).
 		Input("apiToken", secretValue).
 		Add(node.NewRequest("issue").
-			GET("{{baseURL}}/issue?token={{apiToken}}").
+			GET("{{baseURL}}/issue").
+			Header("Authorization", "Bearer {{apiToken}}").
 			Output(jsonPathOutput(t, "token", "$.token"))).
 		Add(node.NewRequest("use").
 			GET("{{baseURL}}/use").

@@ -85,6 +85,9 @@ func (n *RequestNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 	if err != nil {
 		return n.createErrorResult(ctx.Inputs, err, time.Since(startTime)), err
 	}
+	if err = refuseSecretEgress(ctx, url, headers, body); err != nil {
+		return n.createErrorResult(ctx.Inputs, err, time.Since(startTime)), err
+	}
 
 	resp, respBody, err := n.makeRequestAndReadBody(ctx.Context(), url, n.Data.Method, headers, body, n.Data.Timeout)
 	if err != nil {

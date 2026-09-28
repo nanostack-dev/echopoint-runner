@@ -26,6 +26,8 @@ type Options struct {
 	Ctx             context.Context
 	Middleware      []engine.Middleware
 	SecretInputKeys []string
+	// SecretHosts maps a secret input key to the hostnames that may receive it.
+	SecretHosts map[string][]string
 }
 
 // Option mutates Options.
@@ -67,9 +69,16 @@ func WithMiddleware(middleware ...engine.Middleware) Option {
 }
 
 // WithSecretInputKeys names the inputs whose values are secret. Their values are
-// masked in every result and progress event the run reports.
+// masked in every result and progress event the run reports. A request that
+// carries one of those values is refused unless WithSecretHosts allows the host.
 func WithSecretInputKeys(keys []string) Option {
 	return func(o *Options) { o.SecretInputKeys = keys }
+}
+
+// WithSecretHosts names the hosts that may receive each secret input.
+// A secret with no hosts cannot be sent.
+func WithSecretHosts(hosts map[string][]string) Option {
+	return func(o *Options) { o.SecretHosts = hosts }
 }
 
 // Run executes flowDef. It overlays inputs on the flow's declared InitialInputs
@@ -96,8 +105,36 @@ func Run(flowDef flow.Flow, inputs map[string]any, opts ...Option) (*spi.FlowExe
 		DynamicVars:     options.DynamicVars,
 		Ctx:             options.Ctx,
 		Middleware:      options.Middleware,
+		SecretValues:    secretValues(mergedInputs, options.SecretInputKeys, options.ReferencedFlows),
+		SecretHosts:     options.SecretHosts,
 	})
 	return redactor.FlowResult(result), redactor.Error(err)
+}
+
+func secretValues(
+	inputs map[string]any,
+	secretInputKeys []string,
+	referencedFlows flow.ReferencedFlowRegistry,
+) map[string]string {
+	values := map[string]string{}
+	addSecretValues(values, inputs, secretInputKeys)
+	for _, referencedFlow := range referencedFlows {
+		addSecretValues(values, referencedFlow.InputOverrides, referencedFlow.SecretInputKeys)
+	}
+	if len(values) == 0 {
+		return nil
+	}
+	return values
+}
+
+func addSecretValues(values map[string]string, inputs map[string]any, keys []string) {
+	for _, key := range keys {
+		text, ok := inputs[key].(string)
+		if !ok || text == "" {
+			continue
+		}
+		values[key] = text
+	}
 }
 
 func runtimeRedactor(

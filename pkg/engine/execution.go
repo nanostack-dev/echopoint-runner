@@ -575,12 +575,16 @@ func (engine *FlowEngine) buildExecutionContext(
 		AllOutputs:     outputView,
 		ModuleResolver: engine.moduleResolver,
 		ModuleExecutor: moduleExecutor{
-			resolver:    engine.moduleResolver,
-			callStack:   engine.moduleCallStack,
-			ctx:         engine.ctx,
-			dynamicVars: engine.dynamicVars,
+			resolver:     engine.moduleResolver,
+			callStack:    engine.moduleCallStack,
+			ctx:          engine.ctx,
+			dynamicVars:  engine.dynamicVars,
+			secretValues: engine.secretValues,
+			secretHosts:  engine.secretHosts,
 		},
-		DynamicVars: engine.dynamicVars,
+		DynamicVars:  engine.dynamicVars,
+		SecretValues: engine.secretValues,
+		SecretHosts:  engine.secretHosts,
 	}
 }
 

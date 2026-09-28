@@ -153,6 +153,9 @@ func (n *SseNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 	if err != nil {
 		return n.createErrorResult(ctx.Inputs, method, n.Data.URL, nil, nil, "", err, startTime), err
 	}
+	if err = refuseSecretEgress(ctx, url, headers, nil); err != nil {
+		return n.createErrorResult(ctx.Inputs, method, url, nil, nil, "", err, startTime), err
+	}
 
 	timeout := time.Duration(n.timeoutMs()) * time.Millisecond
 	streamCtx, cancel := context.WithTimeout(ctx.Context(), timeout)

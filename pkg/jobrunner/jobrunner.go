@@ -24,6 +24,7 @@ type Job struct {
 	FlowDefinition  json.RawMessage             `json:"flow_definition"`
 	Inputs          map[string]any              `json:"inputs"`
 	SecretInputKeys []string                    `json:"secret_input_keys,omitempty"`
+	SecretHosts     map[string][]string         `json:"secret_hosts,omitempty"`
 	ReferencedFlows flow.ReferencedFlowRegistry `json:"referenced_flows,omitempty"`
 }
 
@@ -84,6 +85,7 @@ func (c *Client) Run(ctx context.Context, job Job) (Result, error) {
 		FlowDefinition:  job.FlowDefinition,
 		Inputs:          job.Inputs,
 		SecretInputKeys: job.SecretInputKeys,
+		SecretHosts:     job.SecretHosts,
 		ReferencedFlows: job.ReferencedFlows,
 	})
 	return Result{Status: outcome.Status, Execution: outcome.Result, ErrorMessage: outcome.ErrorMessage}, err
