@@ -84,25 +84,7 @@ func TestClientRefusesLocalServer(t *testing.T) {
 	require.ErrorIs(t, err, clouddial.ErrLocalAddress)
 }
 
-func TestClientRefusesRedirectToLocalAddress(t *testing.T) {
-	client := clouddial.Client()
-	local, err := http.NewRequest(http.MethodGet, "http://203.0.113.1/status", nil)
-	require.NoError(t, err)
-	require.ErrorIs(t, client.CheckRedirect(local, nil), clouddial.ErrLocalAddress)
-
-	mapped, err := http.NewRequest(http.MethodGet, "http://[::ffff:192.168.0.1]/", nil)
-	require.NoError(t, err)
-	require.ErrorIs(t, client.CheckRedirect(mapped, nil), clouddial.ErrLocalAddress)
-
-	public, err := http.NewRequest(http.MethodGet, "http://1.1.1.1/health", nil)
-	require.NoError(t, err)
-	require.NoError(t, client.CheckRedirect(public, nil))
-
-	via := make([]*http.Request, 10)
-	require.Error(t, client.CheckRedirect(public, via))
-}
-
-func TestLiveRedirectToAReservedAddressDoesNotDial(t *testing.T) {
+func TestLiveRedirectIsReturnedWithoutASecondDial(t *testing.T) {
 	targetHit := false
 	target := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		targetHit = true
@@ -127,16 +109,12 @@ func TestLiveRedirectToAReservedAddressDoesNotDial(t *testing.T) {
 		return original(ctx, network, addr)
 	}
 
-	_, err := client.Get(first.URL)
+	response, err := client.Get(first.URL)
 
-	require.ErrorIs(t, err, clouddial.ErrLocalAddress)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = response.Body.Close() })
+	require.Equal(t, http.StatusFound, response.StatusCode)
+	require.Equal(t, target.URL+"/hidden", response.Header.Get("Location"))
 	require.Zero(t, secondDials)
 	require.False(t, targetHit)
-}
-
-func TestClientAllowsFollowWhenRedirectStaysPublic(t *testing.T) {
-	client := clouddial.Client()
-	next, err := http.NewRequest(http.MethodGet, "https://1.0.0.1/next", nil)
-	require.NoError(t, err)
-	require.NoError(t, client.CheckRedirect(next, []*http.Request{{}}))
 }

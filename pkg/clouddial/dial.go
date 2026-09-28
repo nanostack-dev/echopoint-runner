@@ -15,7 +15,6 @@ import (
 
 const (
 	cloudJobIDEnv = "CLOUD_JOB_ID"
-	maxRedirects  = 10
 	dialTimeout   = 30 * time.Second
 	dialKeepAlive = 30 * time.Second
 )
@@ -30,10 +29,11 @@ func Job() bool {
 }
 
 // Client is the HTTP client for a Cloud job.
-// It refuses every reserved address block.
+// It refuses every reserved address block, and it returns a redirect response
+// without dialing the next address.
 //
-// 10.1.2.3 is refused. 1.1.1.1 is allowed. A redirect to 203.0.113.1 is refused.
-// ::ffff:192.168.0.1 is refused. ::ffff:1.1.1.1 is allowed.
+// 10.1.2.3 is refused. 1.1.1.1 is allowed. A 302 from 1.1.1.1 is the result
+// the flow sees. The Location target is not dialed.
 func Client() *http.Client {
 	dialer := &net.Dialer{Timeout: dialTimeout, KeepAlive: dialKeepAlive}
 	transport := cloneDefaultTransport()
@@ -42,8 +42,10 @@ func Client() *http.Client {
 		return dialChecked(ctx, dialer, network, addr)
 	}
 	return &http.Client{
-		Transport:     transport,
-		CheckRedirect: checkRedirect,
+		Transport: transport,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
 	}
 }
 
@@ -120,14 +122,6 @@ func dialChecked(ctx context.Context, dialer *net.Dialer, network, addr string) 
 		return nil, err
 	}
 	return dialer.DialContext(ctx, network, net.JoinHostPort(ip.String(), port))
-}
-
-func checkRedirect(req *http.Request, via []*http.Request) error {
-	if len(via) >= maxRedirects {
-		return errors.New("stopped after 10 redirects")
-	}
-	_, err := hostIPs(req.Context(), req.URL.Hostname())
-	return err
 }
 
 func hostIPs(ctx context.Context, host string) ([]netip.Addr, error) {
