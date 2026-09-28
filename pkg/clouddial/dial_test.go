@@ -1,6 +1,8 @@
 package clouddial_test
 
 import (
+	"context"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
@@ -98,6 +100,38 @@ func TestClientRefusesRedirectToLocalAddress(t *testing.T) {
 
 	via := make([]*http.Request, 10)
 	require.Error(t, client.CheckRedirect(public, via))
+}
+
+func TestLiveRedirectToAReservedAddressDoesNotDial(t *testing.T) {
+	targetHit := false
+	target := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		targetHit = true
+	}))
+	t.Cleanup(target.Close)
+
+	first := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL+"/hidden", http.StatusFound)
+	}))
+	t.Cleanup(first.Close)
+
+	client := clouddial.Client()
+	transport := client.Transport.(*http.Transport)
+	original := transport.DialContext
+	firstAddr := first.Listener.Addr().String()
+	secondDials := 0
+	transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		if addr == firstAddr {
+			return (&net.Dialer{}).DialContext(ctx, network, addr)
+		}
+		secondDials++
+		return original(ctx, network, addr)
+	}
+
+	_, err := client.Get(first.URL)
+
+	require.ErrorIs(t, err, clouddial.ErrLocalAddress)
+	require.Zero(t, secondDials)
+	require.False(t, targetHit)
 }
 
 func TestClientAllowsFollowWhenRedirectStaysPublic(t *testing.T) {
