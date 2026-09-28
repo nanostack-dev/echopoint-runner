@@ -173,7 +173,7 @@ func (n *SseNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 
 	// No client-level timeout: streaming is bounded by streamCtx instead, so a
 	// long-lived stream is not aborted mid-read by an http.Client deadline.
-	client := &http.Client{}
+	client := nodeHTTPClient()
 	resp, err := client.Do(req)
 	if err != nil {
 		// The overall deadline can elapse during the connect/header phase (a slow

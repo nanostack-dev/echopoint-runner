@@ -104,7 +104,7 @@ func (n *WebhookWaitNode) pollWebhookRequests(
 	requestsURL, token string,
 	assertions []CompositeAssertion,
 ) (capturedRequest, []spi.AssertionResult, []capturedRequest, error) {
-	client := &http.Client{}
+	client := nodeHTTPClient()
 	var last []spi.AssertionResult
 	var seen []capturedRequest
 	for {
