@@ -1,6 +1,7 @@
 package secretegress_test
 
 import (
+	"net/url"
 	"testing"
 
 	"github.com/nanostack-dev/echopoint-runner/pkg/secretegress"
@@ -56,6 +57,23 @@ func TestCheckRefusesWhenTheSecretHasNoHosts(t *testing.T) {
 	)
 
 	require.ErrorIs(t, err, secretegress.ErrHost)
+}
+
+func TestPublicMessageOmitsTheRedirectURL(t *testing.T) {
+	err := secretegress.Check(
+		map[string]string{"API_KEY": "s3cret"},
+		map[string][]string{"API_KEY": {"api.example.com"}},
+		"https://evil.example/?token=s3cret",
+		nil,
+		nil,
+	)
+	wrapped := &url.Error{Op: "Get", URL: "https://evil.example/?token=s3cret", Err: err}
+
+	message := secretegress.PublicMessage(wrapped)
+
+	require.Contains(t, message, "API_KEY")
+	require.NotContains(t, message, "s3cret")
+	require.NotContains(t, message, "evil.example/?token")
 }
 
 func TestCheckIgnoresARequestWithoutSecrets(t *testing.T) {

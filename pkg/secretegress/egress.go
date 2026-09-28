@@ -73,6 +73,19 @@ func carries(secret string, headers map[string]string, body any) bool {
 	return strings.Contains(string(encoded), secret)
 }
 
+// PublicMessage is the refusal text safe to show to a caller.
+// A surrounding URL error is dropped, because its URL can hold the secret.
+func PublicMessage(err error) string {
+	for err != nil {
+		var urlErr *url.Error
+		if !errors.As(err, &urlErr) || urlErr.Err == nil {
+			return err.Error()
+		}
+		err = urlErr.Err
+	}
+	return ""
+}
+
 func hostAllowed(host string, allowed []string) bool {
 	if host == "" {
 		return false

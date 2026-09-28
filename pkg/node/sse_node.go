@@ -156,6 +156,7 @@ func (n *SseNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 	if err = refuseSecretEgress(ctx, url, headers, nil); err != nil {
 		return n.createErrorResult(ctx.Inputs, method, url, nil, nil, "", err, startTime), err
 	}
+	client := outboundHTTPClient(ctx, nil)
 
 	timeout := time.Duration(n.timeoutMs()) * time.Millisecond
 	streamCtx, cancel := context.WithTimeout(ctx.Context(), timeout)
@@ -176,8 +177,10 @@ func (n *SseNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 
 	// No client-level timeout: streaming is bounded by streamCtx instead, so a
 	// long-lived stream is not aborted mid-read by an http.Client deadline.
-	client := nodeHTTPClient()
 	resp, err := client.Do(req)
+	if userErr := secretEgressUserError(err); userErr != nil {
+		return n.createErrorResult(ctx.Inputs, method, url, nil, nil, "", userErr, startTime), userErr
+	}
 	if err != nil {
 		// The overall deadline can elapse during the connect/header phase (a slow
 		// producer that has not yet sent the status line). That is the configured
