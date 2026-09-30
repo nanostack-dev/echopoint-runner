@@ -124,6 +124,8 @@ type DataContractMockNode struct {
 	outputs     map[string]any
 	shouldError bool
 	executedAt  *time.Time
+	// runFor keeps the node busy, so a test can order it against a sibling.
+	runFor time.Duration
 }
 
 func (n *DataContractMockNode) GetID() string {
@@ -154,6 +156,7 @@ func (n *DataContractMockNode) OutputSchema() []string {
 }
 
 func (n *DataContractMockNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
+	time.Sleep(n.runFor)
 	now := time.Now()
 	n.executedAt = &now
 
@@ -435,10 +438,11 @@ func TestFlowEngine_Execute_DownstreamSkippedWhenDependencyFails(t *testing.T) {
 	// step-dependent consumes the failed node's output, so it can never run.
 	dependent := newDataContractMockNode("step-dependent", []string{"step-failing.token"}, nil)
 
-	// step-good succeeds in the same batch as step-failing; step-tail depends on it
+	// step-good is still running when step-failing fails; step-tail depends on it
 	// (input available) but is aborted because the flow failed.
 	good := newDataContractMockNode("step-good", []string{"step-create.resourceId"}, []string{"value"})
 	good.outputs["value"] = "v"
+	good.runFor = 50 * time.Millisecond
 	tail := newDataContractMockNode("step-tail", []string{"step-good.value"}, nil)
 
 	flowInstance := flow.Flow{
@@ -742,13 +746,14 @@ func TestFlowEngine_Execute_AlwaysCleanupJoinRunsAfterUpstreamCleanupIsSkipped(t
 	failMidFlow := newDataContractMockNode("step-fail-mid-flow", []string{"step-create-product.productId"}, nil)
 	failMidFlow.shouldError = true
 
-	// This setup branch would normally unlock cleanup, but it never gets to finish
-	// the main phase once fail-mid-flow errors.
+	// This setup branch would normally unlock cleanup, but it is still running
+	// when fail-mid-flow errors, so its successor never starts.
 	prepareRoleSearch := newDataContractMockNode(
 		"step-prepare-role-search",
 		[]string{"step-create-product.productId"},
 		nil,
 	)
+	prepareRoleSearch.runFor = 50 * time.Millisecond
 	searchRoles := newDataContractMockNode("step-search-roles", nil, nil)
 
 	deleteRole := newDataContractMockNode(
@@ -1928,4 +1933,39 @@ func TestFlowEngine_Execute_AssertNodeFailureSkipsDownstream(t *testing.T) {
 	require.True(t, ok)
 	require.NotNil(t, downstreamResult.SkipReason, "downstream node must be skipped after assert failure")
 	assert.Equal(t, "aborted_after_failure", *downstreamResult.SkipReason)
+}
+
+func TestFlowEngine_Execute_ASlowBranchDoesNotHoldASiblingBranch(t *testing.T) {
+	root := newDataContractMockNode("root", nil, []string{"id"})
+	root.outputs["id"] = "r-1"
+	slow := newDataContractMockNode("slow", []string{"root.id"}, nil)
+	slow.runFor = 300 * time.Millisecond
+	first := newDataContractMockNode("first", []string{"root.id"}, []string{"id"})
+	first.outputs["id"] = "f-1"
+	second := newDataContractMockNode("second", []string{"first.id"}, []string{"id"})
+	second.outputs["id"] = "s-1"
+	third := newDataContractMockNode("third", []string{"second.id"}, nil)
+
+	flowInstance := flow.Flow{
+		Name:  "Slow Sibling",
+		Nodes: []node.AnyNode{root, slow, first, second, third},
+		Edges: []edge.Edge{
+			{ID: "e1", Source: "root", Target: "slow", Type: edge.TypeSuccess},
+			{ID: "e2", Source: "root", Target: "first", Type: edge.TypeSuccess},
+			{ID: "e3", Source: "first", Target: "second", Type: edge.TypeSuccess},
+			{ID: "e4", Source: "second", Target: "third", Type: edge.TypeSuccess},
+		},
+		Version: "1.0",
+	}
+	flowEngine, err := engine.NewFlowEngine(flowInstance, &engine.Options{})
+	require.NoError(t, err)
+
+	result, err := flowEngine.Execute(map[string]any{})
+	require.NoError(t, err)
+	require.True(t, result.Success)
+
+	require.NotNil(t, third.executedAt)
+	require.NotNil(t, slow.executedAt)
+	assert.True(t, third.executedAt.Before(*slow.executedAt),
+		"the end of the fast branch must not wait for the slow sibling")
 }

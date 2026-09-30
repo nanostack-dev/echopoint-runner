@@ -54,7 +54,7 @@ type ExecutionContext struct {
 	// including inherited inputs, static overrides, and any initial input values.
 	FlowInputs map[string]any
 	// AllOutputs exposes a read-only snapshot of outputs from nodes that completed
-	// before the current scheduling batch started.
+	// before this node started.
 	AllOutputs OutputView
 	// ModuleResolver exposes the additional flow definitions available to module
 	// nodes during nested execution.
