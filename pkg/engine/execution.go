@@ -1,9 +1,9 @@
 package engine
 
 import (
+	"errors"
 	"fmt"
 	"maps"
-	"sync"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -38,6 +38,17 @@ type nodeRunResult struct {
 	result spi.AnyResult
 	err    error
 }
+
+// missingInputsError is how an always node's goroutine reports that its inputs
+// were not there; the scheduler turns it into a skipped result.
+type missingInputsError struct {
+	err       error
+	startedAt time.Time
+}
+
+func (e missingInputsError) Error() string { return e.err.Error() }
+
+func (e missingInputsError) Unwrap() error { return e.err }
 
 func (engine *FlowEngine) executeNodes(
 	initialInputs map[string]any,
@@ -76,20 +87,31 @@ func (engine *FlowEngine) executeNodes(
 	return engine.finalizeExecution(state)
 }
 
+// runOnSuccessPhase starts each node the moment its own predecessors finish,
+// so a slow node (a delay, a long webhook wait) holds only its own successors.
+// After the first failure it starts nothing new and lets running nodes finish.
 func (engine *FlowEngine) runOnSuccessPhase(state *executionState) {
+	scheduler := newPhaseScheduler(engine, state)
 	for {
-		ready := engine.readyNodes(state.remainingInputs, spi.RunWhenOnSuccess)
-		if len(ready) == 0 {
+		if !state.mainFailed {
+			engine.startReadyOnSuccessNodes(scheduler, state)
+		}
+		if scheduler.idle() {
 			return
 		}
+		finished := scheduler.next()
+		engine.recordOnSuccessResults([]nodeRunResult{finished}, state)
+	}
+}
 
-		// Partition ready nodes into those that should run and those whose every
-		// live predecessor edge was routed away by a branch (fully dead). Dead
-		// nodes are skipped — which decrements THEIR successors — so the skip
-		// cascades through the untaken subtree on subsequent iterations.
-		toRun := make([]node.AnyNode, 0, len(ready))
-		toSkip := make([]node.AnyNode, 0)
-		for _, readyNode := range ready {
+// startReadyOnSuccessNodes starts every ready node, and skips the ones whose
+// every live predecessor edge was routed away (fully dead) or whose inputs
+// name a skipped node. A skip unblocks its successors, so it repeats until no
+// node changes.
+func (engine *FlowEngine) startReadyOnSuccessNodes(scheduler *phaseScheduler, state *executionState) {
+	for {
+		skipped := false
+		for _, readyNode := range scheduler.ready(spi.RunWhenOnSuccess) {
 			// A node is skipped (rather than run) when it is fully dead OR when one
 			// of its data inputs references the output of a node that was skipped
 			// via routing/dead-edge. The latter is a cross-arm diamond join: the
@@ -99,27 +121,13 @@ func (engine *FlowEngine) runOnSuccessPhase(state *executionState) {
 			// dependency_skipped outcome.
 			if engine.isFullyDead(readyNode, state) ||
 				engine.inputsReferenceSkippedNode(readyNode, state) {
-				toSkip = append(toSkip, readyNode)
+				engine.recordSkippedNode(readyNode, state, true)
+				skipped = true
 				continue
 			}
-			toRun = append(toRun, readyNode)
+			scheduler.start(readyNode)
 		}
-
-		for _, deadNode := range toSkip {
-			engine.recordSkippedNode(deadNode, state, true)
-		}
-
-		if len(toRun) == 0 {
-			// Progress was still made when nodes were skipped; loop again to pick
-			// up the cascade. Only stop when nothing is ready at all.
-			if len(toSkip) > 0 {
-				continue
-			}
-			return
-		}
-
-		completed := engine.runReadyNodes(toRun, state)
-		if engine.recordOnSuccessResults(completed, state) {
+		if !skipped {
 			return
 		}
 	}
@@ -167,18 +175,45 @@ func (engine *FlowEngine) inputsReferenceSkippedNode(n node.AnyNode, state *exec
 }
 
 func (engine *FlowEngine) runAlwaysPhase(state *executionState) {
+	scheduler := newPhaseScheduler(engine, state)
 	for {
-		ready := engine.readyNodes(state.remainingInputs, spi.RunWhenAlways)
-		if len(ready) == 0 {
-			if !engine.resolveBlockedAlwaysNodes(state) {
+		for _, readyNode := range scheduler.ready(spi.RunWhenAlways) {
+			scheduler.start(readyNode)
+		}
+		if scheduler.idle() {
+			// Nothing ready and nothing running: unblock always nodes whose
+			// predecessors all ended, or stop.
+			if !engine.resolveBlockedAlwaysNodes(scheduler, state) {
 				return
 			}
 			continue
 		}
-
-		completed := engine.runReadyNodes(ready, state)
-		engine.recordAlwaysResults(completed, state)
+		finished := scheduler.next()
+		engine.recordAlwaysResults([]nodeRunResult{engine.settleAlwaysSkip(finished, state)}, state)
 	}
+}
+
+// settleAlwaysSkip turns an always node that ran without its inputs into a
+// skipped result. It runs on the scheduler, never in a node's goroutine,
+// because building the skip reason reads the execution state.
+func (engine *FlowEngine) settleAlwaysSkip(finished nodeRunResult, state *executionState) nodeRunResult {
+	var missing missingInputsError
+	if !errors.As(finished.err, &missing) {
+		return finished
+	}
+	nodeID := finished.node.GetID()
+	state.skippedNodes[nodeID] = true
+	skipped := engine.createSkippedNodeResult(finished.node, missing.err, state)
+	engine.observer.NodeFinished(NodeFinishedEvent{
+		NodeID:      nodeID,
+		DisplayName: finished.node.GetDisplayName(),
+		NodeType:    finished.node.GetType(),
+		StartedAt:   missing.startedAt,
+		FinishedAt:  time.Now(),
+		DurationMs:  time.Since(missing.startedAt).Milliseconds(),
+		Result:      skipped,
+	})
+	return nodeRunResult{node: finished.node, result: skipped}
 }
 
 func (engine *FlowEngine) recordOnSuccessResults(completed []nodeRunResult, state *executionState) bool {
@@ -273,64 +308,58 @@ func (engine *FlowEngine) recordAlwaysResults(completed []nodeRunResult, state *
 	}
 }
 
-func (engine *FlowEngine) readyNodes(remainingInputs map[node.AnyNode]int, phase spi.RunWhen) []node.AnyNode {
-	ready := make([]node.AnyNode, 0, len(remainingInputs))
-	if len(remainingInputs) == 1 {
-		for nodeKey, inputCount := range remainingInputs {
-			if inputCount == 0 && nodeKey.GetRunWhen() == phase {
-				return append(ready, nodeKey)
-			}
-		}
-		return ready
-	}
+// phaseScheduler starts nodes as their predecessors finish. Only the loop
+// that owns it touches the execution state; a node's goroutine only runs the
+// node and hands the result back on done.
+type phaseScheduler struct {
+	engine   *FlowEngine
+	state    *executionState
+	done     chan nodeRunResult
+	inFlight map[node.AnyNode]bool
+}
 
-	for _, nodeKey := range engine.flow.Nodes {
-		inputCount, exists := remainingInputs[nodeKey]
-		if exists && inputCount == 0 && nodeKey.GetRunWhen() == phase {
-			ready = append(ready, nodeKey)
+func newPhaseScheduler(engine *FlowEngine, state *executionState) *phaseScheduler {
+	return &phaseScheduler{
+		engine:   engine,
+		state:    state,
+		done:     make(chan nodeRunResult, len(engine.flow.Nodes)),
+		inFlight: make(map[node.AnyNode]bool),
+	}
+}
+
+// ready lists, in flow order, the nodes of this phase whose predecessors all
+// finished and that are not running yet.
+func (s *phaseScheduler) ready(phase spi.RunWhen) []node.AnyNode {
+	ready := make([]node.AnyNode, 0)
+	for _, candidate := range s.engine.flow.Nodes {
+		inputCount, pending := s.state.remainingInputs[candidate]
+		if pending && inputCount == 0 && candidate.GetRunWhen() == phase && !s.inFlight[candidate] {
+			ready = append(ready, candidate)
 		}
 	}
-
 	return ready
 }
 
-func (engine *FlowEngine) runReadyNodes(
-	ready []node.AnyNode,
-	state *executionState,
-) []nodeRunResult {
-	views := make([]spi.OutputView, len(ready))
-	for i := range ready {
-		views[i] = node.NewOutputView(state.allOutputs)
-	}
+// start runs n in its own goroutine against the outputs of every node that has
+// finished so far.
+func (s *phaseScheduler) start(n node.AnyNode) {
+	s.inFlight[n] = true
+	outputView := node.NewOutputView(s.state.allOutputs)
+	go func() {
+		result, err := s.engine.runNode(n, outputView, s.state)
+		s.done <- nodeRunResult{node: n, result: result, err: err}
+	}()
+}
 
-	if len(ready) == 1 {
-		result, err := engine.runNode(ready[0], views[0], state)
-		return []nodeRunResult{{
-			node:   ready[0],
-			result: result,
-			err:    err,
-		}}
-	}
+func (s *phaseScheduler) idle() bool {
+	return len(s.inFlight) == 0
+}
 
-	results := make([]nodeRunResult, len(ready))
-	var wg sync.WaitGroup
-	wg.Add(len(ready))
-
-	for i, readyNode := range ready {
-		go func(index int, n node.AnyNode, outputView spi.OutputView) {
-			defer wg.Done()
-
-			result, err := engine.runNode(n, outputView, state)
-			results[index] = nodeRunResult{
-				node:   n,
-				result: result,
-				err:    err,
-			}
-		}(i, readyNode, views[i])
-	}
-
-	wg.Wait()
-	return results
+// next blocks until a running node finishes.
+func (s *phaseScheduler) next() nodeRunResult {
+	finished := <-s.done
+	delete(s.inFlight, finished.node)
+	return finished
 }
 
 func (engine *FlowEngine) runNode(
@@ -351,18 +380,7 @@ func (engine *FlowEngine) runNode(
 
 	if err := engine.validateInputs(n, outputView); err != nil {
 		if n.GetRunWhen() == spi.RunWhenAlways {
-			state.skippedNodes[nodeID] = true
-			skipped := engine.createSkippedNodeResult(n, err, state)
-			engine.observer.NodeFinished(NodeFinishedEvent{
-				NodeID:      nodeID,
-				DisplayName: displayName,
-				NodeType:    nodeType,
-				StartedAt:   startedAt,
-				FinishedAt:  time.Now(),
-				DurationMs:  time.Since(startedAt).Milliseconds(),
-				Result:      skipped,
-			})
-			return skipped, nil
+			return nil, missingInputsError{err: err, startedAt: startedAt}
 		}
 		// Input validation failure is caused by the user's flow definition, not a
 		// runner fault. Classify it as a UserError and log at debug rather than
@@ -682,7 +700,7 @@ func (engine *FlowEngine) finalizeExecution(state *executionState) error {
 // lose its turn just because a sibling test step failed upstream. Only a node
 // genuinely missing an input (its producer never ran) is skipped. Either outcome
 // unblocks later cleanup joins, such as delete_product after a delete_* step.
-func (engine *FlowEngine) resolveBlockedAlwaysNodes(state *executionState) bool {
+func (engine *FlowEngine) resolveBlockedAlwaysNodes(scheduler *phaseScheduler, state *executionState) bool {
 	outputView := node.NewOutputView(state.allOutputs)
 	toRun := make([]node.AnyNode, 0)
 	toSkip := make([]node.AnyNode, 0)
@@ -710,9 +728,8 @@ func (engine *FlowEngine) resolveBlockedAlwaysNodes(state *executionState) bool 
 	for _, currentNode := range toSkip {
 		engine.recordSkippedNode(currentNode, state, true)
 	}
-	if len(toRun) > 0 {
-		completed := engine.runReadyNodes(toRun, state)
-		engine.recordAlwaysResults(completed, state)
+	for _, currentNode := range toRun {
+		scheduler.start(currentNode)
 	}
 
 	return true
