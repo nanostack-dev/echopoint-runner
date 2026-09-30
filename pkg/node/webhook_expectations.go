@@ -79,15 +79,15 @@ func (n *WebhookWaitNode) executeExpectations(ctx spi.ExecutionContext) (spi.Any
 		return n.errorResult(ctx.Inputs, err, startTime, nil), err
 	}
 
-	everyEvent, unresolved := resolveAssertionTemplates(ctx, n.GetAssertions())
-	if len(unresolved) > 0 {
-		err = unresolvedReferencesError(unresolved)
-		return n.errorResult(ctx.Inputs, err, startTime, nil), err
-	}
+	everyEvent, everyEventUnresolved := resolveAssertionTemplates(ctx, n.GetAssertions())
 	groups := make([]resolvedExpectation, len(n.Data.Expect))
 	for i, expectation := range n.Data.Expect {
 		assertions, missing := resolveAssertionTemplates(ctx, expectation.Assertions)
-		groups[i] = resolvedExpectation{WebhookExpectation: expectation, assertions: assertions, unresolved: missing}
+		groups[i] = resolvedExpectation{
+			WebhookExpectation: expectation,
+			assertions:         assertions,
+			unresolved:         append(missing, everyEventUnresolved...),
+		}
 	}
 
 	waitCtx, cancel := context.WithTimeout(ctx.Context(), time.Duration(n.timeoutMs())*time.Millisecond)
@@ -478,7 +478,7 @@ func lookupReference(ctx spi.ExecutionContext, ref string) (any, bool) {
 
 func unresolvedReferencesError(refs []string) error {
 	return spi.NewUserError(
-		"WEBHOOK_WAIT_FAILED",
+		"ASSERTION_FAILED",
 		"webhook wait assertion references {{"+refs[0]+"}}, which has no value",
 		nil,
 	)

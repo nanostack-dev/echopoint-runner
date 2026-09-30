@@ -326,3 +326,37 @@ func TestWebhookWait_DeclaresAssertionReferencesForValidation(t *testing.T) {
 		t.Errorf("a wait must not require its refs as inputs: %v", wait.InputSchema())
 	}
 }
+
+func TestWebhookWaitExpect_UnresolvedCheckOnEveryEventFailsEveryGroup(t *testing.T) {
+	url := serveBatches(t, []map[string]any{
+		event("req-1", "organization.invitation.created", "oinv_A"),
+	})
+	wait := decodeExpectWait(t, 2000, 0,
+		[]expectGroup{invitationGroup("A created", "organization.invitation.created", "{{invite-a.id}}")},
+		bodyEquals("$.data.organization_id", "{{create-org.orgId}}"),
+	)
+
+	res, err := runExpectWait(t, wait, url, inviteOutputs)
+	if spi.ErrorCode(err) != "WEBHOOK_WAIT_EXPECTATIONS_FAILED" {
+		t.Fatalf("code=%s err=%v", spi.ErrorCode(err), err)
+	}
+	if res.Expectations[0].Problem != "not evaluated: no value for {{create-org.orgId}}" {
+		t.Errorf("problem=%q", res.Expectations[0].Problem)
+	}
+}
+
+func TestWebhookWait_ReferenceWithNoValueIsAFailedAssertion(t *testing.T) {
+	raw, _ := json.Marshal(map[string]any{
+		"id":         "wait",
+		"type":       "webhook_wait",
+		"run_when":   "always",
+		"assertions": []map[string]any{bodyEquals("$.data.invitation_id", "{{invite-c.id}}")},
+		"data":       map[string]any{"timeout_ms": 2000},
+	})
+	wait := decodeWebhookWait(t, raw)
+
+	_, err := runExpectWait(t, wait, "http://example.invalid", inviteOutputs)
+	if spi.ErrorCode(err) != "ASSERTION_FAILED" {
+		t.Fatalf("code=%s err=%v", spi.ErrorCode(err), err)
+	}
+}
