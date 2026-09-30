@@ -14,20 +14,21 @@ import (
 
 // HeaderExtractor extracts HTTP header values from a response.
 type HeaderExtractor struct {
-	HeaderName string `json:"headerName"`
+	HeaderName string `json:"header_name"`
 }
 
-// UnmarshalJSON reads header_name, the name the echopoint contract documents,
-// as well as headerName, which older flows store.
+// UnmarshalJSON reads header_name, the key of the echopoint contract. It still
+// reads headerName, the key this extractor used before, because flows saved
+// then store it.
 func (e *HeaderExtractor) UnmarshalJSON(data []byte) error {
 	var wire struct {
-		HeaderName      string `json:"headerName"`
-		HeaderNameSnake string `json:"header_name"`
+		HeaderName       string `json:"header_name"`
+		LegacyHeaderName string `json:"headerName"`
 	}
 	if err := json.Unmarshal(data, &wire); err != nil {
 		return err
 	}
-	e.HeaderName = cmp.Or(wire.HeaderNameSnake, wire.HeaderName)
+	e.HeaderName = cmp.Or(wire.HeaderName, wire.LegacyHeaderName)
 	return nil
 }
 

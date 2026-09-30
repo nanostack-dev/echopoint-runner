@@ -188,7 +188,7 @@ func TestWebhookWaitNode_TimeoutWithoutMatch(t *testing.T) {
 
 func TestWebhookWaitNode_AssertsOnARequestHeader(t *testing.T) {
 	raw := []byte(`{"id":"wait-1","display_name":"Wait for webhook","type":"webhook_wait",` +
-		`"assertions":[{"extractor_type":"header","extractor_data":{"headerName":"x-github-event"},` +
+		`"assertions":[{"extractor_type":"header","extractor_data":{"header_name":"x-github-event"},` +
 		`"operator_type":"equals","operator_data":{"value":"push"}}],"data":{"timeout_ms":2000}}`)
 	wait := decodeWebhookWait(t, raw)
 

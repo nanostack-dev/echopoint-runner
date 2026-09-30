@@ -1,6 +1,7 @@
 package httpextractors_test
 
 import (
+	"encoding/json"
 	"net/http"
 	"testing"
 
@@ -150,15 +151,20 @@ func TestHeaderExtractor_Extract_CaseInsensitivity(t *testing.T) {
 	assert.Equal(t, "application/json", result)
 }
 
-func TestHeaderExtractor_DecodesTheDocumentedHeaderNameKey(t *testing.T) {
-	for _, data := range []string{
-		`{"type":"header","header_name":"webhook-signature"}`,
-		`{"type":"header","headerName":"webhook-signature"}`,
-	} {
-		extractor, err := extractors.UnmarshalExtractor([]byte(data))
-		require.NoError(t, err)
-		header, ok := extractor.(httpextractors.HeaderExtractor)
-		require.True(t, ok)
-		assert.Equal(t, "webhook-signature", header.HeaderName, data)
-	}
+func TestHeaderExtractor_ReadsTheContractKeyHeaderName(t *testing.T) {
+	extractor, err := extractors.UnmarshalExtractor([]byte(`{"type":"header","header_name":"webhook-signature"}`))
+	require.NoError(t, err)
+	assert.Equal(t, httpextractors.HeaderExtractor{HeaderName: "webhook-signature"}, extractor)
+}
+
+func TestHeaderExtractor_StillReadsTheLegacyKeyOfSavedFlows(t *testing.T) {
+	extractor, err := extractors.UnmarshalExtractor([]byte(`{"type":"header","headerName":"webhook-signature"}`))
+	require.NoError(t, err)
+	assert.Equal(t, httpextractors.HeaderExtractor{HeaderName: "webhook-signature"}, extractor)
+}
+
+func TestHeaderExtractor_WritesTheContractKey(t *testing.T) {
+	raw, err := json.Marshal(httpextractors.HeaderExtractor{HeaderName: "webhook-signature"})
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"header_name":"webhook-signature"}`, string(raw))
 }
