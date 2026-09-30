@@ -23,7 +23,7 @@ type RequestData struct {
 	Method      string            `json:"method"`
 	URL         string            `json:"url"`
 	Headers     map[string]string `json:"headers"`
-	QueryParams map[string]any    `json:"queryParams"`
+	QueryParams map[string]any    `json:"query_params"`
 	Body        any               `json:"body"`
 	Timeout     int               `json:"timeout"`
 }

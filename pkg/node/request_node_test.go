@@ -1,7 +1,9 @@
 package node_test
 
 import (
+	"context"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/nanostack-dev/echopoint-runner/pkg/extractors"
@@ -156,4 +158,21 @@ func TestCreateResponseBackedErrorResultPreservesHTTPContext(t *testing.T) {
 	assert.Equal(t, parsedBody, result.ResponseBodyParsed)
 	assert.Equal(t, "https://example.com/login", result.RequestURL)
 	assert.Equal(t, http.MethodPost, result.RequestMethod)
+}
+
+func TestRequestNode_SendsTheQueryParamsOfTheContract(t *testing.T) {
+	var received string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		received = r.URL.RawQuery
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	parsed, err := node.UnmarshalNode([]byte(`{"id":"search","type":"request","data":{` +
+		`"method":"GET","url":"` + srv.URL + `/products","query_params":{"status":"active"},"timeout":1000}}`))
+	require.NoError(t, err)
+
+	_, err = parsed.Execute(spi.ExecutionContext{Ctx: context.Background()})
+	require.NoError(t, err)
+	assert.Equal(t, "status=active", received)
 }

@@ -1,6 +1,7 @@
 package httpextractors_test
 
 import (
+	"encoding/json"
 	"net/http"
 	"testing"
 
@@ -148,4 +149,16 @@ func TestHeaderExtractor_Extract_CaseInsensitivity(t *testing.T) {
 	// http.Header.Get() is case-insensitive, so this should succeed
 	require.NoError(t, err)
 	assert.Equal(t, "application/json", result)
+}
+
+func TestHeaderExtractor_ReadsTheContractKeyHeaderName(t *testing.T) {
+	extractor, err := extractors.UnmarshalExtractor([]byte(`{"type":"header","header_name":"webhook-signature"}`))
+	require.NoError(t, err)
+	assert.Equal(t, httpextractors.HeaderExtractor{HeaderName: "webhook-signature"}, extractor)
+}
+
+func TestHeaderExtractor_WritesTheContractKey(t *testing.T) {
+	raw, err := json.Marshal(httpextractors.HeaderExtractor{HeaderName: "webhook-signature"})
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"header_name":"webhook-signature"}`, string(raw))
 }

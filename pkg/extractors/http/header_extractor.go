@@ -12,7 +12,7 @@ import (
 
 // HeaderExtractor extracts HTTP header values from a response.
 type HeaderExtractor struct {
-	HeaderName string `json:"headerName"`
+	HeaderName string `json:"header_name"`
 }
 
 func (e HeaderExtractor) Extract(ctx extractors.ResponseContext) (any, error) {

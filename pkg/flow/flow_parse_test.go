@@ -557,7 +557,7 @@ func TestParseFromJSON_ExtractorFactory(t *testing.T) {
 
 	t.Run(
 		"HeaderExtractor", func(t *testing.T) {
-			data := []byte(`{"type": "header", "headerName": "Content-Type"}`)
+			data := []byte(`{"type": "header", "header_name": "Content-Type"}`)
 			ext, err := extractors.UnmarshalExtractor(data)
 			require.NoError(t, err, "should unmarshal Header extractor")
 			require.NotNil(t, ext, "extractor should not be nil")
