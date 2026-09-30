@@ -3,6 +3,7 @@ package flow
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/nanostack-dev/echopoint-runner/pkg/node"
@@ -128,7 +129,11 @@ func validateNodeReferences(
 	options ParseOptions,
 ) error {
 	nodeID := currentNode.GetID()
-	for _, ref := range currentNode.InputSchema() {
+	refs := currentNode.InputSchema()
+	if selfResolving, ok := currentNode.(node.SelfResolvingNode); ok {
+		refs = append(slices.Clone(refs), selfResolving.ResolvedReferences()...)
+	}
+	for _, ref := range refs {
 		if _, isFlowInput := availableInitialInputs[strings.TrimSpace(ref)]; isFlowInput {
 			continue
 		}

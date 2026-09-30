@@ -676,3 +676,34 @@ func TestParseAcceptsADottedFlowInputOnlyWhenItIsKnown(t *testing.T) {
 	_, err = flow.ParseFromJSONWithOptions(flowJSON, flow.ParseOptions{})
 	require.Error(t, err, "an unknown dotted reference is still a missing node")
 }
+
+func TestParseFromJSON_RejectsAnUnknownReferenceInAWebhookExpectation(t *testing.T) {
+	flowJSON := []byte(`{
+		"version": "1.0",
+		"name": "Invitation events",
+		"nodes": [
+			{
+				"id": "events",
+				"type": "webhook_wait",
+				"data": {
+					"timeout_ms": 1000,
+					"expect": [{
+						"name": "Invitation created",
+						"assertions": [{
+							"extractor_type": "jsonPath",
+							"extractor_data": {"path": "$.data.invitation_id"},
+							"operator_type": "equals",
+							"operator_data": {"value": "{{invite-member.id}}"}
+						}]
+					}]
+				}
+			}
+		],
+		"edges": []
+	}`)
+
+	flowResult, err := flow.ParseFromJSON(flowJSON)
+	require.Error(t, err)
+	assert.Nil(t, flowResult)
+	assert.Contains(t, err.Error(), "source node 'invite-member' not available")
+}
