@@ -1,8 +1,6 @@
 package httpextractors
 
 import (
-	"cmp"
-	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -15,21 +13,6 @@ import (
 // HeaderExtractor extracts HTTP header values from a response.
 type HeaderExtractor struct {
 	HeaderName string `json:"header_name"`
-}
-
-// UnmarshalJSON reads header_name, the key of the echopoint contract. It still
-// reads headerName, the key this extractor used before, because flows saved
-// then store it.
-func (e *HeaderExtractor) UnmarshalJSON(data []byte) error {
-	var wire struct {
-		HeaderName       string `json:"header_name"`
-		LegacyHeaderName string `json:"headerName"`
-	}
-	if err := json.Unmarshal(data, &wire); err != nil {
-		return err
-	}
-	e.HeaderName = cmp.Or(wire.HeaderName, wire.LegacyHeaderName)
-	return nil
 }
 
 func (e HeaderExtractor) Extract(ctx extractors.ResponseContext) (any, error) {

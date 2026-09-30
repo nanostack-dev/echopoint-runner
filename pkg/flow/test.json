@@ -30,7 +30,7 @@
         "method": "POST",
         "url": "https://api.example.com/users",
         "headers": {"Content-Type": "application/json"},
-        "queryParams": {},
+        "query_params": {},
         "body": {"name": "John Doe", "email": "john@example.com"},
         "timeout": 30000
       }
