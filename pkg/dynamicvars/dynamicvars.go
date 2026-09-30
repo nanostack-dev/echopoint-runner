@@ -101,6 +101,19 @@ func Catalog() []Entry {
 
 // --- helpers ---
 
+// startedPlus is the execution start moved by the offset in args[0], written
+// as a Go duration with an optional sign: +15s, -1h, 90m.
+func (c *Context) startedPlus(args []string) (time.Time, error) {
+	if len(args) == 0 || args[0] == "" {
+		return c.started, nil
+	}
+	offset, err := time.ParseDuration(strings.TrimPrefix(args[0], "+"))
+	if err != nil {
+		return time.Time{}, fmt.Errorf("offset %q: %w", args[0], err)
+	}
+	return c.started.Add(offset), nil
+}
+
 func argInt(args []string, idx, def int) int {
 	if idx < len(args) {
 		if v, err := strconv.Atoi(args[idx]); err == nil {
@@ -129,15 +142,27 @@ var registry = map[string]Entry{
 	},
 	"timestamp": {
 		Category: catTime,
-		Desc:     "Unix seconds at execution start (stable).",
-		Example:  "{{$timestamp}}",
-		gen:      func(c *Context, _ []string) (string, error) { return strconv.FormatInt(c.started.Unix(), 10), nil },
+		Desc:     "Unix seconds at execution start (stable). Arg: an offset such as +15s or -1h.",
+		Example:  "{{$timestamp:+15s}}",
+		gen: func(c *Context, args []string) (string, error) {
+			at, err := c.startedPlus(args)
+			if err != nil {
+				return "", err
+			}
+			return strconv.FormatInt(at.Unix(), 10), nil
+		},
 	},
 	"isoTimestamp": {
 		Category: catTime,
-		Desc:     "RFC3339 timestamp at execution start (stable).",
-		Example:  "{{$isoTimestamp}}",
-		gen:      func(c *Context, _ []string) (string, error) { return c.started.Format(time.RFC3339), nil },
+		Desc:     "RFC3339 timestamp at execution start (stable). Arg: an offset such as +15s or -1h.",
+		Example:  "{{$isoTimestamp:+15s}}",
+		gen: func(c *Context, args []string) (string, error) {
+			at, err := c.startedPlus(args)
+			if err != nil {
+				return "", err
+			}
+			return at.Format(time.RFC3339), nil
+		},
 	},
 	"today": {
 		Category: catTime,

@@ -1,8 +1,10 @@
 package dynamicvars_test
 
 import (
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/nanostack-dev/echopoint-runner/pkg/dynamicvars"
 )
@@ -52,5 +54,35 @@ func TestCatalogIsPopulatedAndSorted(t *testing.T) {
 		if e.Name == "" || e.Desc == "" || e.Example == "" || e.Category == "" {
 			t.Errorf("catalog entry %q is missing fields", e.Name)
 		}
+	}
+}
+
+func TestTimeGeneratorsMoveByAnOffset(t *testing.T) {
+	c := dynamicvars.New("exec-offset")
+	startText, _ := c.Resolve("isoTimestamp", nil)
+	start, err := time.Parse(time.RFC3339, startText)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for arg, want := range map[string]time.Duration{"+15s": 15 * time.Second, "-1h": -time.Hour, "90m": 90 * time.Minute} {
+		gotText, resolveErr := c.Resolve("isoTimestamp", []string{arg})
+		if resolveErr != nil {
+			t.Fatalf("%s: %v", arg, resolveErr)
+		}
+		got, _ := time.Parse(time.RFC3339, gotText)
+		if got.Sub(start) != want {
+			t.Errorf("%s: moved by %s", arg, got.Sub(start))
+		}
+		unix, _ := c.Resolve("timestamp", []string{arg})
+		if unix != strconv.FormatInt(start.Add(want).Unix(), 10) {
+			t.Errorf("%s: timestamp %s", arg, unix)
+		}
+	}
+}
+
+func TestTimeGeneratorsRefuseAMalformedOffset(t *testing.T) {
+	c := dynamicvars.New("exec-bad-offset")
+	if _, err := c.Resolve("isoTimestamp", []string{"soon"}); err == nil {
+		t.Error("expected an error for a malformed offset")
 	}
 }
