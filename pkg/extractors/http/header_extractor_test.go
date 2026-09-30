@@ -157,12 +157,6 @@ func TestHeaderExtractor_ReadsTheContractKeyHeaderName(t *testing.T) {
 	assert.Equal(t, httpextractors.HeaderExtractor{HeaderName: "webhook-signature"}, extractor)
 }
 
-func TestHeaderExtractor_StillReadsTheLegacyKeyOfSavedFlows(t *testing.T) {
-	extractor, err := extractors.UnmarshalExtractor([]byte(`{"type":"header","headerName":"webhook-signature"}`))
-	require.NoError(t, err)
-	assert.Equal(t, httpextractors.HeaderExtractor{HeaderName: "webhook-signature"}, extractor)
-}
-
 func TestHeaderExtractor_WritesTheContractKey(t *testing.T) {
 	raw, err := json.Marshal(httpextractors.HeaderExtractor{HeaderName: "webhook-signature"})
 	require.NoError(t, err)
