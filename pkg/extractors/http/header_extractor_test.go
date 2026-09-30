@@ -149,3 +149,16 @@ func TestHeaderExtractor_Extract_CaseInsensitivity(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "application/json", result)
 }
+
+func TestHeaderExtractor_DecodesTheDocumentedHeaderNameKey(t *testing.T) {
+	for _, data := range []string{
+		`{"type":"header","header_name":"webhook-signature"}`,
+		`{"type":"header","headerName":"webhook-signature"}`,
+	} {
+		extractor, err := extractors.UnmarshalExtractor([]byte(data))
+		require.NoError(t, err)
+		header, ok := extractor.(httpextractors.HeaderExtractor)
+		require.True(t, ok)
+		assert.Equal(t, "webhook-signature", header.HeaderName, data)
+	}
+}

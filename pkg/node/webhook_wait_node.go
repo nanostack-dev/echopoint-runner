@@ -23,8 +23,11 @@ const (
 )
 
 // WebhookWaitData configures a wait on the webhook requests captured for this execution.
+// With Expect, the wait checks a set of named events instead of taking the first match.
 type WebhookWaitData struct {
-	TimeoutMs int `json:"timeout_ms"`
+	TimeoutMs int                  `json:"timeout_ms"`
+	SettleMs  int                  `json:"settle_ms"`
+	Expect    []WebhookExpectation `json:"expect,omitempty"`
 }
 
 // WebhookWaitNode polls GET webhook.requests_url with the job token until a stored
@@ -60,17 +63,41 @@ func (n *WebhookWaitNode) timeoutMs() int {
 	return n.Data.TimeoutMs
 }
 
+// ResolvedReferences names the {{refs}} in assertion values. The wait resolves
+// them itself from completed outputs, so a final check that runs after a failed
+// branch still evaluates every group whose references exist.
+func (n *WebhookWaitNode) ResolvedReferences() []string {
+	values := make([]any, 0, len(n.GetAssertions()))
+	for _, assertion := range n.GetAssertions() {
+		values = append(values, assertion.ExpectedValue)
+	}
+	for _, expectation := range n.Data.Expect {
+		for _, assertion := range expectation.Assertions {
+			values = append(values, assertion.ExpectedValue)
+		}
+	}
+	return (&SchemaInference{}).ExtractTemplateVariables(values)
+}
+
 func (n *WebhookWaitNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
+	if len(n.Data.Expect) > 0 {
+		return n.executeExpectations(ctx)
+	}
 	startTime := time.Now()
 	requestsURL, token, err := n.waitInputs(ctx)
 	if err != nil {
+		return n.errorResult(ctx.Inputs, err, startTime, nil), err
+	}
+	assertions, unresolved := resolveAssertionTemplates(ctx, n.GetAssertions())
+	if len(unresolved) > 0 {
+		err = unresolvedReferencesError(unresolved)
 		return n.errorResult(ctx.Inputs, err, startTime, nil), err
 	}
 
 	waitCtx, cancel := context.WithTimeout(ctx.Context(), time.Duration(n.timeoutMs())*time.Millisecond)
 	defer cancel()
 
-	item, results, seen, waitErr := n.pollWebhookRequests(waitCtx, requestsURL, token, n.GetAssertions())
+	item, results, seen, waitErr := n.pollWebhookRequests(waitCtx, requestsURL, token, assertions)
 	if waitErr != nil {
 		failed := n.errorResult(ctx.Inputs, waitErr, startTime, results)
 		failed.RecentRequests = recentRequestOutputs(seen)
@@ -80,7 +107,7 @@ func (n *WebhookWaitNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, erro
 }
 
 func (n *WebhookWaitNode) waitInputs(ctx spi.ExecutionContext) (string, string, error) {
-	if len(n.GetAssertions()) == 0 {
+	if len(n.GetAssertions()) == 0 && len(n.Data.Expect) == 0 {
 		return "", "", spi.NewUserError(
 			"WEBHOOK_WAIT_FAILED",
 			"webhook wait requires at least one assertion",
