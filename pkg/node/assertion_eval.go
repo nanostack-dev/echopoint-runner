@@ -49,6 +49,29 @@ func EvaluateAssertions(
 	return results, nil
 }
 
+// ResolveAssertions fills the {{refs}} and {{$dynamic}} values in expected
+// values from completed steps and flow inputs. A reference with no value fails
+// the assertion pass instead of comparing against the template text.
+func ResolveAssertions(
+	ctx spi.ExecutionContext, assertions []CompositeAssertion,
+) ([]CompositeAssertion, error) {
+	resolved, unresolved := resolveAssertionTemplates(ctx, assertions)
+	if len(unresolved) > 0 {
+		return resolved, unresolvedReferencesError(unresolved)
+	}
+	return resolved, nil
+}
+
+// AssertionReferences names the {{refs}} in a node's assertion values, so flow
+// validation can check each one is produced before the node runs.
+func AssertionReferences(n AnyNode) []string {
+	values := make([]any, 0, len(n.GetAssertions()))
+	for _, assertion := range n.GetAssertions() {
+		values = append(values, assertion.ExpectedValue)
+	}
+	return (&SchemaInference{}).ExtractTemplateVariables(values)
+}
+
 // ExtractOutputs runs every output extractor against rc, returning the produced
 // name->value map. It fails fast on the first extractor error. This is the single
 // output-extraction implementation; every node delegates to it.

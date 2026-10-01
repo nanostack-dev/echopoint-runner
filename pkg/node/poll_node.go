@@ -115,6 +115,10 @@ func (n *PollNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 		err := errors.New("poll requires at least one exit-condition assertion")
 		return n.errorResult(ctx.Inputs, err, "POLL_FAILED", 0, nil, startTime), err
 	}
+	assertions, resolveErr := ResolveAssertions(ctx, assertions)
+	if resolveErr != nil {
+		return n.errorResult(ctx.Inputs, resolveErr, "ASSERTION_FAILED", 0, nil, startTime), resolveErr
+	}
 
 	pollCtx := ctx.Context()
 	if n.Data.TimeoutMs > 0 {
@@ -158,7 +162,7 @@ func (n *PollNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 		}
 
 		rc := extractors.NewValueResponseContext(res.FinalOutputs)
-		assertionResults, assertErr := EvaluateAssertions(n.GetAssertions(), rc)
+		assertionResults, assertErr := EvaluateAssertions(assertions, rc)
 		lastAssertionResults = assertionResults
 
 		if assertErr == nil {

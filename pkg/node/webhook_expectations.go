@@ -479,7 +479,7 @@ func lookupReference(ctx spi.ExecutionContext, ref string) (any, bool) {
 func unresolvedReferencesError(refs []string) error {
 	return spi.NewUserError(
 		"ASSERTION_FAILED",
-		"webhook wait assertion references {{"+refs[0]+"}}, which has no value",
+		"assertion references {{"+refs[0]+"}}, which has no value",
 		nil,
 	)
 }

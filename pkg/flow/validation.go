@@ -129,9 +129,9 @@ func validateNodeReferences(
 	options ParseOptions,
 ) error {
 	nodeID := currentNode.GetID()
-	refs := currentNode.InputSchema()
+	refs := append(slices.Clone(currentNode.InputSchema()), node.AssertionReferences(currentNode)...)
 	if selfResolving, ok := currentNode.(node.SelfResolvingNode); ok {
-		refs = append(slices.Clone(refs), selfResolving.ResolvedReferences()...)
+		refs = append(refs, selfResolving.ResolvedReferences()...)
 	}
 	for _, ref := range refs {
 		if _, isFlowInput := availableInitialInputs[strings.TrimSpace(ref)]; isFlowInput {

@@ -468,7 +468,7 @@ func evalExecutor(n node.AnyNode) NodeExecutor {
 		if execErr != nil || res == nil {
 			return res, execErr
 		}
-		return applyAssertionsAndOutputs(n, res)
+		return applyAssertionsAndOutputs(n, res, ec)
 	}
 }
 
@@ -484,7 +484,7 @@ func evalExecutor(n node.AnyNode) NodeExecutor {
 // schema validation run only after all assertions pass; produced outputs are
 // merged into the result.
 func applyAssertionsAndOutputs(
-	n node.AnyNode, res spi.AnyResult,
+	n node.AnyNode, res spi.AnyResult, ec spi.ExecutionContext,
 ) (spi.AnyResult, error) {
 	provider, ok := res.(node.AssertionContextProvider)
 	if !ok {
@@ -502,7 +502,15 @@ func applyAssertionsAndOutputs(
 		MergeOutputs(map[string]any)
 	})
 
-	assertionResults, assertErr := node.EvaluateAssertions(n.GetAssertions(), rc)
+	assertions, resolveErr := node.ResolveAssertions(ec, n.GetAssertions())
+	if resolveErr != nil {
+		if failer != nil {
+			failer.Fail(resolveErr, "ASSERTION_FAILED")
+		}
+		return res, resolveErr
+	}
+
+	assertionResults, assertErr := node.EvaluateAssertions(assertions, rc)
 	if failer != nil {
 		failer.SetAssertionResults(assertionResults)
 	}
