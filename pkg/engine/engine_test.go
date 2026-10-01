@@ -1078,8 +1078,8 @@ func TestFlowEngine_Execute_ModuleNodeExportsNestedOutputs(t *testing.T) {
 					"timeout": 1000
 				},
 				"outputs": [
-					{"name": "chargeId", "extractor": {"type": "jsonPath", "path": "$.chargeId"}},
-					{"name": "status", "extractor": {"type": "jsonPath", "path": "$.status"}}
+					{"name": "chargeId", "extractor": {"type": "json_path", "path": "$.chargeId"}},
+					{"name": "status", "extractor": {"type": "json_path", "path": "$.status"}}
 				]
 			}
 		],
@@ -1108,7 +1108,7 @@ func TestFlowEngine_Execute_ModuleNodeExportsNestedOutputs(t *testing.T) {
 					"timeout": 1000
 				},
 				"outputs": [
-					{"name": "notificationId", "extractor": {"type": "jsonPath", "path": "$.notificationId"}}
+					{"name": "notificationId", "extractor": {"type": "json_path", "path": "$.notificationId"}}
 				]
 			}
 		],
@@ -1770,7 +1770,7 @@ func TestFlowEngine_Execute_AssertNodeExplicitTargetOverUpstreamOutput(t *testin
 					"timeout": 1000
 				},
 				"outputs": [
-					{"name": "payload", "extractor": {"type": "jsonPath", "path": "$"}}
+					{"name": "payload", "extractor": {"type": "json_path", "path": "$"}}
 				]
 			},
 			{
@@ -1780,7 +1780,7 @@ func TestFlowEngine_Execute_AssertNodeExplicitTargetOverUpstreamOutput(t *testin
 				"data": {"target": "{{{create-resource.payload}}}"},
 				"assertions": [
 					{
-						"extractor_type": "jsonPath",
+						"extractor_type": "json_path",
 						"extractor_data": {"path": "$.status"},
 						"operator_type": "equals",
 						"operator_data": {"value": "active"}
@@ -1822,7 +1822,7 @@ func TestFlowEngine_Execute_AssertNodeOmittedTargetOverFlowInputs(t *testing.T) 
 				"data": {},
 				"assertions": [
 					{
-						"extractor_type": "jsonPath",
+						"extractor_type": "json_path",
 						"extractor_data": {"path": "$.userId"},
 						"operator_type": "equals",
 						"operator_data": {"value": "u-123"}
@@ -1872,7 +1872,7 @@ func TestFlowEngine_Execute_AssertNodeFailureSkipsDownstream(t *testing.T) {
 				"data": {},
 				"assertions": [
 					{
-						"extractor_type": "jsonPath",
+						"extractor_type": "json_path",
 						"extractor_data": {"path": "$.userId"},
 						"operator_type": "equals",
 						"operator_data": {"value": "expected"}

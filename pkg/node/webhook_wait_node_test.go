@@ -18,7 +18,7 @@ func mkWebhookWaitJSON(t *testing.T, timeoutMs int, withAssertion bool) []byte {
 	t.Helper()
 	assertions := "[]"
 	if withAssertion {
-		assertions = `[{"extractor_type":"jsonPath","extractor_data":{"path":"$.event"},` +
+		assertions = `[{"extractor_type":"json_path","extractor_data":{"path":"$.event"},` +
 			`"operator_type":"equals","operator_data":{"value":"order.created"}}]`
 	}
 	return fmt.Appendf(nil,
@@ -261,5 +261,66 @@ func TestWebhookWaitNode_TimeoutKeepsTheNewestRequests(t *testing.T) {
 	}
 	if newest := waitRes.RecentRequests[4]["id"]; newest != "req-7" {
 		t.Errorf("expected req-7 last, got %v", newest)
+	}
+}
+
+func runWebhookWait(t *testing.T, raw []byte, items ...map[string]any) (*node.WebhookWaitExecutionResult, error) {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(webhookRequestsJSON(items...))
+	}))
+	t.Cleanup(srv.Close)
+	res, err := decodeWebhookWait(t, raw).Execute(spi.ExecutionContext{
+		Ctx:        spi.WithJobToken(context.Background(), "tok"),
+		FlowInputs: map[string]any{"webhook.requests_url": srv.URL},
+	})
+	waitRes, ok := spi.As[*node.WebhookWaitExecutionResult](res)
+	if !ok {
+		t.Fatalf("got %T", res)
+	}
+	return waitRes, err
+}
+
+func TestWebhookWaitNode_AssertsOnAQueryParam(t *testing.T) {
+	raw := []byte(`{"id":"wait-1","type":"webhook_wait",` +
+		`"assertions":[{"extractor_type":"query_param","extractor_data":{"param_name":"q"},` +
+		`"operator_type":"equals","operator_data":{"value":"x"}}],"data":{"timeout_ms":2000}}`)
+	other := capturedRequest("req-1", `{}`)
+	other["query_params"] = map[string]string{"q": "y"}
+	match := capturedRequest("req-2", `{}`)
+	match["query_params"] = map[string]string{"q": "x"}
+
+	res, err := runWebhookWait(t, raw, capturedRequest("req-0", `{}`), other, match)
+	if err != nil {
+		t.Fatalf("expected success, got %v", err)
+	}
+	if res.Outputs["id"] != "req-2" {
+		t.Errorf("expected req-2 with ?q=x, got %v", res.Outputs["id"])
+	}
+}
+
+func TestWebhookWaitNode_BodyContainsMatchesTheReceivedText(t *testing.T) {
+	raw := []byte(`{"id":"wait-1","type":"webhook_wait",` +
+		`"assertions":[{"extractor_type":"body","extractor_data":{},` +
+		`"operator_type":"contains","operator_data":{"value":"\"status\": \"active\""}}],"data":{"timeout_ms":2000}}`)
+
+	res, err := runWebhookWait(t, raw, capturedRequest("req-1", `{"id": "org_1", "status": "active"}`))
+	if err != nil {
+		t.Fatalf("expected success, got %v", err)
+	}
+	if res.Outputs["id"] != "req-1" {
+		t.Errorf("id=%v", res.Outputs["id"])
+	}
+}
+
+func TestWebhookWaitNode_BodyNotContainsFailsOnALeak(t *testing.T) {
+	raw := []byte(`{"id":"wait-1","type":"webhook_wait",` +
+		`"assertions":[{"extractor_type":"body","extractor_data":{},` +
+		`"operator_type":"not_contains","operator_data":{"value":"\"password\""}}],"data":{"timeout_ms":300}}`)
+
+	_, err := runWebhookWait(t, raw, capturedRequest("req-1", `{"email":"a@example.com","password":"hunter2"}`))
+	if spi.ErrorCode(err) != "WEBHOOK_WAIT_TIMEOUT" {
+		t.Fatalf("expected the leaking request not to match, got %v", err)
 	}
 }

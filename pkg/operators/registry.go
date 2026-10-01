@@ -83,6 +83,20 @@ func Compare(operatorType OperatorType, actual, expected any) (bool, error) {
 	return comparator(actual, expected)
 }
 
+// ComparesText reports whether the operator compares stringified values, so an
+// extractor with a text form should hand it that text rather than a structure.
+func ComparesText(operatorType OperatorType) bool {
+	switch operatorType {
+	case OperatorTypeEquals, OperatorTypeNotEquals, OperatorTypeContains, OperatorTypeNotContains,
+		OperatorTypeStartsWith, OperatorTypeEndsWith, OperatorTypeRegex:
+		return true
+	case OperatorTypeEmpty, OperatorTypeNotEmpty, OperatorTypeGreaterThan, OperatorTypeLessThan,
+		OperatorTypeGreaterThanOrEqual, OperatorTypeLessThanOrEqual, OperatorTypeBetween:
+		return false
+	}
+	return false
+}
+
 // IsKnown reports whether operatorType has a registered comparator. Callers use
 // it to reject an unknown operator at flow-decode time (mirroring the extractor
 // registry) instead of failing deep inside Compare during execution.

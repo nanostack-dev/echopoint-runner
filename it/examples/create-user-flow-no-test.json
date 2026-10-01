@@ -16,13 +16,13 @@
         {
           "name": "statusCode",
           "extractor": {
-            "type": "statusCode"
+            "type": "status_code"
           }
         },
         {
           "name": "userId",
           "extractor": {
-            "type": "jsonPath",
+            "type": "json_path",
             "path": "$.user.id"
           }
         },
@@ -54,7 +54,7 @@
         {
           "name": "verifyStatus",
           "extractor": {
-            "type": "statusCode"
+            "type": "status_code"
           }
         },
         {

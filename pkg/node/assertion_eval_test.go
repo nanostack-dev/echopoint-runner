@@ -53,7 +53,7 @@ func mkAssertion(t *testing.T, extractor, path, op, value string) node.Composite
 }
 
 func TestEvaluate_StatusCode(t *testing.T) {
-	ca := mkAssertion(t, "statusCode", "", "equals", "201")
+	ca := mkAssertion(t, "status_code", "", "equals", "201")
 	if r := ca.Evaluate(fakeCtx{status: 201}); r.Error != "" || !r.Passed {
 		t.Fatalf("expected pass, got %+v", r)
 	}
@@ -68,11 +68,11 @@ func TestEvaluate_JSONPathOperators(t *testing.T) {
 		extractor, path, op, value string
 		want                       bool
 	}{
-		{"jsonPath", "$.name", "equals", "eptest", true},
-		{"jsonPath", "$.name", "equals", "nope", false},
-		{"jsonPath", "$.id", "notEmpty", "", true},
-		{"jsonPath", "$.empty", "empty", "", true},
-		{"jsonPath", "$.name", "contains", "test", true},
+		{"json_path", "$.name", "equals", "eptest", true},
+		{"json_path", "$.name", "equals", "nope", false},
+		{"json_path", "$.id", "not_empty", "", true},
+		{"json_path", "$.empty", "empty", "", true},
+		{"json_path", "$.name", "contains", "test", true},
 	}
 	for i, c := range cases {
 		ca := mkAssertion(t, c.extractor, c.path, c.op, c.value)
@@ -87,7 +87,7 @@ func TestEvaluate_JSONPathOperators(t *testing.T) {
 }
 
 func TestEvaluate_NumericCompare(t *testing.T) {
-	ca := mkAssertion(t, "statusCode", "", "greaterThan", "200")
+	ca := mkAssertion(t, "status_code", "", "greater_than", "200")
 	if r := ca.Evaluate(fakeCtx{status: 201}); r.Error != "" || !r.Passed {
 		t.Fatalf("expected 201>200 pass, got %+v", r)
 	}
@@ -104,15 +104,15 @@ func TestEvaluate_ExpandedOperators(t *testing.T) {
 		status                     int
 		want                       bool
 	}{
-		{"gte pass", "statusCode", "", "greaterThanOrEqual", "200", 200, true},
-		{"gte fail", "statusCode", "", "greaterThanOrEqual", "201", 200, false},
-		{"lte pass", "statusCode", "", "lessThanOrEqual", "299", 200, true},
-		{"lte fail", "statusCode", "", "lessThanOrEqual", "199", 200, false},
-		{"startsWith pass", "jsonPath", "$.name", "startsWith", "ep", 200, true},
-		{"startsWith fail", "jsonPath", "$.name", "startsWith", "zz", 200, false},
-		{"endsWith pass", "jsonPath", "$.name", "endsWith", "test", 200, true},
-		{"regex pass", "jsonPath", "$.name", "regex", "^ep.*t$", 200, true},
-		{"regex fail", "jsonPath", "$.name", "regex", "^x", 200, false},
+		{"gte pass", "status_code", "", "greater_than_or_equal", "200", 200, true},
+		{"gte fail", "status_code", "", "greater_than_or_equal", "201", 200, false},
+		{"lte pass", "status_code", "", "less_than_or_equal", "299", 200, true},
+		{"lte fail", "status_code", "", "less_than_or_equal", "199", 200, false},
+		{"starts_with pass", "json_path", "$.name", "starts_with", "ep", 200, true},
+		{"starts_with fail", "json_path", "$.name", "starts_with", "zz", 200, false},
+		{"ends_with pass", "json_path", "$.name", "ends_with", "test", 200, true},
+		{"regex pass", "json_path", "$.name", "regex", "^ep.*t$", 200, true},
+		{"regex fail", "json_path", "$.name", "regex", "^x", 200, false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -130,7 +130,7 @@ func TestEvaluate_ExpandedOperators(t *testing.T) {
 
 func TestEvaluate_Between(t *testing.T) {
 	// between needs operator_data.value to be a [min, max] array.
-	raw := `{"extractor_type":"statusCode","extractor_data":{},"operator_type":"between","operator_data":{"value":[200,299]}}`
+	raw := `{"extractor_type":"status_code","extractor_data":{},"operator_type":"between","operator_data":{"value":[200,299]}}`
 	var ca node.CompositeAssertion
 	if err := json.Unmarshal([]byte(raw), &ca); err != nil {
 		t.Fatalf("unmarshal: %v", err)
@@ -146,7 +146,7 @@ func TestEvaluate_Between(t *testing.T) {
 // An unknown operator is rejected at decode time (mirroring the extractor
 // registry) rather than surfacing as an Evaluate error during execution.
 func TestUnmarshal_RejectsUnknownOperator(t *testing.T) {
-	raw := `{"extractor_type":"statusCode","extractor_data":{},` +
+	raw := `{"extractor_type":"status_code","extractor_data":{},` +
 		`"operator_type":"definitelyNotAnOperator","operator_data":{"value":"1"}}`
 	var ca node.CompositeAssertion
 	if err := json.Unmarshal([]byte(raw), &ca); err == nil {
@@ -155,13 +155,13 @@ func TestUnmarshal_RejectsUnknownOperator(t *testing.T) {
 }
 
 func TestEvaluate_CapturesActualAndMetadata(t *testing.T) {
-	ca := mkAssertion(t, "statusCode", "", "equals", "201")
+	ca := mkAssertion(t, "status_code", "", "equals", "201")
 
 	pass := ca.Evaluate(fakeCtx{status: 201})
 	if !pass.Passed || fmt.Sprint(pass.Actual) != "201" {
 		t.Fatalf("expected pass with actual=201, got %+v", pass)
 	}
-	if pass.Extractor != "statusCode" || pass.Operator != "equals" || fmt.Sprint(pass.Expected) != "201" {
+	if pass.Extractor != "status_code" || pass.Operator != "equals" || fmt.Sprint(pass.Expected) != "201" {
 		t.Fatalf("expected metadata copied onto result, got %+v", pass)
 	}
 
@@ -174,7 +174,7 @@ func TestEvaluate_CapturesActualAndMetadata(t *testing.T) {
 // A failed assertion carries ASSERTION_FAILED so the engine logs it at debug.
 func TestEvaluateAssertions_FailureIsUserError(t *testing.T) {
 	results, err := node.EvaluateAssertions(
-		[]node.CompositeAssertion{mkAssertion(t, "statusCode", "", "equals", "200")},
+		[]node.CompositeAssertion{mkAssertion(t, "status_code", "", "equals", "200")},
 		fakeCtx{status: 404},
 	)
 	if err == nil {
@@ -198,7 +198,7 @@ func TestEvaluateAssertions_FailureIsUserError(t *testing.T) {
 // An extractor that cannot evaluate is a flow fault, so it too is a UserError.
 func TestEvaluateAssertions_EvalErrorIsUserError(t *testing.T) {
 	results, err := node.EvaluateAssertions(
-		[]node.CompositeAssertion{mkAssertion(t, "jsonPath", "$.missing.deep", "equals", "x")},
+		[]node.CompositeAssertion{mkAssertion(t, "json_path", "$.missing.deep", "equals", "x")},
 		fakeCtx{status: 200, parsed: "not-an-object"},
 	)
 	if err == nil {
@@ -219,8 +219,8 @@ func reqNode(assertions ...node.CompositeAssertion) *node.RequestNode {
 
 func TestRunAssertions_RecordsEveryPass(t *testing.T) {
 	n := reqNode(
-		mkAssertion(t, "statusCode", "", "equals", "200"),
-		mkAssertion(t, "jsonPath", "$.name", "equals", "eptest"),
+		mkAssertion(t, "status_code", "", "equals", "200"),
+		mkAssertion(t, "json_path", "$.name", "equals", "eptest"),
 	)
 	ctx := fakeCtx{status: 200, parsed: map[string]any{"name": "eptest"}}
 	results, err := node.RunAssertionsForTest(n, ctx)
@@ -242,9 +242,9 @@ func TestRunAssertions_RecordsEveryPass(t *testing.T) {
 
 func TestRunAssertions_RecordsFailureWithActual(t *testing.T) {
 	n := reqNode(
-		mkAssertion(t, "statusCode", "", "equals", "200"),    // passes
-		mkAssertion(t, "jsonPath", "$.name", "equals", "no"), // fails: actual "eptest"
-		mkAssertion(t, "jsonPath", "$.x", "equals", "y"),     // never reached
+		mkAssertion(t, "status_code", "", "equals", "200"),    // passes
+		mkAssertion(t, "json_path", "$.name", "equals", "no"), // fails: actual "eptest"
+		mkAssertion(t, "json_path", "$.x", "equals", "y"),     // never reached
 	)
 	ctx := fakeCtx{status: 200, parsed: map[string]any{"name": "eptest"}}
 	results, err := node.RunAssertionsForTest(n, ctx)
@@ -270,7 +270,7 @@ func TestRunAssertions_RecordsFailureWithActual(t *testing.T) {
 
 func TestRunAssertions_RecordsExtractorError(t *testing.T) {
 	// jsonPath against a non-map parsed body makes the extractor error out.
-	n := reqNode(mkAssertion(t, "jsonPath", "$.missing.deep", "equals", "x"))
+	n := reqNode(mkAssertion(t, "json_path", "$.missing.deep", "equals", "x"))
 	results, err := node.RunAssertionsForTest(n, fakeCtx{status: 200, parsed: "not-an-object"})
 	if err == nil {
 		t.Fatal("expected an extractor evaluation error")
@@ -293,7 +293,7 @@ func TestRunAssertions_RecordsExtractorError(t *testing.T) {
 // TestAssertionResults_SerializeInPayload proves the recorded results survive the
 // marshal path used to build the run-output payload (interface -> concrete struct).
 func TestAssertionResults_SerializeInPayload(t *testing.T) {
-	n := reqNode(mkAssertion(t, "statusCode", "", "equals", "200"))
+	n := reqNode(mkAssertion(t, "status_code", "", "equals", "200"))
 	results, err := node.RunAssertionsForTest(n, fakeCtx{status: 200})
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
@@ -309,5 +309,79 @@ func TestAssertionResults_SerializeInPayload(t *testing.T) {
 	if !strings.Contains(string(encoded), `"assertion_results"`) ||
 		!strings.Contains(string(encoded), `"passed":true`) {
 		t.Fatalf("assertion_results not serialized: %s", encoded)
+	}
+}
+
+func evaluateBody(t *testing.T, op, value string, ctx fakeCtx) spi.AssertionResult {
+	t.Helper()
+	ca := mkAssertion(t, "body", "", op, value)
+	return ca.Evaluate(ctx)
+}
+
+func jsonBodyCtx(t *testing.T, raw string) fakeCtx {
+	t.Helper()
+	var parsed any
+	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
+		t.Fatalf("unmarshal body: %v", err)
+	}
+	return fakeCtx{status: 200, parsed: parsed, raw: []byte(raw)}
+}
+
+func TestEvaluate_BodyContainsMatchesTheRawJSONText(t *testing.T) {
+	ctx := jsonBodyCtx(t, `{"id":"org_1","status":"active"}`)
+
+	r := evaluateBody(t, "contains", `"status":"active"`, ctx)
+	if r.Error != "" || !r.Passed {
+		t.Fatalf("expected pass, got %+v", r)
+	}
+	if r.Actual != `{"id":"org_1","status":"active"}` {
+		t.Errorf("actual=%v, want the raw body text", r.Actual)
+	}
+}
+
+func TestEvaluate_BodyNotContainsFailsWhenTheRawJSONHasTheKey(t *testing.T) {
+	leaking := jsonBodyCtx(t, `{"email":"a@example.com","password":"hunter2"}`)
+	clean := jsonBodyCtx(t, `{"email":"a@example.com"}`)
+	ca := mkAssertion(t, "body", "", "not_contains", `"password"`)
+
+	if r := ca.Evaluate(leaking); r.Error != "" || r.Passed {
+		t.Fatalf("expected the leak to fail, got %+v", r)
+	}
+	if r := ca.Evaluate(clean); r.Error != "" || !r.Passed {
+		t.Fatalf("expected pass without the key, got %+v", r)
+	}
+}
+
+func TestEvaluate_BodyOnAJSONArrayComparesTheRawText(t *testing.T) {
+	ctx := jsonBodyCtx(t, `[{"name":"a"},{"name":"b"}]`)
+	if r := evaluateBody(t, "starts_with", `[{"name":"a"}`, ctx); !r.Passed {
+		t.Fatalf("expected pass, got %+v", r)
+	}
+}
+
+func TestEvaluate_BodyOnAScalarKeepsTheParsedValue(t *testing.T) {
+	ctx := jsonBodyCtx(t, `"active"`)
+	if r := evaluateBody(t, "equals", "active", ctx); !r.Passed {
+		t.Fatalf("expected pass, got %+v", r)
+	}
+}
+
+func TestEvaluate_BodyEmptyStillReadsTheStructure(t *testing.T) {
+	ctx := jsonBodyCtx(t, `{}`)
+	if r := evaluateBody(t, "empty", "", ctx); !r.Passed {
+		t.Fatalf("expected an empty object to be empty, got %+v", r)
+	}
+}
+
+func TestExtractOutputs_BodyStaysStructured(t *testing.T) {
+	ctx := jsonBodyCtx(t, `{"status":"active"}`)
+	produced, err := node.ExtractOutputs(
+		[]node.Output{{Name: "whole", Extractor: extractors.BodyExtractor{}}}, ctx,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if body, isMap := produced["whole"].(map[string]any); !isMap || body["status"] != "active" {
+		t.Errorf("whole=%#v, want the parsed object", produced["whole"])
 	}
 }

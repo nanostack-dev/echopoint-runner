@@ -120,7 +120,7 @@ func (ca *CompositeAssertion) Evaluate(ctx extractors.ResponseContext) spi.Asser
 		res.Error = fmt.Sprintf("assertion has no extractor (type %q)", ca.ExtractorType)
 		return res
 	}
-	actual, err := ca.Extractor.Extract(ctx)
+	actual, err := ca.extract(ctx)
 	if err != nil {
 		res.Error = fmt.Sprintf("extractor %q failed: %v", ca.ExtractorType, err)
 		return res
@@ -134,6 +134,14 @@ func (ca *CompositeAssertion) Evaluate(ctx extractors.ResponseContext) spi.Asser
 	}
 	res.Passed = passed
 	return res
+}
+
+func (ca *CompositeAssertion) extract(ctx extractors.ResponseContext) (any, error) {
+	if textExtractor, hasText := ca.Extractor.(extractors.TextExtractor); hasText &&
+		operators.ComparesText(ca.OperatorType) {
+		return textExtractor.ExtractText(ctx)
+	}
+	return ca.Extractor.Extract(ctx)
 }
 
 func firstNonEmpty(a, b string) string {

@@ -20,6 +20,7 @@ const (
 	webhookRequestsURLInputKey  = "webhook.requests_url"
 	webhookRecentRequestsKept   = 5
 	headersCapability           = "headers"
+	queryParamsCapability       = "query_params"
 )
 
 // WebhookWaitData configures a wait on the webhook requests captured for this execution.
@@ -356,25 +357,35 @@ func (item capturedRequest) outputs() map[string]any {
 
 // assertionContext lets the node's assertions read the captured request the
 // way a request node reads a response: jsonPath, xmlPath and body see the
-// body, header sees the request headers. A webhook has no status code.
+// body, header sees the request headers, queryParam sees the query string.
+// String operators on body compare the body as received. A webhook has no
+// status code.
 func (item capturedRequest) assertionContext() extractors.ResponseContext {
 	headers := make(http.Header, len(item.Headers))
 	for name, value := range item.Headers {
 		headers.Set(name, value)
 	}
+	var rawBody []byte
+	if item.Body != nil && *item.Body != "" {
+		rawBody = []byte(*item.Body)
+	}
 	return capturedRequestContext{
-		body:    extractors.NewValueResponseContext(item.assertionValue()),
-		headers: headers,
+		body:        extractors.NewValueResponseContext(item.assertionValue()),
+		rawBody:     rawBody,
+		headers:     headers,
+		queryParams: item.QueryParams,
 	}
 }
 
 type capturedRequestContext struct {
-	body    extractors.ResponseContext
-	headers http.Header
+	body        extractors.ResponseContext
+	rawBody     []byte
+	headers     http.Header
+	queryParams map[string]string
 }
 
 func (c capturedRequestContext) HasCapability(capability string) bool {
-	if capability == headersCapability {
+	if capability == headersCapability || capability == queryParamsCapability {
 		return true
 	}
 	return c.body.HasCapability(capability)
@@ -388,6 +399,11 @@ func (c capturedRequestContext) Headers() http.Header {
 	return c.headers
 }
 
+func (c capturedRequestContext) GetQueryParam(name string) (string, bool) {
+	value, found := c.queryParams[name]
+	return value, found
+}
+
 func (c capturedRequestContext) GetParsedBody() any {
 	reader, isReader := c.body.(extractors.ParsedBodyReader)
 	if !isReader {
@@ -397,6 +413,9 @@ func (c capturedRequestContext) GetParsedBody() any {
 }
 
 func (c capturedRequestContext) GetRawBody() []byte {
+	if c.rawBody != nil {
+		return c.rawBody
+	}
 	reader, isReader := c.body.(extractors.ParsedBodyReader)
 	if !isReader {
 		return nil

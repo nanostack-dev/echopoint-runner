@@ -22,7 +22,7 @@ type expectGroup struct {
 
 func bodyEquals(path string, value any) map[string]any {
 	return map[string]any{
-		"extractor_type": "jsonPath",
+		"extractor_type": "json_path",
 		"extractor_data": map[string]any{"path": path},
 		"operator_type":  "equals",
 		"operator_data":  map[string]any{"value": value},
@@ -33,7 +33,7 @@ func headerStartsWith(name, prefix string) map[string]any {
 	return map[string]any{
 		"extractor_type": "header",
 		"extractor_data": map[string]any{"header_name": name},
-		"operator_type":  "startsWith",
+		"operator_type":  "starts_with",
 		"operator_data":  map[string]any{"value": prefix},
 	}
 }
@@ -358,5 +358,28 @@ func TestWebhookWait_ReferenceWithNoValueIsAFailedAssertion(t *testing.T) {
 	_, err := runExpectWait(t, wait, "http://example.invalid", inviteOutputs)
 	if spi.ErrorCode(err) != "ASSERTION_FAILED" {
 		t.Fatalf("code=%s err=%v", spi.ErrorCode(err), err)
+	}
+}
+
+func TestWebhookWaitExpect_GroupAssertsOnAQueryParam(t *testing.T) {
+	search := event("req-1", "search", "oinv_A")
+	search["query_params"] = map[string]string{"q": "x"}
+	url := serveBatches(t, []map[string]any{event("req-0", "search", "oinv_A"), search})
+	wait := decodeExpectWait(t, 2000, 0, []expectGroup{{
+		Name: "searched for x",
+		Assertions: []map[string]any{{
+			"extractor_type": "query_param",
+			"extractor_data": map[string]any{"param_name": "q"},
+			"operator_type":  "equals",
+			"operator_data":  map[string]any{"value": "x"},
+		}},
+	}})
+
+	res, err := runExpectWait(t, wait, url, nil)
+	if err != nil {
+		t.Fatalf("expected success, got %v", err)
+	}
+	if got := res.Expectations[0].RequestIDs; len(got) != 1 || got[0] != "req-1" {
+		t.Errorf("request ids=%v", got)
 	}
 }

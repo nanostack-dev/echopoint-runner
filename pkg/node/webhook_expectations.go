@@ -421,6 +421,8 @@ func describeAssertion(assertion CompositeAssertion) string {
 		target = extractor.Path
 	case extractorshttp.HeaderExtractor:
 		target = extractor.HeaderName
+	case extractorshttp.QueryParamExtractor:
+		target = "?" + extractor.ParamName
 	}
 	parts := []string{target, string(assertion.OperatorType)}
 	if assertion.ExpectedValue != nil {

@@ -50,7 +50,7 @@ func mkPollNodeJSON(t *testing.T, maxAttempts int, path, value string, assert bo
 	assertions := "[]"
 	if assert {
 		assertions = fmt.Sprintf(
-			`[{"extractor_type":"jsonPath","extractor_data":{"path":%q},`+
+			`[{"extractor_type":"json_path","extractor_data":{"path":%q},`+
 				`"operator_type":"equals","operator_data":{"value":%q}}]`,
 			path, value,
 		)

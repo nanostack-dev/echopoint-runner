@@ -58,7 +58,7 @@ func applyEnginePass(n *node.RequestNode, res spi.AnyResult) error {
 }
 
 func TestProcessResponse_SuccessRecordsAssertions(t *testing.T) {
-	n := reqNode(mkAssertion(t, "statusCode", "", "equals", "200"))
+	n := reqNode(mkAssertion(t, "status_code", "", "equals", "200"))
 	resp, respBody := jsonResponse(200, `{"id":"prd_1"}`)
 
 	result, err := node.ProcessResponseForTest(
@@ -85,7 +85,7 @@ func TestProcessResponse_SuccessRecordsAssertions(t *testing.T) {
 }
 
 func TestProcessResponse_AssertionFailureIsResponseBacked(t *testing.T) {
-	n := reqNode(mkAssertion(t, "statusCode", "", "equals", "500"))
+	n := reqNode(mkAssertion(t, "status_code", "", "equals", "500"))
 	resp, respBody := jsonResponse(200, `{}`)
 
 	result, err := node.ProcessResponseForTest(

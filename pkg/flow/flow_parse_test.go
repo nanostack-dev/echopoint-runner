@@ -93,7 +93,7 @@ func TestSimpleParseFromJson(t *testing.T) {
 
 			// Second output: statusCode with StatusCode extractor
 			assert.Equal(
-				t, "statusCode", outputs[1].Name, "second output name should be statusCode",
+				t, "status_code", outputs[1].Name, "second output name should be statusCode",
 			)
 			require.NotNil(t, outputs[1].Extractor, "second output should have extractor")
 		},
@@ -562,7 +562,7 @@ func TestParseFromJSON_ExtractorTypes(t *testing.T) {
 
 			// Second output should be StatusCode extractor
 			secondOutput := outputs[1]
-			assert.Equal(t, "statusCode", secondOutput.Name, "second output should be statusCode")
+			assert.Equal(t, "status_code", secondOutput.Name, "second output should be statusCode")
 			require.NotNil(t, secondOutput.Extractor, "second output should have extractor")
 
 			// Verify it's a StatusCode extractor by checking type
@@ -580,7 +580,7 @@ func TestParseFromJSON_ExtractorTypes(t *testing.T) {
 			require.True(t, ok)
 			outputs1 := req1.GetOutputs()
 			assert.Equal(t, "userId", outputs1[0].Name)
-			assert.Equal(t, "statusCode", outputs1[1].Name)
+			assert.Equal(t, "status_code", outputs1[1].Name)
 
 			req2, ok := node.AsRequestNode(flowResult.Nodes[1])
 			require.True(t, ok)
@@ -599,7 +599,7 @@ func TestParseFromJSON_ExtractorFactory(t *testing.T) {
 	// Test the extractor factory directly
 	t.Run(
 		"StatusCodeExtractor", func(t *testing.T) {
-			data := []byte(`{"type": "statusCode"}`)
+			data := []byte(`{"type": "status_code"}`)
 			ext, err := extractors.UnmarshalExtractor(data)
 			require.NoError(t, err, "should unmarshal StatusCode extractor")
 			require.NotNil(t, ext, "extractor should not be nil")
@@ -610,7 +610,7 @@ func TestParseFromJSON_ExtractorFactory(t *testing.T) {
 
 	t.Run(
 		"JSONPathExtractor", func(t *testing.T) {
-			data := []byte(`{"type": "jsonPath", "path": "$.user.id"}`)
+			data := []byte(`{"type": "json_path", "path": "$.user.id"}`)
 			ext, err := extractors.UnmarshalExtractor(data)
 			require.NoError(t, err, "should unmarshal JSONPath extractor")
 			require.NotNil(t, ext, "extractor should not be nil")
@@ -755,7 +755,7 @@ func TestParseFromJSON_RejectsAnUnknownReferenceInAWebhookExpectation(t *testing
 					"expect": [{
 						"name": "Invitation created",
 						"assertions": [{
-							"extractor_type": "jsonPath",
+							"extractor_type": "json_path",
 							"extractor_data": {"path": "$.data.invitation_id"},
 							"operator_type": "equals",
 							"operator_data": {"value": "{{invite-member.id}}"}

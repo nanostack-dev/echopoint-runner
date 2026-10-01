@@ -146,7 +146,7 @@ func TestBranchNode_Execute_JSONPathOverDefaultInputTarget(t *testing.T) {
         "cases": [
           {
             "when": {
-              "extractor_type": "jsonPath",
+              "extractor_type": "json_path",
               "extractor_data": {"path": "$['user.role']"},
               "operator_type": "equals",
               "operator_data": {"value": "admin"}
@@ -181,7 +181,7 @@ func TestBranchNode_Execute_NumericComparison(t *testing.T) {
             "when": {
               "extractor_type": "body",
               "extractor_data": {},
-              "operator_type": "greaterThan",
+              "operator_type": "greater_than",
               "operator_data": {"value": 100}
             },
             "target": "highValue"

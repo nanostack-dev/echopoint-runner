@@ -10,17 +10,18 @@ import (
 // echopoint's openapi enums and SSE decoders and must never drift.
 func TestWireValues(t *testing.T) {
 	cases := map[string]string{
-		string(spi.KindRequest):           "request",
-		string(spi.KindDelay):             "delay",
-		string(spi.KindModule):            "module",
-		string(spi.KindWebhookWait):       "webhook_wait",
-		string(spi.RunWhenOnSuccess):      "on_success",
-		string(spi.RunWhenAlways):         "always",
-		string(spi.ExtractorTypeJSONPath): "jsonPath",
-		string(spi.ExtractorTypeXMLPath):  "xmlPath",
-		string(spi.ExtractorTypeBody):     "body",
-		string(spi.EventNodeFailed):       "node.failed",
-		string(spi.EventFlowCompleted):    "flow.completed",
+		string(spi.KindRequest):             "request",
+		string(spi.KindDelay):               "delay",
+		string(spi.KindModule):              "module",
+		string(spi.KindWebhookWait):         "webhook_wait",
+		string(spi.RunWhenOnSuccess):        "on_success",
+		string(spi.RunWhenAlways):           "always",
+		string(spi.ExtractorTypeJSONPath):   "json_path",
+		string(spi.ExtractorTypeXMLPath):    "xml_path",
+		string(spi.ExtractorTypeBody):       "body",
+		string(spi.ExtractorTypeQueryParam): "query_param",
+		string(spi.EventNodeFailed):         "node.failed",
+		string(spi.EventFlowCompleted):      "flow.completed",
 	}
 	for got, want := range cases {
 		if got != want {
