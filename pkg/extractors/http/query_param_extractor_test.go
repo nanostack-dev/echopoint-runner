@@ -45,7 +45,7 @@ func TestQueryParamExtractor_ResponseHasNoQueryParams(t *testing.T) {
 }
 
 func TestQueryParamExtractor_DecodesFromTheWire(t *testing.T) {
-	extractor, err := extractors.UnmarshalExtractor([]byte(`{"type":"queryParam","param_name":"q"}`))
+	extractor, err := extractors.UnmarshalExtractor([]byte(`{"type":"query_param","param_name":"q"}`))
 	require.NoError(t, err)
 	assert.Equal(t, httpextractors.QueryParamExtractor{ParamName: "q"}, extractor)
 	assert.Equal(t, spi.ExtractorTypeQueryParam, extractor.GetType())

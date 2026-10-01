@@ -89,7 +89,7 @@ func TestSseNode_CollectsEventsWithPassingAssertion(t *testing.T) {
 	)
 
 	n := sseNode(t, srv.URL, node.SseData{TimeoutMs: 2000},
-		mkAssertion(t, "jsonPath", "$.status", "equals", "ok"),
+		mkAssertion(t, "json_path", "$.status", "equals", "ok"),
 	)
 
 	res, err := n.Execute(spi.ExecutionContext{Inputs: map[string]any{}})
@@ -124,7 +124,7 @@ func TestSseNode_FailingAssertionStopsAfterEvent(t *testing.T) {
 	)
 
 	n := sseNode(t, srv.URL, node.SseData{TimeoutMs: 2000},
-		mkAssertion(t, "jsonPath", "$.status", "equals", "ok"),
+		mkAssertion(t, "json_path", "$.status", "equals", "ok"),
 	)
 
 	res, err := n.Execute(spi.ExecutionContext{Inputs: map[string]any{}})
@@ -151,7 +151,7 @@ func TestSseNode_FailingAssertionContinuesWhenStopDisabled(t *testing.T) {
 
 	stop := false
 	n := sseNode(t, srv.URL, node.SseData{TimeoutMs: 2000, StopOnAssertionFailure: &stop},
-		mkAssertion(t, "jsonPath", "$.status", "equals", "ok"),
+		mkAssertion(t, "json_path", "$.status", "equals", "ok"),
 	)
 
 	res, err := n.Execute(spi.ExecutionContext{Inputs: map[string]any{}})
@@ -343,7 +343,7 @@ func TestSseNode_FailingAssertionLogsAtDebugNotError(t *testing.T) {
 
 	stop := false
 	n := sseNode(t, srv.URL, node.SseData{TimeoutMs: 2000, StopOnAssertionFailure: &stop},
-		mkAssertion(t, "jsonPath", "$.status", "equals", "ok"),
+		mkAssertion(t, "json_path", "$.status", "equals", "ok"),
 	)
 
 	_, err := n.Execute(spi.ExecutionContext{Inputs: map[string]any{}})
@@ -366,7 +366,7 @@ func TestSseNode_AssertionFailureStaysUserError(t *testing.T) {
 	)
 
 	n := sseNode(t, srv.URL, node.SseData{TimeoutMs: 2000},
-		mkAssertion(t, "jsonPath", "$.status", "equals", "ok"),
+		mkAssertion(t, "json_path", "$.status", "equals", "ok"),
 	)
 
 	_, err := n.Execute(spi.ExecutionContext{Inputs: map[string]any{}})

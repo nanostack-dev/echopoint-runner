@@ -361,7 +361,7 @@ const unreachableBody = `{"name":"body","nodes":[{"id":"probe","type":"request",
 func unreachablePollFlow(t *testing.T) flow.Flow {
 	t.Helper()
 	return secretContainerFlow(t, "poll", `{"id":"poll","type":"poll","assertions":[`+
-		`{"extractor_type":"jsonPath","extractor_data":{"path":"$.status"},`+
+		`{"extractor_type":"json_path","extractor_data":{"path":"$.status"},`+
 		`"operator_type":"equals","operator_data":{"value":"done"}}],`+
 		`"data":{"body":`+unreachableBody+`,"max_attempts":1,"interval_ms":1}}`)
 }
@@ -495,7 +495,7 @@ func treeLeaks(v any, secret string) bool {
 
 func jsonPathOutput(t *testing.T, name, path string) node.Output {
 	t.Helper()
-	extractor, err := extractors.UnmarshalExtractor([]byte(`{"type":"jsonPath","path":"` + path + `"}`))
+	extractor, err := extractors.UnmarshalExtractor([]byte(`{"type":"json_path","path":"` + path + `"}`))
 	if err != nil {
 		t.Fatalf("extractor: %v", err)
 	}

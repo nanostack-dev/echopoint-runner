@@ -1,12 +1,12 @@
 # Operators
 
-Evaluates assertion operators (`equals`, `contains`, `greaterThan`, `between`, …)
+Evaluates assertion operators (`equals`, `contains`, `greater_than`, `between`, …)
 against an extracted **actual** value and the assertion's **expected** value.
 
 ## Model: one comparator per type, dispatched through a registry
 
 ```
-OperatorType ("equals", "greaterThan", …)
+OperatorType ("equals", "greater_than", …)
         │
         ▼
   comparators map[OperatorType]Comparator      Comparator = func(actual, expected any) (bool, error)
@@ -27,12 +27,12 @@ OperatorType ("equals", "greaterThan", …)
 Comparisons compare coerced forms, because the wire delivers expected values as
 strings while extracted actuals are typed (e.g. an `int` status code vs `"200"`):
 
-- **string operators** (`equals`, `notEquals`, `contains`, `startsWith`,
-  `endsWith`, `regex`) compare `toString(actual)` vs `toString(expected)` — so
+- **string operators** (`equals`, `not_equals`, `contains`, `starts_with`,
+  `ends_with`, `regex`) compare `toString(actual)` vs `toString(expected)` — so
   `200` equals `"200"`. `equals` is string equality, **not** type-aware equality.
-- **numeric operators** (`greaterThan`, `lessThan`, `…OrEqual`, `between`) coerce
+- **numeric operators** (`greater_than`, `less_than`, `…_or_equal`, `between`) coerce
   both sides via `toFloat`; non-numeric input is an error.
-- **`empty` / `notEmpty`** inspect nil / empty string / empty list / empty map.
+- **`empty` / `not_empty`** inspect nil / empty string / empty list / empty map.
 
 This contract is pinned by table tests in `registry_test.go`. Changing it (e.g.
 making `equals` type-aware) is a behavior change visible to existing flows.

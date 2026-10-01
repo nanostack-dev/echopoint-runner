@@ -18,7 +18,7 @@ func mkWebhookWaitJSON(t *testing.T, timeoutMs int, withAssertion bool) []byte {
 	t.Helper()
 	assertions := "[]"
 	if withAssertion {
-		assertions = `[{"extractor_type":"jsonPath","extractor_data":{"path":"$.event"},` +
+		assertions = `[{"extractor_type":"json_path","extractor_data":{"path":"$.event"},` +
 			`"operator_type":"equals","operator_data":{"value":"order.created"}}]`
 	}
 	return fmt.Appendf(nil,
@@ -284,7 +284,7 @@ func runWebhookWait(t *testing.T, raw []byte, items ...map[string]any) (*node.We
 
 func TestWebhookWaitNode_AssertsOnAQueryParam(t *testing.T) {
 	raw := []byte(`{"id":"wait-1","type":"webhook_wait",` +
-		`"assertions":[{"extractor_type":"queryParam","extractor_data":{"param_name":"q"},` +
+		`"assertions":[{"extractor_type":"query_param","extractor_data":{"param_name":"q"},` +
 		`"operator_type":"equals","operator_data":{"value":"x"}}],"data":{"timeout_ms":2000}}`)
 	other := capturedRequest("req-1", `{}`)
 	other["query_params"] = map[string]string{"q": "y"}
@@ -317,7 +317,7 @@ func TestWebhookWaitNode_BodyContainsMatchesTheReceivedText(t *testing.T) {
 func TestWebhookWaitNode_BodyNotContainsFailsOnALeak(t *testing.T) {
 	raw := []byte(`{"id":"wait-1","type":"webhook_wait",` +
 		`"assertions":[{"extractor_type":"body","extractor_data":{},` +
-		`"operator_type":"notContains","operator_data":{"value":"\"password\""}}],"data":{"timeout_ms":300}}`)
+		`"operator_type":"not_contains","operator_data":{"value":"\"password\""}}],"data":{"timeout_ms":300}}`)
 
 	_, err := runWebhookWait(t, raw, capturedRequest("req-1", `{"email":"a@example.com","password":"hunter2"}`))
 	if spi.ErrorCode(err) != "WEBHOOK_WAIT_TIMEOUT" {

@@ -45,7 +45,7 @@ func TestAssertNode_JSONPathEqualsPasses(t *testing.T) {
 			"type": "assert",
 			"data": {},
 			"assertions": [{
-				"extractor_type": "jsonPath",
+				"extractor_type": "json_path",
 				"extractor_data": {"path": "$.status"},
 				"operator_type": "equals",
 				"operator_data": {"value": "ok"}
@@ -76,7 +76,7 @@ func TestAssertNode_FailingAssertionFlipsToFailed(t *testing.T) {
 			"type": "assert",
 			"data": {},
 			"assertions": [{
-				"extractor_type": "jsonPath",
+				"extractor_type": "json_path",
 				"extractor_data": {"path": "$.status"},
 				"operator_type": "equals",
 				"operator_data": {"value": "ok"}
@@ -114,13 +114,13 @@ func TestAssertNode_StopsAtFirstFailingAssertion(t *testing.T) {
 			"data": {},
 			"assertions": [
 				{
-					"extractor_type": "jsonPath",
+					"extractor_type": "json_path",
 					"extractor_data": {"path": "$.status"},
 					"operator_type": "equals",
 					"operator_data": {"value": "ok"}
 				},
 				{
-					"extractor_type": "jsonPath",
+					"extractor_type": "json_path",
 					"extractor_data": {"path": "$.count"},
 					"operator_type": "equals",
 					"operator_data": {"value": 9}
@@ -158,7 +158,7 @@ func TestAssertNode_TargetOmittedAssertsOverFlowInputs(t *testing.T) {
 			"type": "assert",
 			"data": {},
 			"assertions": [{
-				"extractor_type": "jsonPath",
+				"extractor_type": "json_path",
 				"extractor_data": {"path": "$.userId"},
 				"operator_type": "equals",
 				"operator_data": {"value": "u-123"}
@@ -190,14 +190,14 @@ func TestAssertNode_CapturesExtractorOutputOnSuccess(t *testing.T) {
 			"type": "assert",
 			"data": {},
 			"assertions": [{
-				"extractor_type": "jsonPath",
+				"extractor_type": "json_path",
 				"extractor_data": {"path": "$.status"},
 				"operator_type": "equals",
 				"operator_data": {"value": "active"}
 			}],
 			"outputs": [{
 				"name": "userId",
-				"extractor": {"type": "jsonPath", "path": "$.id"}
+				"extractor": {"type": "json_path", "path": "$.id"}
 			}]
 		}],
 		"edges": []
@@ -225,7 +225,7 @@ func TestAssertNode_DecodeViaUnmarshalNode(t *testing.T) {
 		"display_name": "Decoded assert",
 		"data": {"target": "{{{flow.body}}}"},
 		"assertions": [{
-			"extractor_type": "jsonPath",
+			"extractor_type": "json_path",
 			"extractor_data": {"path": "$.ok"},
 			"operator_type": "equals",
 			"operator_data": {"value": true}

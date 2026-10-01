@@ -8,22 +8,22 @@
       "type": "request",
       "assertions": [
         {
-          "extractor": {"type": "statusCode"},
+          "extractor": {"type": "status_code"},
           "operator": {"type": "equals", "value": 201}
         },
         {
-          "extractor": {"type": "jsonPath", "path": "$.user.id"},
-          "operator": {"type": "notEmpty"}
+          "extractor": {"type": "json_path", "path": "$.user.id"},
+          "operator": {"type": "not_empty"}
         }
       ],
       "outputs": [
         {
           "name": "userId",
-          "extractor": {"type": "jsonPath", "path": "$.user.id"}
+          "extractor": {"type": "json_path", "path": "$.user.id"}
         },
         {
-          "name": "statusCode",
-          "extractor": {"type": "statusCode"}
+          "name": "status_code",
+          "extractor": {"type": "status_code"}
         }
       ],
       "data": {
@@ -39,12 +39,12 @@
       "id": "req-success",
       "type": "request",
       "assertions": [
-        {"extractor": {"type": "statusCode"}, "operator": {"type": "equals", "value": 200}}
+        {"extractor": {"type": "status_code"}, "operator": {"type": "equals", "value": 200}}
       ],
       "outputs": [
         {
           "name": "responseStatus",
-          "extractor": {"type": "statusCode"}
+          "extractor": {"type": "status_code"}
         }
       ],
       "data": {

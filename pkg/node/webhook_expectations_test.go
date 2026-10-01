@@ -22,7 +22,7 @@ type expectGroup struct {
 
 func bodyEquals(path string, value any) map[string]any {
 	return map[string]any{
-		"extractor_type": "jsonPath",
+		"extractor_type": "json_path",
 		"extractor_data": map[string]any{"path": path},
 		"operator_type":  "equals",
 		"operator_data":  map[string]any{"value": value},
@@ -33,7 +33,7 @@ func headerStartsWith(name, prefix string) map[string]any {
 	return map[string]any{
 		"extractor_type": "header",
 		"extractor_data": map[string]any{"header_name": name},
-		"operator_type":  "startsWith",
+		"operator_type":  "starts_with",
 		"operator_data":  map[string]any{"value": prefix},
 	}
 }
@@ -368,7 +368,7 @@ func TestWebhookWaitExpect_GroupAssertsOnAQueryParam(t *testing.T) {
 	wait := decodeExpectWait(t, 2000, 0, []expectGroup{{
 		Name: "searched for x",
 		Assertions: []map[string]any{{
-			"extractor_type": "queryParam",
+			"extractor_type": "query_param",
 			"extractor_data": map[string]any{"param_name": "q"},
 			"operator_type":  "equals",
 			"operator_data":  map[string]any{"value": "x"},
