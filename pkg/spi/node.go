@@ -64,6 +64,11 @@ type ExecutionContext struct {
 	// DynamicVars resolves {{$name}} template variables (fake-data generators).
 	// May be nil, in which case {{$...}} references are left untouched.
 	DynamicVars DynamicResolver
+	// SecretValues maps a secret input key to its plaintext. A request that
+	// carries one of these values is refused unless SecretHosts allows the host.
+	SecretValues map[string]string
+	// SecretHosts maps a secret input key to the hostnames that may receive it.
+	SecretHosts map[string][]string
 }
 
 // Context returns the execution context, defaulting to context.Background() when

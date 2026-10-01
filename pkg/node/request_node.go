@@ -85,8 +85,23 @@ func (n *RequestNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 	if err != nil {
 		return n.createErrorResult(ctx.Inputs, err, time.Since(startTime)), err
 	}
+	if err = refuseSecretEgress(ctx, url, headers, body); err != nil {
+		return n.createErrorResult(ctx.Inputs, err, time.Since(startTime)), err
+	}
 
-	resp, respBody, err := n.makeRequestAndReadBody(ctx.Context(), url, n.Data.Method, headers, body, n.Data.Timeout)
+	client := outboundHTTPClient(ctx, body)
+	resp, respBody, err := n.makeRequestAndReadBody(
+		ctx.Context(),
+		client,
+		url,
+		n.Data.Method,
+		headers,
+		body,
+		n.Data.Timeout,
+	)
+	if userErr := secretEgressUserError(err); userErr != nil {
+		return n.createErrorResult(ctx.Inputs, userErr, time.Since(startTime)), userErr
+	}
 	if err != nil {
 		// A transport failure targets a user-configured URL (DNS, connection,
 		// TLS, timeout) — the user's endpoint, not a runner fault. Classify it
@@ -264,7 +279,7 @@ func (n *RequestNode) resolveTemplatesWithError(
 // makeRequestAndReadBody makes an HTTP request and reads the entire response body
 // within the timeout period. The timeout applies to the entire operation (request + body read).
 func (n *RequestNode) makeRequestAndReadBody(
-	parent context.Context, url, method string, headers map[string]string, body any, timeout int,
+	parent context.Context, client *http.Client, url, method string, headers map[string]string, body any, timeout int,
 ) (*http.Response, []byte, error) {
 	// An unset/zero timeout means "no explicit timeout"; apply a sane default so the
 	// request isn't cancelled with an instant 0ms deadline.
@@ -304,7 +319,6 @@ func (n *RequestNode) makeRequestAndReadBody(
 		req.ContentLength = int64(len(jsonBody))
 	}
 
-	client := nodeHTTPClient()
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, nil, err
