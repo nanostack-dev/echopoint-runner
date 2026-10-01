@@ -295,11 +295,11 @@ func TestParseFromJSONWithOptions_AllowsUnknownInitialInputsWhenConfigured(t *te
 	assert.Len(t, flowResult.Nodes, 1)
 }
 
-func TestParseFromJSON_AllowsPriorNodeOutputReferences(t *testing.T) {
+func TestParseFromJSON_AllowsUpstreamNodeOutputReferences(t *testing.T) {
 	flowJSON := []byte(`{
 		"version": "1.0",
 		"name": "Valid Flow",
-		"description": "Prior output is allowed",
+		"description": "Upstream output is allowed",
 		"nodes": [
 			{
 				"id": "step-login",
@@ -326,7 +326,7 @@ func TestParseFromJSON_AllowsPriorNodeOutputReferences(t *testing.T) {
 				}
 			}
 		],
-		"edges": []
+		"edges": [{"id": "e1", "source": "step-login", "target": "step-create-product", "type": "success"}]
 	}`)
 
 	flowResult, err := flow.ParseFromJSON(flowJSON)
@@ -335,11 +335,11 @@ func TestParseFromJSON_AllowsPriorNodeOutputReferences(t *testing.T) {
 	assert.Len(t, flowResult.Nodes, 2)
 }
 
-func TestParseFromJSON_AllowsPriorNodeOutputReferencesWithTripleBraces(t *testing.T) {
+func TestParseFromJSON_AllowsUpstreamNodeOutputReferencesWithTripleBraces(t *testing.T) {
 	flowJSON := []byte(`{
 		"version": "1.0",
 		"name": "Valid Flow",
-		"description": "Prior output is allowed in raw JSON body",
+		"description": "Upstream output is allowed in raw JSON body",
 		"nodes": [
 			{
 				"id": "search_product_permissions",
@@ -368,7 +368,7 @@ func TestParseFromJSON_AllowsPriorNodeOutputReferencesWithTripleBraces(t *testin
 				}
 			}
 		],
-		"edges": []
+		"edges": [{"id": "e1", "source": "search_product_permissions", "target": "create_product_api_key", "type": "success"}]
 	}`)
 
 	flowResult, err := flow.ParseFromJSON(flowJSON)
@@ -414,7 +414,7 @@ func TestParseFromJSON_ModuleNode(t *testing.T) {
 				}
 			}
 		],
-		"edges": []
+		"edges": [{"id": "e1", "source": "lookup-user", "target": "charge-customer", "type": "success"}]
 	}`)
 
 	flowResult, err := flow.ParseFromJSONWithOptions(flowJSON, flow.ParseOptions{
@@ -428,6 +428,71 @@ func TestParseFromJSON_ModuleNode(t *testing.T) {
 	assert.Equal(t, "flow-charge", moduleNode.Data.FlowID)
 	assert.Equal(t, []string{"BASE_URL", "lookup-user.customerId"}, moduleNode.InputSchema())
 	assert.Equal(t, []string{"chargeId", "status"}, moduleNode.OutputSchema())
+}
+
+func TestParseFromJSON_AllowsAnUpstreamNodeListedAfterItsConsumer(t *testing.T) {
+	flowJSON := []byte(`{
+		"version": "1.0",
+		"name": "Consumer Listed First",
+		"nodes": [
+			{
+				"id": "step-create-product",
+				"display_name": "Create Product",
+				"type": "request",
+				"data": {
+					"method": "POST",
+					"url": "https://example.com/products",
+					"headers": {"Authorization": "Bearer {{step-login.token}}"},
+					"timeout": 1000
+				}
+			},
+			{
+				"id": "step-login",
+				"display_name": "Login",
+				"type": "request",
+				"data": {"method": "POST", "url": "https://example.com/login", "timeout": 1000},
+				"outputs": [{"name": "token", "extractor": {"type": "body"}}]
+			}
+		],
+		"edges": [{"id": "e1", "source": "step-login", "target": "step-create-product", "type": "success"}]
+	}`)
+
+	flowResult, err := flow.ParseFromJSON(flowJSON)
+	require.NoError(t, err)
+	assert.Len(t, flowResult.Nodes, 2)
+}
+
+func TestParseFromJSON_RejectsAnEarlierNodeWithNoEdgePathToTheConsumer(t *testing.T) {
+	flowJSON := []byte(`{
+		"version": "1.0",
+		"name": "Parallel Siblings",
+		"nodes": [
+			{
+				"id": "step-login",
+				"display_name": "Login",
+				"type": "request",
+				"data": {"method": "POST", "url": "https://example.com/login", "timeout": 1000},
+				"outputs": [{"name": "token", "extractor": {"type": "body"}}]
+			},
+			{
+				"id": "step-create-product",
+				"display_name": "Create Product",
+				"type": "request",
+				"data": {
+					"method": "POST",
+					"url": "https://example.com/products",
+					"headers": {"Authorization": "Bearer {{step-login.token}}"},
+					"timeout": 1000
+				}
+			}
+		],
+		"edges": []
+	}`)
+
+	flowResult, err := flow.ParseFromJSON(flowJSON)
+	require.Error(t, err)
+	assert.Nil(t, flowResult)
+	assert.Contains(t, err.Error(), "source node 'step-login' not available")
 }
 
 func TestParseFromJSON_RejectsUnknownSourceNodeOutputs(t *testing.T) {

@@ -34,22 +34,24 @@ func validateFlowReferences(parsedFlow *Flow, options ParseOptions) error {
 		}
 	}
 
-	availableNodeOutputs := make(map[string]map[string]struct{}, len(parsedFlow.Nodes))
+	outputsByNode := make(map[string]map[string]struct{}, len(parsedFlow.Nodes))
+	for _, currentNode := range parsedFlow.Nodes {
+		nodeID := strings.TrimSpace(currentNode.GetID())
+		if nodeID != "" {
+			outputsByNode[nodeID] = buildOutputSet(currentNode.OutputSchema())
+		}
+	}
+
+	predecessorsByNode := buildPredecessors(parsedFlow)
 	for _, currentNode := range parsedFlow.Nodes {
 		if err := validateNodeReferences(
 			currentNode,
 			availableInitialInputs,
-			availableNodeOutputs,
+			upstreamOutputs(strings.TrimSpace(currentNode.GetID()), predecessorsByNode, outputsByNode),
 			options,
 		); err != nil {
 			return err
 		}
-
-		nodeID := strings.TrimSpace(currentNode.GetID())
-		if nodeID == "" {
-			continue
-		}
-		availableNodeOutputs[nodeID] = buildOutputSet(currentNode.OutputSchema())
 	}
 
 	if err := validateBranchTargets(parsedFlow); err != nil {
@@ -57,6 +59,45 @@ func validateFlowReferences(parsedFlow *Flow, options ParseOptions) error {
 	}
 
 	return nil
+}
+
+func buildPredecessors(parsedFlow *Flow) map[string][]string {
+	predecessorsByNode := make(map[string][]string, len(parsedFlow.Nodes))
+	for _, currentEdge := range parsedFlow.Edges {
+		source := strings.TrimSpace(currentEdge.Source)
+		target := strings.TrimSpace(currentEdge.Target)
+		if source == "" || target == "" {
+			continue
+		}
+		predecessorsByNode[target] = append(predecessorsByNode[target], source)
+	}
+	return predecessorsByNode
+}
+
+// upstreamOutputs returns the outputs of every node with an edge path to
+// nodeID. Only those nodes are guaranteed to have finished when nodeID starts,
+// whatever order the definition lists its nodes in.
+func upstreamOutputs(
+	nodeID string,
+	predecessorsByNode map[string][]string,
+	outputsByNode map[string]map[string]struct{},
+) map[string]map[string]struct{} {
+	upstream := make(map[string]map[string]struct{})
+	visited := map[string]struct{}{nodeID: {}}
+	pending := slices.Clone(predecessorsByNode[nodeID])
+	for len(pending) > 0 {
+		ancestorID := pending[len(pending)-1]
+		pending = pending[:len(pending)-1]
+		if _, seen := visited[ancestorID]; seen {
+			continue
+		}
+		visited[ancestorID] = struct{}{}
+		if outputs, known := outputsByNode[ancestorID]; known {
+			upstream[ancestorID] = outputs
+		}
+		pending = append(pending, predecessorsByNode[ancestorID]...)
+	}
+	return upstream
 }
 
 // validateBranchTargets ensures every branch case.Target and Default names a
