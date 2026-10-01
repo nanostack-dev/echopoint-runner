@@ -12,4 +12,5 @@ const (
 	ExtractorTypeStatusCode ExtractorType = "statusCode"
 	ExtractorTypeHeader     ExtractorType = "header"
 	ExtractorTypeBody       ExtractorType = "body"
+	ExtractorTypeQueryParam ExtractorType = "queryParam"
 )

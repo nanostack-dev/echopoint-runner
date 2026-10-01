@@ -30,4 +30,12 @@ func init() {
 		}
 		return extractor, nil
 	})
+
+	extractors.RegisterExtractor(spi.ExtractorTypeQueryParam, func(data []byte) (extractors.AnyExtractor, error) {
+		var extractor QueryParamExtractor
+		if err := json.Unmarshal(data, &extractor); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal QueryParam extractor: %w", err)
+		}
+		return extractor, nil
+	})
 }

@@ -311,3 +311,77 @@ func TestAssertionResults_SerializeInPayload(t *testing.T) {
 		t.Fatalf("assertion_results not serialized: %s", encoded)
 	}
 }
+
+func evaluateBody(t *testing.T, op, value string, ctx fakeCtx) spi.AssertionResult {
+	t.Helper()
+	ca := mkAssertion(t, "body", "", op, value)
+	return ca.Evaluate(ctx)
+}
+
+func jsonBodyCtx(t *testing.T, raw string) fakeCtx {
+	t.Helper()
+	var parsed any
+	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
+		t.Fatalf("unmarshal body: %v", err)
+	}
+	return fakeCtx{status: 200, parsed: parsed, raw: []byte(raw)}
+}
+
+func TestEvaluate_BodyContainsMatchesTheRawJSONText(t *testing.T) {
+	ctx := jsonBodyCtx(t, `{"id":"org_1","status":"active"}`)
+
+	r := evaluateBody(t, "contains", `"status":"active"`, ctx)
+	if r.Error != "" || !r.Passed {
+		t.Fatalf("expected pass, got %+v", r)
+	}
+	if r.Actual != `{"id":"org_1","status":"active"}` {
+		t.Errorf("actual=%v, want the raw body text", r.Actual)
+	}
+}
+
+func TestEvaluate_BodyNotContainsFailsWhenTheRawJSONHasTheKey(t *testing.T) {
+	leaking := jsonBodyCtx(t, `{"email":"a@example.com","password":"hunter2"}`)
+	clean := jsonBodyCtx(t, `{"email":"a@example.com"}`)
+	ca := mkAssertion(t, "body", "", "notContains", `"password"`)
+
+	if r := ca.Evaluate(leaking); r.Error != "" || r.Passed {
+		t.Fatalf("expected the leak to fail, got %+v", r)
+	}
+	if r := ca.Evaluate(clean); r.Error != "" || !r.Passed {
+		t.Fatalf("expected pass without the key, got %+v", r)
+	}
+}
+
+func TestEvaluate_BodyOnAJSONArrayComparesTheRawText(t *testing.T) {
+	ctx := jsonBodyCtx(t, `[{"name":"a"},{"name":"b"}]`)
+	if r := evaluateBody(t, "startsWith", `[{"name":"a"}`, ctx); !r.Passed {
+		t.Fatalf("expected pass, got %+v", r)
+	}
+}
+
+func TestEvaluate_BodyOnAScalarKeepsTheParsedValue(t *testing.T) {
+	ctx := jsonBodyCtx(t, `"active"`)
+	if r := evaluateBody(t, "equals", "active", ctx); !r.Passed {
+		t.Fatalf("expected pass, got %+v", r)
+	}
+}
+
+func TestEvaluate_BodyEmptyStillReadsTheStructure(t *testing.T) {
+	ctx := jsonBodyCtx(t, `{}`)
+	if r := evaluateBody(t, "empty", "", ctx); !r.Passed {
+		t.Fatalf("expected an empty object to be empty, got %+v", r)
+	}
+}
+
+func TestExtractOutputs_BodyStaysStructured(t *testing.T) {
+	ctx := jsonBodyCtx(t, `{"status":"active"}`)
+	produced, err := node.ExtractOutputs(
+		[]node.Output{{Name: "whole", Extractor: extractors.BodyExtractor{}}}, ctx,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if body, isMap := produced["whole"].(map[string]any); !isMap || body["status"] != "active" {
+		t.Errorf("whole=%#v, want the parsed object", produced["whole"])
+	}
+}
