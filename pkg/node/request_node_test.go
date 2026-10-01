@@ -176,3 +176,58 @@ func TestRequestNode_SendsTheQueryParamsOfTheContract(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "status=active", received)
 }
+
+func sendRequestCapturingHeaders(t *testing.T, headers, body string) http.Header {
+	t.Helper()
+	var received http.Header
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		received = r.Header.Clone()
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	parsed, err := node.UnmarshalNode([]byte(`{"id":"ingest","type":"request","data":{` +
+		`"method":"POST","url":"` + srv.URL + `/ingest","headers":` + headers +
+		`,"body":` + body + `,"timeout":1000}}`))
+	require.NoError(t, err)
+
+	_, err = parsed.Execute(spi.ExecutionContext{Ctx: context.Background()})
+	require.NoError(t, err)
+	return received
+}
+
+func TestRequestNode_SendsTheContentTypeTheNodeSets(t *testing.T) {
+	received := sendRequestCapturingHeaders(t, `{"Content-Type":"text/plain"}`, `"hello"`)
+
+	assert.Equal(t, []string{"text/plain"}, received.Values("Content-Type"))
+}
+
+func TestRequestNode_MatchesTheContentTypeHeaderNameCaseInsensitively(t *testing.T) {
+	received := sendRequestCapturingHeaders(t, `{"content-type":"application/xml"}`, `{"id":1}`)
+
+	assert.Equal(t, []string{"application/xml"}, received.Values("Content-Type"))
+}
+
+func TestRequestNode_DefaultsAJSONBodyToApplicationJSON(t *testing.T) {
+	received := sendRequestCapturingHeaders(t, `{}`, `{"id":1}`)
+
+	assert.Equal(t, []string{"application/json"}, received.Values("Content-Type"))
+}
+
+func TestRequestNode_DefaultsAJSONStringBodyToApplicationJSON(t *testing.T) {
+	received := sendRequestCapturingHeaders(t, `{}`, `"{\"id\":1}"`)
+
+	assert.Equal(t, []string{"application/json"}, received.Values("Content-Type"))
+}
+
+func TestRequestNode_SendsNoContentTypeForANonJSONBodyWithoutOne(t *testing.T) {
+	received := sendRequestCapturingHeaders(t, `{}`, `"hello"`)
+
+	assert.NotContains(t, received, "Content-Type")
+}
+
+func TestRequestNode_SendsNoContentTypeWhenTheNodeSetsItEmpty(t *testing.T) {
+	received := sendRequestCapturingHeaders(t, `{"Content-Type":""}`, `{"id":1}`)
+
+	assert.NotContains(t, received, "Content-Type")
+}

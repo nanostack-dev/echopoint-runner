@@ -1,6 +1,7 @@
 package node
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -283,25 +284,26 @@ func (n *RequestNode) makeRequestAndReadBody(
 	if err != nil {
 		return nil, nil, err
 	}
+	contentTypeSet := false
 	for key, value := range headers {
+		if strings.EqualFold(key, "Content-Type") {
+			contentTypeSet = true
+			if value == "" {
+				continue
+			}
+		}
 		req.Header.Set(key, value)
 	}
 	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-		// A string body is already a serialized payload (e.g. a JSON object literal);
-		// send it as-is. Marshalling it would double-encode it into a quoted string.
-		var jsonBody []byte
-		if s, ok := body.(string); ok {
-			jsonBody = []byte(s)
-		} else {
-			marshalled, marshalErr := json.Marshal(body)
-			if marshalErr != nil {
-				return nil, nil, marshalErr
-			}
-			jsonBody = marshalled
+		payload, serializeErr := serializeRequestBody(body)
+		if serializeErr != nil {
+			return nil, nil, serializeErr
 		}
-		req.Body = io.NopCloser(strings.NewReader(string(jsonBody)))
-		req.ContentLength = int64(len(jsonBody))
+		if !contentTypeSet && json.Valid(payload) {
+			req.Header.Set("Content-Type", "application/json")
+		}
+		req.Body = io.NopCloser(bytes.NewReader(payload))
+		req.ContentLength = int64(len(payload))
 	}
 
 	client := nodeHTTPClient()
@@ -318,4 +320,13 @@ func (n *RequestNode) makeRequestAndReadBody(
 	}
 
 	return resp, respBody, nil
+}
+
+// serializeRequestBody sends a string body as-is: it is already a serialized
+// payload, and marshalling it would double-encode it into a quoted string.
+func serializeRequestBody(body any) ([]byte, error) {
+	if s, ok := body.(string); ok {
+		return []byte(s), nil
+	}
+	return json.Marshal(body)
 }
