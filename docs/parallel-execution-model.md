@@ -73,10 +73,21 @@ sequenceDiagram
 
 ## After a Failure
 
-When a node of the main phase fails, the scheduler starts nothing new. Nodes already running finish
-and their results are recorded. Every on_success node that never started is skipped
-(`aborted_after_failure`, or `dependency_failed` when it needed the failed node's output). The
-always phase then runs with the same scheduler.
+A failure skips only what depends on it. Every on_success node downstream of the failed node is
+skipped with `dependency_failed`, naming the step that failed, and the skip cascades through that
+subtree. Every other branch keeps starting nodes, so one run reports a verdict for each
+independent case. The flow still ends failed.
+
+A node that fails an assertion keeps the outputs its response still yields. An always node that
+cleans up, such as `DELETE /widgets/{{create-widget.widgetId}}`, therefore still has the id.
+
+The always phase starts once the main phase is idle. It runs each always node whose inputs exist and
+skips the others with the reason that names the missing producer. An on_success node placed after an
+always node (for example `delete → verify-gone`) runs in this phase once its own predecessors
+succeeded.
+
+`aborted_after_failure` is no longer produced. Executions recorded before this change may still carry
+it.
 
 ## Why `OutputView` Exists
 

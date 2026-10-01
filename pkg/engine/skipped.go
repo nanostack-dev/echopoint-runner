@@ -46,7 +46,6 @@ const (
 	skipReasonDependencyFailed  = "dependency_failed"
 	skipReasonDependencySkipped = "dependency_skipped"
 	skipReasonMissingInputs     = "missing_inputs"
-	skipReasonAbortedAfterFail  = "aborted_after_failure"
 	skipReasonNotReachable      = "not_reachable_after_main_phase"
 	skipReasonRoutedAway        = "routed_away_by_branch"
 )
@@ -78,8 +77,8 @@ func (engine *FlowEngine) describeSkipCause(
 			continue
 		}
 		seen[sourceNodeID] = true
-		if state.failedNodes[sourceNodeID] && failedDep == "" {
-			failedDep = engine.nodeDisplayName(sourceNodeID)
+		if cause, failed := state.failureCause[sourceNodeID]; failed && failedDep == "" {
+			failedDep = cause
 		} else if state.skippedNodes[sourceNodeID] && skippedDep == "" {
 			skippedDep = engine.nodeDisplayName(sourceNodeID)
 		}
@@ -98,9 +97,9 @@ func (engine *FlowEngine) describeSkipCause(
 		return skipReasonMissingInputs,
 			fmt.Sprintf("Skipped because required inputs were unavailable: %v", missingInputs),
 			missingInputs
-	case state.firstFailedName != "":
-		return skipReasonAbortedAfterFail,
-			fmt.Sprintf("Skipped because step %q failed earlier in the flow", state.firstFailedName),
+	case state.failureCause[n.GetID()] != "":
+		return skipReasonDependencyFailed,
+			fmt.Sprintf("Skipped because step %q failed", state.failureCause[n.GetID()]),
 			missingInputs
 	default:
 		return skipReasonNotReachable,

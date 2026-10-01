@@ -12,7 +12,6 @@ func TestSkipReasonCodes_Golden(t *testing.T) {
 		"dependency_failed":              skipReasonDependencyFailed,
 		"dependency_skipped":             skipReasonDependencySkipped,
 		"missing_inputs":                 skipReasonMissingInputs,
-		"aborted_after_failure":          skipReasonAbortedAfterFail,
 		"not_reachable_after_main_phase": skipReasonNotReachable,
 	}
 	for want, got := range golden {

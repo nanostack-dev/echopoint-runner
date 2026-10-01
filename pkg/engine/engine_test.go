@@ -427,7 +427,7 @@ func TestFlowEngine_Execute_NodeFailsWithError(t *testing.T) {
 	assert.False(t, node3.executed, "node3 should not be executed due to error")
 }
 
-func TestFlowEngine_Execute_DownstreamSkippedWhenDependencyFails(t *testing.T) {
+func TestFlowEngine_Execute_AFailureSkipsOnlyItsOwnDownstream(t *testing.T) {
 	create := newDataContractMockNode("step-create", nil, []string{"resourceId"})
 	create.outputs["resourceId"] = "res-1"
 
@@ -438,8 +438,8 @@ func TestFlowEngine_Execute_DownstreamSkippedWhenDependencyFails(t *testing.T) {
 	// step-dependent consumes the failed node's output, so it can never run.
 	dependent := newDataContractMockNode("step-dependent", []string{"step-failing.token"}, nil)
 
-	// step-good is still running when step-failing fails; step-tail depends on it
-	// (input available) but is aborted because the flow failed.
+	// step-good is still running when step-failing fails; step-tail sits on its
+	// own branch, so it still runs.
 	good := newDataContractMockNode("step-good", []string{"step-create.resourceId"}, []string{"value"})
 	good.outputs["value"] = "v"
 	good.runFor = 50 * time.Millisecond
@@ -467,7 +467,7 @@ func TestFlowEngine_Execute_DownstreamSkippedWhenDependencyFails(t *testing.T) {
 	assert.NotNil(t, create.executedAt)
 	assert.NotNil(t, failing.executedAt)
 	assert.Nil(t, dependent.executedAt, "dependent must not run")
-	assert.Nil(t, tail.executedAt, "tail must not run")
+	assert.NotNil(t, tail.executedAt, "a sibling branch keeps running after a failure")
 
 	// The dependent node is recorded as skipped, naming the step that failed.
 	require.Contains(t, result.ExecutionResults, "step-dependent")
@@ -479,14 +479,7 @@ func TestFlowEngine_Execute_DownstreamSkippedWhenDependencyFails(t *testing.T) {
 	assert.Contains(t, *dependentResult.ErrorMsg, "step-failing")
 	assert.Equal(t, []string{"step-failing.token"}, dependentResult.MissingInputs)
 
-	// The downstream-of-success node is also skipped (aborted with the flow).
-	require.Contains(t, result.ExecutionResults, "step-tail")
-	tailResult, ok := result.ExecutionResults["step-tail"].(*node.RequestExecutionResult)
-	require.True(t, ok)
-	require.NotNil(t, tailResult.SkipReason)
-	assert.Equal(t, "aborted_after_failure", *tailResult.SkipReason)
-	require.NotNil(t, tailResult.ErrorMsg)
-	assert.Contains(t, *tailResult.ErrorMsg, "step-failing")
+	assert.Contains(t, result.ExecutionResults, "step-tail")
 }
 
 func TestFlowEngine_Execute_AlwaysNodeRunsAfterMainFailure(t *testing.T) {
@@ -742,12 +735,12 @@ func TestFlowEngine_Execute_AlwaysCleanupJoinRunsAfterUpstreamCleanupIsSkipped(t
 	createProduct := newDataContractMockNode("step-create-product", nil, []string{"productId"})
 	createProduct.outputs["productId"] = "prod-123"
 
-	// This branch fails first and aborts the main phase before search-roles runs.
+	// This branch fails first; the role-search branch does not depend on it.
 	failMidFlow := newDataContractMockNode("step-fail-mid-flow", []string{"step-create-product.productId"}, nil)
 	failMidFlow.shouldError = true
 
-	// This setup branch would normally unlock cleanup, but it is still running
-	// when fail-mid-flow errors, so its successor never starts.
+	// This setup branch is still running when fail-mid-flow errors, and its
+	// successor still starts once it finishes.
 	prepareRoleSearch := newDataContractMockNode(
 		"step-prepare-role-search",
 		[]string{"step-create-product.productId"},
@@ -800,9 +793,7 @@ func TestFlowEngine_Execute_AlwaysCleanupJoinRunsAfterUpstreamCleanupIsSkipped(t
 	assert.NotNil(t, createProduct.executedAt)
 	assert.NotNil(t, failMidFlow.executedAt)
 	assert.NotNil(t, prepareRoleSearch.executedAt)
-	assert.Nil(t, searchRoles.executedAt)
-	// delete-role's only runtime input (the product id) exists, so the always
-	// phase runs it even though its on_success predecessor was aborted.
+	assert.NotNil(t, searchRoles.executedAt)
 	assert.NotNil(t, deleteRole.executedAt)
 	assert.NotNil(t, deleteProduct.executedAt)
 
@@ -1926,13 +1917,12 @@ func TestFlowEngine_Execute_AssertNodeFailureSkipsDownstream(t *testing.T) {
 	// ASSERT_FAILED before the assert node was thinned onto the shared seam).
 	assert.Equal(t, "ASSERTION_FAILED", *assertRes.ErrorCode)
 
-	// The downstream node never runs: the assert failure aborts the flow, so the
-	// node wired after it is recorded as skipped.
+	// The node wired after the failed assert is skipped, naming it.
 	require.Contains(t, result.ExecutionResults, "downstream")
 	downstreamResult, ok := result.ExecutionResults["downstream"].(*node.RequestExecutionResult)
 	require.True(t, ok)
 	require.NotNil(t, downstreamResult.SkipReason, "downstream node must be skipped after assert failure")
-	assert.Equal(t, "aborted_after_failure", *downstreamResult.SkipReason)
+	assert.Equal(t, "dependency_failed", *downstreamResult.SkipReason)
 }
 
 func TestFlowEngine_Execute_ASlowBranchDoesNotHoldASiblingBranch(t *testing.T) {
