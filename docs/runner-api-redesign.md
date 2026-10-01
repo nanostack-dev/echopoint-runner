@@ -517,7 +517,7 @@ func flow.Parse(data []byte, reg *spi.Registry, opts ...ParseOption) (*flow.Flow
 | `on_success` then `always` two-phase loop | `engine.runOnSuccessPhase` / `runAlwaysPhase` — **logic unchanged**, types only. |
 | `skipBlockedOnSuccessNodes` (cascade=false, leaves nodes in `remainingInputs`) | unchanged. |
 | `skipFrontierAlwaysNodes` (cascade=true, unblocks downstream cleanup joins) | unchanged. |
-| 5 skip-reason codes (`dependency_failed`, `dependency_skipped`, `missing_inputs`, `aborted_after_failure`, `not_reachable_after_main_phase`) | constants and `describeSkipCause` text **frozen** — locked by a golden test (see §7) so dashboards don't drift. |
+| 4 skip-reason codes (`dependency_failed`, `dependency_skipped`, `missing_inputs`, `not_reachable_after_main_phase`; the retired `aborted_after_failure` may appear in old executions) | constants and `describeSkipCause` text **frozen** — locked by a golden test (see §7) so dashboards don't drift. |
 | `createSkippedNodeResult` type switch | per-kind `NodeKind.NewSkipped` — produces the same `BaseExecutionResult`-shaped skipped result for each kind. |
 | Observer event contract (`FlowStarted`/`NodeStarted`/`NodeFinished`/`FlowFinished`) | identical fields; `Result` type renamed, JSON unchanged. `MultiObserver`/`synchronizedObserver` kept. |
 | Cycle/unreachable detection (`finalizeExecution`) and module cycle detection (`moduleExecutor` call-stack scan) | unchanged. |
