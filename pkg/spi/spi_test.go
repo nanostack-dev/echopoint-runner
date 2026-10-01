@@ -16,10 +16,10 @@ func TestWireValues(t *testing.T) {
 		string(spi.KindWebhookWait):         "webhook_wait",
 		string(spi.RunWhenOnSuccess):        "on_success",
 		string(spi.RunWhenAlways):           "always",
-		string(spi.ExtractorTypeJSONPath):   "jsonPath",
-		string(spi.ExtractorTypeXMLPath):    "xmlPath",
+		string(spi.ExtractorTypeJSONPath):   "json_path",
+		string(spi.ExtractorTypeXMLPath):    "xml_path",
 		string(spi.ExtractorTypeBody):       "body",
-		string(spi.ExtractorTypeQueryParam): "queryParam",
+		string(spi.ExtractorTypeQueryParam): "query_param",
 		string(spi.EventNodeFailed):         "node.failed",
 		string(spi.EventFlowCompleted):      "flow.completed",
 	}

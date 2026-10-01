@@ -53,12 +53,12 @@ func TestFlowEngine_Execute_ACleanupDeletesWhatAFailedCreateMade(t *testing.T) {
 				"type": "request",
 				"data": {"method": "POST", "url": "` + server.URL + `/widgets", "timeout": 1000},
 				"assertions": [{
-					"extractor_type": "statusCode",
+					"extractor_type": "status_code",
 					"extractor_data": {},
 					"operator_type": "equals",
 					"operator_data": {"value": 201}
 				}],
-				"outputs": [{"name": "widgetId", "extractor": {"type": "jsonPath", "path": "$.id"}}]
+				"outputs": [{"name": "widgetId", "extractor": {"type": "json_path", "path": "$.id"}}]
 			},
 			{
 				"id": "delete-widget",
@@ -91,7 +91,7 @@ func TestFlowEngine_Execute_AStepAfterACleanupRunsWhenItsPredecessorsSucceed(t *
 				"display_name": "Create Widget",
 				"type": "request",
 				"data": {"method": "POST", "url": "` + server.URL + `/widgets", "timeout": 1000},
-				"outputs": [{"name": "widgetId", "extractor": {"type": "jsonPath", "path": "$.id"}}]
+				"outputs": [{"name": "widgetId", "extractor": {"type": "json_path", "path": "$.id"}}]
 			},
 			{
 				"id": "delete-widget",

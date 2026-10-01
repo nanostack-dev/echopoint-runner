@@ -81,7 +81,7 @@ func mkAssertionJSON(t *testing.T, extractor, path, op string, value any) node.C
 
 func mkOutput(t *testing.T, name, path string) node.Output {
 	t.Helper()
-	ext, err := extractors.UnmarshalExtractor([]byte(`{"type":"jsonPath","path":"` + path + `"}`))
+	ext, err := extractors.UnmarshalExtractor([]byte(`{"type":"json_path","path":"` + path + `"}`))
 	require.NoError(t, err)
 	return node.Output{Name: name, Extractor: ext}
 }
@@ -96,7 +96,7 @@ func TestEnginePass_FillsAssertionResultsAndMergesOutputs(t *testing.T) {
 			DisplayName: "Step",
 			NodeType:    spi.KindRequest,
 			Assertions: []node.CompositeAssertion{
-				mkAssertionJSON(t, "jsonPath", "$.status", "equals", "ok"),
+				mkAssertionJSON(t, "json_path", "$.status", "equals", "ok"),
 			},
 			Outputs: []node.Output{mkOutput(t, "id", "$.id")},
 		},
@@ -134,7 +134,7 @@ func TestEnginePass_AssertionFailureFlipsNodeToFailed(t *testing.T) {
 			DisplayName: "Step",
 			NodeType:    spi.KindRequest,
 			Assertions: []node.CompositeAssertion{
-				mkAssertionJSON(t, "jsonPath", "$.status", "equals", "ok"),
+				mkAssertionJSON(t, "json_path", "$.status", "equals", "ok"),
 			},
 		},
 		value: map[string]any{"status": "nope"},
@@ -174,7 +174,7 @@ func TestEnginePass_RetryRetriesOnAssertionFailure(t *testing.T) {
 			DisplayName: "Step",
 			NodeType:    spi.KindRequest,
 			Assertions: []node.CompositeAssertion{
-				mkAssertionJSON(t, "jsonPath", "$.status", "equals", "ok"),
+				mkAssertionJSON(t, "json_path", "$.status", "equals", "ok"),
 			},
 		},
 		value:    map[string]any{"status": "nope"}, // always fails the assertion

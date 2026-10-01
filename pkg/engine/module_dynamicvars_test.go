@@ -64,7 +64,7 @@ func TestFlowEngine_Execute_ModuleResolvesDynamicVars(t *testing.T) {
 					"timeout": 1000
 				},
 				"outputs": [
-					{"name": "seen", "extractor": {"type": "jsonPath", "path": "$.echo"}}
+					{"name": "seen", "extractor": {"type": "json_path", "path": "$.echo"}}
 				]
 			}
 		],
@@ -143,8 +143,8 @@ func TestFlowEngine_Execute_ModuleUniqueNamesAcrossRuns(t *testing.T) {
 				"method": "POST", "url": "` + server.URL + `/products",
 				"body": {"name": "eptest-{{$runId}}"}, "timeout": 1000
 			},
-			"outputs": [{"name": "productId", "extractor": {"type": "jsonPath", "path": "$.id"}}],
-			"assertions": [{"extractor_type": "statusCode", "operator_type": "equals", "operator_data": {"value": "201"}, "extractor_data": {}}]
+			"outputs": [{"name": "productId", "extractor": {"type": "json_path", "path": "$.id"}}],
+			"assertions": [{"extractor_type": "status_code", "operator_type": "equals", "operator_data": {"value": "201"}, "extractor_data": {}}]
 		}],
 		"edges": []
 	}`)

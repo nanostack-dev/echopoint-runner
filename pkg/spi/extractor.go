@@ -7,10 +7,10 @@ type ExtractorType string
 
 // Built-in extractor types.
 const (
-	ExtractorTypeJSONPath   ExtractorType = "jsonPath"
-	ExtractorTypeXMLPath    ExtractorType = "xmlPath"
-	ExtractorTypeStatusCode ExtractorType = "statusCode"
+	ExtractorTypeJSONPath   ExtractorType = "json_path"
+	ExtractorTypeXMLPath    ExtractorType = "xml_path"
+	ExtractorTypeStatusCode ExtractorType = "status_code"
 	ExtractorTypeHeader     ExtractorType = "header"
 	ExtractorTypeBody       ExtractorType = "body"
-	ExtractorTypeQueryParam ExtractorType = "queryParam"
+	ExtractorTypeQueryParam ExtractorType = "query_param"
 )

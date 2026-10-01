@@ -37,7 +37,7 @@ func TestNodeFinishedPayload_CarriesFlatEngineResult(t *testing.T) {
 			NodeType:    spi.KindRequest,
 			Outputs:     map[string]any{"id": "prd_1"},
 			AssertionResults: []spi.AssertionResult{
-				{Index: 0, Extractor: "statusCode", Operator: "equals", Expected: "200", Actual: 200, Passed: true},
+				{Index: 0, Extractor: "status_code", Operator: "equals", Expected: "200", Actual: 200, Passed: true},
 			},
 		},
 		RequestMethod:      "GET",

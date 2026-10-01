@@ -38,7 +38,7 @@ func readBackFlow(t *testing.T, serverURL, expected string) *flow.Flow {
 				"display_name": "Create Order",
 				"type": "request",
 				"data": {"method": "POST", "url": "` + serverURL + `/orders", "timeout": 1000},
-				"outputs": [{"name": "orderId", "extractor": {"type": "jsonPath", "path": "$.id"}}]
+				"outputs": [{"name": "orderId", "extractor": {"type": "json_path", "path": "$.id"}}]
 			},
 			{
 				"id": "get-order",
@@ -46,7 +46,7 @@ func readBackFlow(t *testing.T, serverURL, expected string) *flow.Flow {
 				"type": "request",
 				"data": {"method": "GET", "url": "` + serverURL + `/orders/1", "timeout": 1000},
 				"assertions": [{
-					"extractor_type": "jsonPath",
+					"extractor_type": "json_path",
 					"extractor_data": {"path": "$.id"},
 					"operator_type": "equals",
 					"operator_data": {"value": "` + expected + `"}
@@ -95,7 +95,7 @@ func TestParse_AnAssertionReferencingAnOutputNoStepProducesIsRejected(t *testing
 			"type": "request",
 			"data": {"method": "GET", "url": "https://example.test/orders/1", "timeout": 1000},
 			"assertions": [{
-				"extractor_type": "jsonPath",
+				"extractor_type": "json_path",
 				"extractor_data": {"path": "$.id"},
 				"operator_type": "equals",
 				"operator_data": {"value": "{{create-order.orderId}}"}

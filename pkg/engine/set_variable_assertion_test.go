@@ -18,7 +18,7 @@ func jsonPathEquals(t *testing.T, path string, value any) node.CompositeAssertio
 	t.Helper()
 	vb, err := json.Marshal(value)
 	require.NoError(t, err)
-	raw := `{"extractor_type":"jsonPath","extractor_data":{"path":"` + path + `"},` +
+	raw := `{"extractor_type":"json_path","extractor_data":{"path":"` + path + `"},` +
 		`"operator_type":"equals","operator_data":{"value":` + string(vb) + `}}`
 	var ca node.CompositeAssertion
 	require.NoError(t, json.Unmarshal([]byte(raw), &ca))

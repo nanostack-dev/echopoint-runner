@@ -162,7 +162,7 @@ func TestLoopNode_EngineAssertsOnAggregateCount(t *testing.T) {
 	exec := &fakeModuleExecutor{result: cannedResult(map[string]any{})}
 	n := newLoopNode(t, node.LoopData{Items: []any{"a", "b", "c"}, Body: json.RawMessage(iterBody)})
 	// Assert on the aggregate count produced by the loop via the engine pass.
-	n.Assertions = []node.CompositeAssertion{mkAssertion(t, "jsonPath", "$.count", "equals", "3")}
+	n.Assertions = []node.CompositeAssertion{mkAssertion(t, "json_path", "$.count", "equals", "3")}
 
 	res, err := n.Execute(spi.ExecutionContext{
 		Inputs:         map[string]any{},
@@ -185,7 +185,7 @@ func TestLoopNode_EngineAssertsOnAggregateCount(t *testing.T) {
 func TestLoopNode_EngineFailsOnAggregateAssertionMiss(t *testing.T) {
 	exec := &fakeModuleExecutor{result: cannedResult(map[string]any{})}
 	n := newLoopNode(t, node.LoopData{Items: []any{"a"}, Body: json.RawMessage(iterBody)})
-	n.Assertions = []node.CompositeAssertion{mkAssertion(t, "jsonPath", "$.count", "equals", "99")}
+	n.Assertions = []node.CompositeAssertion{mkAssertion(t, "json_path", "$.count", "equals", "99")}
 
 	res, err := n.Execute(spi.ExecutionContext{
 		Inputs:         map[string]any{},
