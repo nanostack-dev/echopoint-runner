@@ -360,3 +360,26 @@ func TestWebhookWait_ReferenceWithNoValueIsAFailedAssertion(t *testing.T) {
 		t.Fatalf("code=%s err=%v", spi.ErrorCode(err), err)
 	}
 }
+
+func TestWebhookWaitExpect_GroupAssertsOnAQueryParam(t *testing.T) {
+	search := event("req-1", "search", "oinv_A")
+	search["query_params"] = map[string]string{"q": "x"}
+	url := serveBatches(t, []map[string]any{event("req-0", "search", "oinv_A"), search})
+	wait := decodeExpectWait(t, 2000, 0, []expectGroup{{
+		Name: "searched for x",
+		Assertions: []map[string]any{{
+			"extractor_type": "queryParam",
+			"extractor_data": map[string]any{"param_name": "q"},
+			"operator_type":  "equals",
+			"operator_data":  map[string]any{"value": "x"},
+		}},
+	}})
+
+	res, err := runExpectWait(t, wait, url, nil)
+	if err != nil {
+		t.Fatalf("expected success, got %v", err)
+	}
+	if got := res.Expectations[0].RequestIDs; len(got) != 1 || got[0] != "req-1" {
+		t.Errorf("request ids=%v", got)
+	}
+}

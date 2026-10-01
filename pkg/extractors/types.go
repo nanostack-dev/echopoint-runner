@@ -37,3 +37,14 @@ type ParsedBodyReader interface {
 	GetParsedBody() any
 	GetRawBody() []byte
 }
+
+// QueryParamAccessor provides access to the query parameters of a received request.
+type QueryParamAccessor interface {
+	GetQueryParam(name string) (string, bool)
+}
+
+// TextExtractor is an extractor whose value has a text form that differs from
+// its structured value. String operators compare against the text form.
+type TextExtractor interface {
+	ExtractText(ctx ResponseContext) (any, error)
+}
