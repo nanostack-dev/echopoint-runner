@@ -24,6 +24,13 @@ on:
       - '.github/workflows/go.yml'
   workflow_dispatch:
 
+# Pushes to main run one at a time, in merge order, so their deploys reach the
+# infra Deploy Router in merge order. queue: max keeps every waiting run; the
+# default keeps only the newest and cancels the rest.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'push' && 'main' || github.run_id }}
+  queue: max
+
 jobs:
   lint-runner:
     name: Lint echopoint-runner
