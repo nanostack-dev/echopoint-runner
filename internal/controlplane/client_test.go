@@ -107,3 +107,41 @@ func TestClaimedJobKeepsTheSelfHostedJobToken(t *testing.T) {
 		t.Fatalf("expected the claim job token, got %q", job.JobToken)
 	}
 }
+
+func claimErrorForStatus(t *testing.T, status int) error {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(status)
+		_, _ = w.Write([]byte("error code: " + http.StatusText(status)))
+	}))
+	defer server.Close()
+
+	client := controlplane.NewRunnerClient(controlplane.Config{BaseURL: server.URL})
+	_, err := client.ClaimNext(context.Background(), controlplane.ClaimNextRequest{})
+	require.Error(t, err)
+	return err
+}
+
+func TestIsTransientForGatewayErrorDuringRedeploy(t *testing.T) {
+	assert.True(t, controlplane.IsTransient(claimErrorForStatus(t, http.StatusBadGateway)))
+}
+
+func TestIsTransientForRateLimit(t *testing.T) {
+	assert.True(t, controlplane.IsTransient(claimErrorForStatus(t, http.StatusTooManyRequests)))
+}
+
+func TestIsNotTransientForRejectedRunnerKey(t *testing.T) {
+	assert.False(t, controlplane.IsTransient(claimErrorForStatus(t, http.StatusUnauthorized)))
+	assert.False(t, controlplane.IsTransient(claimErrorForStatus(t, http.StatusForbidden)))
+}
+
+func TestIsTransientForRefusedConnection(t *testing.T) {
+	server := httptest.NewServer(http.NotFoundHandler())
+	baseURL := server.URL
+	server.Close()
+
+	client := controlplane.NewRunnerClient(controlplane.Config{BaseURL: baseURL})
+	_, err := client.ClaimNext(context.Background(), controlplane.ClaimNextRequest{})
+	require.Error(t, err)
+	assert.True(t, controlplane.IsTransient(err))
+}

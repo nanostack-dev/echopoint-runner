@@ -30,7 +30,7 @@ func Run(pkg *Package) Result {
 		AllowedInitialInputKeys: inputKeys,
 	})
 	if err != nil {
-		log.Error().
+		log.Warn().
 			Str("execution_id", pkg.ExecutionID).
 			Str("flow_id", pkg.FlowID).
 			Err(err).

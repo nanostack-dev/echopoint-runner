@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -174,7 +175,7 @@ func (c *Client) ClaimNext(ctx context.Context, request ClaimNextRequest) (*Clai
 	startedAt := time.Now()
 	statusCode, responseBody, requestErr := c.postJSON(ctx, nextJobPath, request)
 	if requestErr != nil {
-		log.Error().
+		log.Warn().
 			Err(requestErr).
 			Str("operation", "claim_next").
 			Dur("duration", time.Since(startedAt)).
@@ -321,12 +322,41 @@ func (c *Client) postJSON(ctx context.Context, path string, payload any) (int, [
 	return resp.StatusCode, responseBody, nil
 }
 
+// StatusError is a non-success HTTP status returned by the control plane.
+type StatusError struct {
+	StatusCode int
+	Detail     string
+}
+
+func (e *StatusError) Error() string {
+	return fmt.Sprintf("control plane error (%d): %s", e.StatusCode, e.Detail)
+}
+
 func readAPIError(statusCode int, body []byte) error {
 	var apiErr APIErrorResponse
 	if unmarshalErr := json.Unmarshal(body, &apiErr); unmarshalErr == nil && len(apiErr.Errors) > 0 {
 		first := apiErr.Errors[0]
-		return fmt.Errorf("control plane error (%d): %s: %s", statusCode, first.Code, first.Message)
+		return &StatusError{StatusCode: statusCode, Detail: first.Code + ": " + first.Message}
 	}
 
-	return fmt.Errorf("control plane error (%d): %s", statusCode, strings.TrimSpace(string(body)))
+	return &StatusError{StatusCode: statusCode, Detail: strings.TrimSpace(string(body))}
+}
+
+// IsTransient reports whether err is a control-plane failure expected to clear on
+// retry: a 5xx or 429 status, a network error, or a request deadline. A control
+// plane redeploy produces these for a few seconds.
+func IsTransient(err error) bool {
+	if errors.Is(err, context.Canceled) {
+		return false
+	}
+	if statusErr, ok := errors.AsType[*StatusError](err); ok {
+		return statusErr.StatusCode >= http.StatusInternalServerError ||
+			statusErr.StatusCode == http.StatusTooManyRequests
+	}
+	if _, ok := errors.AsType[net.Error](err); ok {
+		return true
+	}
+	return errors.Is(err, context.DeadlineExceeded) ||
+		errors.Is(err, io.EOF) ||
+		errors.Is(err, io.ErrUnexpectedEOF)
 }
