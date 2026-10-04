@@ -15,6 +15,7 @@ import (
 	flowpkg "github.com/nanostack-dev/echopoint-runner/pkg/flow"
 	"github.com/nanostack-dev/echopoint-runner/pkg/runner"
 	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
+	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
 
@@ -88,7 +89,23 @@ func (r *Runtime) Run(ctx context.Context) error {
 	return nil
 }
 
+// The escalation thresholds keep a control plane redeploy at warn: 20 claims at
+// the default 3s error backoff and 6 heartbeats at the default 10s interval each
+// span about a minute.
+const (
+	claimFailureEscalationThreshold     = 20
+	heartbeatFailureEscalationThreshold = 6
+)
+
+func controlPlaneFailureLevel(err error, consecutiveFailures, escalationThreshold int) zerolog.Level {
+	if controlplane.IsTransient(err) && consecutiveFailures < escalationThreshold {
+		return zerolog.WarnLevel
+	}
+	return zerolog.ErrorLevel
+}
+
 func (r *Runtime) runClaimLoop(ctx context.Context) error {
+	consecutiveFailures := 0
 	for {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -113,30 +130,13 @@ func (r *Runtime) runClaimLoop(ctx context.Context) error {
 		})
 		if err != nil {
 			r.releaseSlot()
-			if errors.Is(err, controlplane.ErrNoJobAvailable) {
-				log.Info().
-					Dur("poll_duration", time.Since(claimStartedAt)).
-					Dur("idle_backoff", r.config.IdleBackoff).
-					Msg("runner long poll returned no job")
-				if sleepErr := sleepContext(ctx, r.config.IdleBackoff); sleepErr != nil {
-					return sleepErr
-				}
-				continue
-			}
-
-			log.Error().
-				Err(err).
-				Str("runner_id", r.config.RunnerID).
-				Str("boot_id", r.bootID.String()).
-				Str("organization_id", r.config.OrganizationID).
-				Dur("poll_duration", time.Since(claimStartedAt)).
-				Msg("failed to claim runner job")
-			if sleepErr := sleepContext(ctx, r.config.ErrorBackoff); sleepErr != nil {
-				return sleepErr
+			if waitErr := r.waitAfterUnclaimedPoll(ctx, err, &consecutiveFailures, claimStartedAt); waitErr != nil {
+				return waitErr
 			}
 			continue
 		}
 
+		consecutiveFailures = 0
 		startedAt := time.Now().UTC()
 		jobState := &activeJob{
 			job:       claimedJob,
@@ -155,6 +155,36 @@ func (r *Runtime) runClaimLoop(ctx context.Context) error {
 			_, _ = r.executeClaimedJob(context.Background(), jobState)
 		})
 	}
+}
+
+func (r *Runtime) waitAfterUnclaimedPoll(
+	ctx context.Context,
+	claimErr error,
+	consecutiveFailures *int,
+	claimStartedAt time.Time,
+) error {
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return ctxErr
+	}
+	if errors.Is(claimErr, controlplane.ErrNoJobAvailable) {
+		*consecutiveFailures = 0
+		log.Info().
+			Dur("poll_duration", time.Since(claimStartedAt)).
+			Dur("idle_backoff", r.config.IdleBackoff).
+			Msg("runner long poll returned no job")
+		return sleepContext(ctx, r.config.IdleBackoff)
+	}
+
+	*consecutiveFailures++
+	log.WithLevel(controlPlaneFailureLevel(claimErr, *consecutiveFailures, claimFailureEscalationThreshold)).
+		Err(claimErr).
+		Str("runner_id", r.config.RunnerID).
+		Str("boot_id", r.bootID.String()).
+		Str("organization_id", r.config.OrganizationID).
+		Int("consecutive_failures", *consecutiveFailures).
+		Dur("poll_duration", time.Since(claimStartedAt)).
+		Msg("failed to claim runner job")
+	return sleepContext(ctx, r.config.ErrorBackoff)
 }
 
 type Outcome struct {
@@ -202,8 +232,9 @@ func (r *Runtime) executeClaimedJob(ctx context.Context, active *activeJob) (Out
 		AllowedInitialInputKeys: sortedInputKeys(active.job.Inputs),
 	})
 	if err != nil {
-		message := fmt.Sprintf("parse flow definition: %v", err)
-		completeErr := r.completeWithFailure(active, reporter, message, nil)
+		parseErr := spi.NewUserError("FLOW_DEFINITION_INVALID", "parse flow definition", err)
+		message := parseErr.Error()
+		completeErr := r.completeWithFailure(active, reporter, parseErr, message, nil)
 		return Outcome{Status: jobStatusFailed, ErrorMessage: &message}, completeErr
 	}
 
@@ -229,14 +260,14 @@ func (r *Runtime) executeClaimedJob(ctx context.Context, active *activeJob) (Out
 				Str("job_id", active.job.JobID.String()).
 				Msg("failed to flush runner progress before failed completion")
 		}
-		completeErr := r.completeWithFailure(active, reporter, errorMsg, errorCode)
+		completeErr := r.completeWithFailure(active, reporter, execErr, errorMsg, errorCode)
 		return Outcome{Status: jobStatusFailed, Result: result, ErrorMessage: &errorMsg}, completeErr
 	}
 
 	payload, err := controlplane.FlowExecutionResultToPayload(result)
 	if err != nil {
 		message := fmt.Sprintf("encode execution result: %v", err)
-		completeErr := r.completeWithFailure(active, reporter, message, nil)
+		completeErr := r.completeWithFailure(active, reporter, err, message, nil)
 		return Outcome{Status: jobStatusFailed, Result: result, ErrorMessage: &message}, completeErr
 	}
 	if flushErr := reporter.FlushWithRetry(context.Background()); flushErr != nil {
@@ -287,6 +318,7 @@ func sortedInputKeys(inputs map[string]any) []string {
 func (r *Runtime) completeWithFailure(
 	active *activeJob,
 	reporter *jobEventReporter,
+	cause error,
 	errorMsg string,
 	errorCode *string,
 ) error {
@@ -314,17 +346,28 @@ func (r *Runtime) completeWithFailure(
 		return err
 	}
 
-	log.Error().
+	log.WithLevel(jobFailureLevel(cause)).
 		Str("job_id", active.job.JobID.String()).
 		Str("execution_id", active.job.ExecutionID.String()).
+		Str("error_code", spi.ErrorCode(cause)).
 		Str("error_message", errorMsg).
 		Msg("runner job failed")
 	return nil
 }
 
+// jobFailureLevel logs a failure the flow author caused, such as a definition that
+// does not parse, at warn: the outcome is already reported on the execution.
+func jobFailureLevel(cause error) zerolog.Level {
+	if _, ok := spi.AsUserError(cause); ok {
+		return zerolog.WarnLevel
+	}
+	return zerolog.ErrorLevel
+}
+
 func (r *Runtime) runHeartbeatLoop(ctx context.Context) error {
 	ticker := time.NewTicker(r.config.HeartbeatInterval)
 	defer ticker.Stop()
+	consecutiveFailures := 0
 
 	for {
 		select {
@@ -345,9 +388,14 @@ func (r *Runtime) runHeartbeatLoop(ctx context.Context) error {
 			JobIDs:           jobIDs,
 		})
 		if err != nil {
-			log.Error().Err(err).Msg("runner heartbeat failed")
+			consecutiveFailures++
+			log.WithLevel(controlPlaneFailureLevel(err, consecutiveFailures, heartbeatFailureEscalationThreshold)).
+				Err(err).
+				Int("consecutive_failures", consecutiveFailures).
+				Msg("runner heartbeat failed")
 			continue
 		}
+		consecutiveFailures = 0
 
 		for _, result := range results {
 			if result.Status == "rejected" {
