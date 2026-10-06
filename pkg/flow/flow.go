@@ -13,7 +13,7 @@ type Flow struct {
 	Version       string         `json:"version"`
 	Nodes         []node.AnyNode `json:"-"`
 	Edges         []edge.Edge    `json:"edges"`
-	InitialInputs map[string]any `json:"initialInputs"`
+	InitialInputs map[string]any `json:"initial_inputs"`
 }
 
 type ParseOptions struct {
@@ -27,12 +27,13 @@ func ParseFromJSON(data []byte) (*Flow, error) {
 
 func ParseFromJSONWithOptions(data []byte, options ParseOptions) (*Flow, error) {
 	var raw struct {
-		Name          string            `json:"name"`
-		Description   string            `json:"description"`
-		Version       string            `json:"version"`
-		Nodes         []json.RawMessage `json:"nodes"`
-		Edges         []edge.Edge       `json:"edges"`
-		InitialInputs map[string]any    `json:"initialInputs"`
+		Name                string            `json:"name"`
+		Description         string            `json:"description"`
+		Version             string            `json:"version"`
+		Nodes               []json.RawMessage `json:"nodes"`
+		Edges               []edge.Edge       `json:"edges"`
+		InitialInputs       map[string]any    `json:"initial_inputs"`
+		LegacyInitialInputs map[string]any    `json:"initialInputs"`
 	}
 
 	if err := json.Unmarshal(data, &raw); err != nil {
@@ -49,7 +50,9 @@ func ParseFromJSONWithOptions(data []byte, options ParseOptions) (*Flow, error) 
 		nodes[i] = typedNode
 	}
 
-	// Ensure InitialInputs is initialized
+	if raw.InitialInputs == nil {
+		raw.InitialInputs = raw.LegacyInitialInputs
+	}
 	if raw.InitialInputs == nil {
 		raw.InitialInputs = make(map[string]any)
 	}
