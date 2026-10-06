@@ -80,16 +80,9 @@ func (n *DelayNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 	}
 
 	result := &DelayExecutionResult{
-		BaseExecutionResult: spi.BaseExecutionResult{
-			NodeID:      n.GetID(),
-			DisplayName: n.GetDisplayName(),
-			NodeType:    spi.KindDelay,
-			Inputs:      ctx.Inputs,
-			Outputs:     outputs,
-			ExecutedAt:  time.Now(),
-		},
-		DelayMs:    int64(delayMs),
-		DelayUntil: startTime.Add(time.Duration(delayMs) * time.Millisecond),
+		BaseExecutionResult: n.baseResult(spi.KindDelay, ctx.Inputs, outputs),
+		DelayMs:             int64(delayMs),
+		DelayUntil:          startTime.Add(time.Duration(delayMs) * time.Millisecond),
 	}
 
 	log.Info().

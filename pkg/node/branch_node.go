@@ -112,17 +112,10 @@ func (n *BranchNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 	}
 
 	result := &BranchExecutionResult{
-		BaseExecutionResult: spi.BaseExecutionResult{
-			NodeID:      n.GetID(),
-			DisplayName: n.GetDisplayName(),
-			NodeType:    spi.KindBranch,
-			Inputs:      ctx.Inputs,
-			Outputs: map[string]any{
-				"matched":      chosen,
-				"matchedIndex": matchedIndex,
-			},
-			ExecutedAt: time.Now(),
-		},
+		BaseExecutionResult: n.baseResult(spi.KindBranch, ctx.Inputs, map[string]any{
+			"matched":      chosen,
+			"matchedIndex": matchedIndex,
+		}),
 		MatchedTarget:   chosen,
 		RoutedTargetIDs: routed,
 		DurationMs:      time.Since(startTime).Milliseconds(),
