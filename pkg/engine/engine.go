@@ -26,6 +26,9 @@ type Options struct {
 	Ctx context.Context
 	// Middleware wraps each node's execution (retry/timeout/tracing). Outermost first.
 	Middleware []Middleware
+	// SecretValues and SecretHosts gate outbound use of secret inputs.
+	SecretValues map[string]string
+	SecretHosts  map[string][]string
 }
 
 type FlowEngine struct {
@@ -40,13 +43,17 @@ type FlowEngine struct {
 	dynamicVars     spi.DynamicResolver
 	ctx             context.Context
 	middleware      []Middleware
+	secretValues    map[string]string
+	secretHosts     map[string][]string
 }
 
 type moduleExecutor struct {
-	resolver    spi.ModuleResolver
-	callStack   []string
-	ctx         context.Context
-	dynamicVars spi.DynamicResolver
+	resolver     spi.ModuleResolver
+	callStack    []string
+	ctx          context.Context
+	dynamicVars  spi.DynamicResolver
+	secretValues map[string]string
+	secretHosts  map[string][]string
 }
 
 // ExecuteModule runs a nested module flow. Every failure it returns is caused by
@@ -82,7 +89,9 @@ func (e moduleExecutor) ExecuteModule(request spi.ModuleExecutionRequest) (*spi.
 		ModuleCallStack: append(append([]string{}, e.callStack...), trimmedFlowID),
 		Ctx:             e.ctx,
 		// Propagate dynamic vars so module request nodes resolve {{$runId}} etc.
-		DynamicVars: e.dynamicVars,
+		DynamicVars:  e.dynamicVars,
+		SecretValues: e.secretValues,
+		SecretHosts:  e.secretHosts,
 	})
 }
 
@@ -178,7 +187,23 @@ func NewFlowEngine(flowInstance flow.Flow, options *Options) (*FlowEngine, error
 		dynamicVars:     dynamicVarsFromOptions(options),
 		ctx:             ctxFromOptions(options),
 		middleware:      middlewareFromOptions(options),
+		secretValues:    secretValuesFromOptions(options),
+		secretHosts:     secretHostsFromOptions(options),
 	}, nil
+}
+
+func secretValuesFromOptions(options *Options) map[string]string {
+	if options == nil {
+		return nil
+	}
+	return options.SecretValues
+}
+
+func secretHostsFromOptions(options *Options) map[string][]string {
+	if options == nil {
+		return nil
+	}
+	return options.SecretHosts
 }
 
 // middlewareFromOptions returns the middleware chain from engine options, or nil.

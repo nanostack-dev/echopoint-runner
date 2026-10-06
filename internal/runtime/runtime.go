@@ -243,6 +243,7 @@ func (r *Runtime) executeClaimedJob(ctx context.Context, active *activeJob) (Out
 		runner.WithReferencedFlows(active.job.ReferencedFlows),
 		runner.WithDynamicVars(dynamicvars.New(active.job.ExecutionID.String())),
 		runner.WithSecretInputKeys(active.job.SecretInputKeys),
+		runner.WithSecretHosts(active.job.SecretHosts),
 		runner.WithContext(spi.WithJobToken(ctx, active.job.JobToken)),
 	)
 	if execErr != nil {

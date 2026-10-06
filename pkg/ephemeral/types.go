@@ -17,6 +17,7 @@ type Package struct {
 	FlowDefinition  json.RawMessage                `json:"flow_definition"`
 	Inputs          map[string]any                 `json:"inputs"`
 	SecretInputKeys []string                       `json:"secret_input_keys,omitempty"`
+	SecretHosts     map[string][]string            `json:"secret_hosts,omitempty"`
 	ReferencedFlows flowpkg.ReferencedFlowRegistry `json:"referenced_flows,omitempty"`
 }
 
