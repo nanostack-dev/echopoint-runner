@@ -772,3 +772,42 @@ func TestParseFromJSON_RejectsAnUnknownReferenceInAWebhookExpectation(t *testing
 	assert.Nil(t, flowResult)
 	assert.Contains(t, err.Error(), "source node 'invite-member' not available")
 }
+
+func initialInputsFlowJSON(inputs string) []byte {
+	return []byte(`{
+		"version": "1.0",
+		"name": "Initial inputs",
+		` + inputs + `,
+		"nodes": [
+			{
+				"id": "step-get",
+				"display_name": "Get",
+				"type": "request",
+				"data": {"method": "GET", "url": "{{API_URL}}/health", "timeout": 1000}
+			}
+		],
+		"edges": []
+	}`)
+}
+
+func TestParseFromJSON_ReadsSnakeCaseInitialInputs(t *testing.T) {
+	flowResult, err := flow.ParseFromJSON(initialInputsFlowJSON(`"initial_inputs": {"API_URL": "https://example.com"}`))
+	require.NoError(t, err)
+	assert.Equal(t, map[string]any{"API_URL": "https://example.com"}, flowResult.InitialInputs)
+}
+
+func TestParseFromJSON_ReadsLegacyCamelCaseInitialInputs(t *testing.T) {
+	flowResult, err := flow.ParseFromJSON(
+		initialInputsFlowJSON(`"initialInputs": {"API_URL": "https://legacy.example.com"}`),
+	)
+	require.NoError(t, err)
+	assert.Equal(t, map[string]any{"API_URL": "https://legacy.example.com"}, flowResult.InitialInputs)
+}
+
+func TestParseFromJSON_PrefersSnakeCaseInitialInputs(t *testing.T) {
+	flowResult, err := flow.ParseFromJSON(initialInputsFlowJSON(
+		`"initial_inputs": {"API_URL": "https://current.example.com"}, "initialInputs": {"API_URL": "https://legacy.example.com"}`,
+	))
+	require.NoError(t, err)
+	assert.Equal(t, map[string]any{"API_URL": "https://current.example.com"}, flowResult.InitialInputs)
+}
