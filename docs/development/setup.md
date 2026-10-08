@@ -17,3 +17,7 @@ go run ./cmd/runner serve
 ```
 
 The default target is the development API; [.env.example](../../.env.example) and [config.go](../../internal/config/config.go) define the environment variables. Process environment values take precedence over `.env`. This startup claims real jobs; use a development organization. Ephemeral execution uses different inputs and authentication, documented in [ephemeral mode](../ephemeral-mode.md).
+
+## Agent harness setup
+
+Codex, OpenCode and Grok Build discover the local `AGENTS.md` natively. Claude Code uses the project-local [.claude/settings.json](../../.claude/settings.json) SessionStart hook to read that guide from the Git checkout root, including sessions started in a nested directory. Approve project trust on first use and reload the session after adding or updating hooks. Personal overrides stay in ignored `.claude/settings.local.json`; required project guidance does not depend on the shared workspace or globally installed skills.

@@ -142,3 +142,6 @@ dist/
 
 # Agent worktrees, created by git worktree add
 worktrees/
+
+# Developer-owned Claude overrides
+.claude/settings.local.json
