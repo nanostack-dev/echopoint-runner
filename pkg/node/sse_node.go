@@ -498,20 +498,8 @@ func (n *SseNode) createErrorResult(
 	errMsg := err.Error()
 	errCode := "SSE_FAILED"
 
-	// This covers both a stopping assertion failure and a genuine fault (refused
-	// connection, non-2xx status, read error), so classify rather than logging
-	// every SSE failure at error. ErrorCode stays SSE_FAILED either way — it is
-	// part of the result contract echopoint consumes.
-	event := log.Error()
-	if _, ok := spi.AsUserError(err); ok {
-		event = log.Debug()
-	}
-	event.
-		Str("nodeID", n.GetID()).
-		Int("eventCount", len(exchange.Events)).
-		Str("errorCode", errCode).
-		Str("error", spi.SafeErrorMessage(err)).
-		Msg("SSE node execution failed")
+	// SSE retains its result code/message policy. The engine owns the terminal
+	// failure log and severity after this error propagates.
 
 	base := failedNodeBase(n.BaseNode, inputs, err, failureDetails{Kind: spi.KindSse, Code: errCode, Message: errMsg})
 	base.AssertionResults = exchange.AssertionResults

@@ -25,10 +25,6 @@ func (e JSONPathExtractor) Extract(ctx ResponseContext) (any, error) {
 	path, err := jsonpath.Parse(e.Path)
 	if err != nil {
 		err = fmt.Errorf("invalid JSONPath expression '%s': %w", e.Path, err)
-		log.Error().
-			Str("path", e.Path).
-			Err(err).
-			Msg("JSONPath parsing failed")
 		return nil, err
 	}
 
@@ -39,9 +35,6 @@ func (e JSONPathExtractor) Extract(ctx ResponseContext) (any, error) {
 	pbr, ok := ctx.(ParsedBodyReader)
 	if !ok {
 		errParsedBody := errors.New("context does not support ParsedBodyReader interface")
-		log.Error().
-			Err(errParsedBody).
-			Msg("ResponseContext does not support ParsedBodyReader")
 		return nil, errParsedBody
 	}
 
@@ -53,9 +46,6 @@ func (e JSONPathExtractor) Extract(ctx ResponseContext) (any, error) {
 		rawBody := pbr.GetRawBody()
 		if unmarshalErr := json.Unmarshal(rawBody, &jsonData); unmarshalErr != nil {
 			err = fmt.Errorf("failed to parse JSON from body: %w", unmarshalErr)
-			log.Error().
-				Err(err).
-				Msg("JSON parsing failed")
 			return nil, err
 		}
 	}
@@ -71,10 +61,6 @@ func (e JSONPathExtractor) Extract(ctx ResponseContext) (any, error) {
 	// Handle results
 	if len(nodes) == 0 {
 		jsonPathError := fmt.Errorf("JSONPath '%s' did not match any nodes", e.Path)
-		log.Warn().
-			Str("path", e.Path).
-			Err(jsonPathError).
-			Msg("JSONPath did not match any nodes")
 		return nil, jsonPathError
 	}
 

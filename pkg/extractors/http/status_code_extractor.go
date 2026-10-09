@@ -28,10 +28,6 @@ func (e StatusCodeExtractor) Extract(ctx extractors.ResponseContext) (any, error
 	}
 
 	err := errors.New("context does not implement StatusReader interface")
-	log.Error().
-		Str("extractorType", string(spi.ExtractorTypeStatusCode)).
-		Err(err).
-		Msg("Failed to extract status code")
 	return nil, err
 }
 
