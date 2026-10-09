@@ -18,6 +18,8 @@ type Package struct {
 	Inputs          map[string]any                 `json:"inputs"`
 	SecretInputKeys []string                       `json:"secret_input_keys,omitempty"`
 	ReferencedFlows flowpkg.ReferencedFlowRegistry `json:"referenced_flows,omitempty"`
+	// MaxHTTPCallsPerExecution is the HTTP call limit; zero records without one.
+	MaxHTTPCallsPerExecution int `json:"max_http_calls_per_execution,omitempty"`
 }
 
 // Result is the ephemeral execution result the runner writes to stdout or a

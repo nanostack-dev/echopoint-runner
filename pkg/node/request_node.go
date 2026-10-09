@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/nanostack-dev/echopoint-runner/pkg/extractors"
+	"github.com/nanostack-dev/echopoint-runner/pkg/httpcall"
 	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 )
 
@@ -89,6 +91,10 @@ func (n *RequestNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 
 	resp, respBody, err := n.makeRequestAndReadBody(ctx.Context(), url, n.Data.Method, headers, body, n.Data.Timeout)
 	if err != nil {
+		// The HTTP call limit refused the request before it was sent.
+		if limitErr, ok := errors.AsType[*spi.UserError](err); ok {
+			return n.createErrorResult(ctx.Inputs, limitErr, time.Since(startTime)), limitErr
+		}
 		// A transport failure targets a user-configured URL (DNS, connection,
 		// TLS, timeout) — the user's endpoint, not a runner fault. Classify it
 		// into a clean, user-facing result and let it propagate as a UserError;
@@ -306,9 +312,17 @@ func (n *RequestNode) makeRequestAndReadBody(
 		req.ContentLength = int64(len(payload))
 	}
 
+	call, err := httpcall.Start(parent, httpcall.Target{
+		NodeID: n.GetID(), Method: method, URL: url, URLTemplate: n.Data.URL,
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+
 	client := nodeHTTPClient()
 	resp, err := client.Do(req)
 	if err != nil {
+		call.Finish(httpcall.Outcome{ErrorClass: callErrorClass(url, err)})
 		return nil, nil, err
 	}
 
@@ -316,9 +330,12 @@ func (n *RequestNode) makeRequestAndReadBody(
 	respBody, readErr := io.ReadAll(resp.Body)
 	if readErr != nil {
 		_ = resp.Body.Close()
+		call.Finish(httpcall.Outcome{StatusCode: &resp.StatusCode, ErrorClass: callErrorClass(url, readErr)})
 		return nil, nil, readErr
 	}
 
+	bodySize := int64(len(respBody))
+	call.Finish(httpcall.Outcome{StatusCode: &resp.StatusCode, ResponseBytes: &bodySize})
 	return resp, respBody, nil
 }
 

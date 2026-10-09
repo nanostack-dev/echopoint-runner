@@ -25,6 +25,8 @@ type Job struct {
 	Inputs          map[string]any              `json:"inputs"`
 	SecretInputKeys []string                    `json:"secret_input_keys,omitempty"`
 	ReferencedFlows flow.ReferencedFlowRegistry `json:"referenced_flows,omitempty"`
+	// MaxHTTPCallsPerExecution is the HTTP call limit; zero records without one.
+	MaxHTTPCallsPerExecution int `json:"max_http_calls_per_execution,omitempty"`
 }
 
 type Config struct {
@@ -85,6 +87,8 @@ func (c *Client) Run(ctx context.Context, job Job) (Result, error) {
 		Inputs:          job.Inputs,
 		SecretInputKeys: job.SecretInputKeys,
 		ReferencedFlows: job.ReferencedFlows,
+
+		MaxHTTPCallsPerExecution: job.MaxHTTPCallsPerExecution,
 	})
 	return Result{Status: outcome.Status, Execution: outcome.Result, ErrorMessage: outcome.ErrorMessage}, err
 }

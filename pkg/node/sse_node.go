@@ -13,6 +13,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/nanostack-dev/echopoint-runner/pkg/extractors"
+	"github.com/nanostack-dev/echopoint-runner/pkg/httpcall"
 	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 )
 
@@ -173,9 +174,17 @@ func (n *SseNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 
 	// No client-level timeout: streaming is bounded by streamCtx instead, so a
 	// long-lived stream is not aborted mid-read by an http.Client deadline.
+	call, err := httpcall.Start(ctx.Context(), httpcall.Target{
+		NodeID: n.GetID(), Method: method, URL: url, URLTemplate: n.Data.URL,
+	})
+	if err != nil {
+		return n.createErrorResult(ctx.Inputs, method, url, nil, nil, "", err, startTime), err
+	}
+
 	client := nodeHTTPClient()
 	resp, err := client.Do(req)
 	if err != nil {
+		call.Finish(httpcall.Outcome{ErrorClass: sseCallErrorClass(streamCtx, url, err)})
 		// The overall deadline can elapse during the connect/header phase (a slow
 		// producer that has not yet sent the status line). That is the configured
 		// timeout_ms stop condition, not a node failure — return a clean,
@@ -188,6 +197,8 @@ func (n *SseNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 		return n.createErrorResult(ctx.Inputs, method, url, nil, nil, "", wrapped, startTime), wrapped
 	}
 	defer resp.Body.Close()
+	// The call lasts as long as the stream is read.
+	defer call.Finish(httpcall.Outcome{StatusCode: &resp.StatusCode})
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		statusErr := fmt.Errorf("SSE endpoint returned non-2xx status: %d", resp.StatusCode)
@@ -522,4 +533,13 @@ func (n *SseNode) createErrorResult(
 		StopReason:    stopReason,
 		DurationMs:    time.Since(startTime).Milliseconds(),
 	}
+}
+
+// sseCallErrorClass reports a deadline that elapsed before the response
+// headers as a timeout, although the node treats it as a normal stop.
+func sseCallErrorClass(streamCtx context.Context, rawURL string, err error) spi.HTTPCallErrorClass {
+	if contextDone(streamCtx) {
+		return spi.HTTPCallErrorTimeout
+	}
+	return callErrorClass(rawURL, err)
 }

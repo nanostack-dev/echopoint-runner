@@ -11,5 +11,7 @@
 | Ephemeral runner | Short-lived execution initiated by a caller with flow-level authentication; it does not claim queued jobs. |
 | Observer | Receives execution progress without becoming a control-flow decision hook. |
 | User error | Flow-author error represented by `spi.UserError`; report at warn rather than as a runner fault. |
+| HTTP call | One outbound HTTP request a node sent during an execution; each loop iteration, poll attempt and retry is its own call. Control-plane reads such as webhook-wait polling are not HTTP calls. |
+| HTTP call limit | The most HTTP calls one execution may send (`max_http_calls_per_execution`). The node whose call would pass it fails with `HTTP_CALL_LIMIT_EXCEEDED`. |
 
 The [architecture](docs/technical/architecture.md) identifies current implementation packages. Proposed `pkg/core` types do not replace the live vocabulary until consumers migrate.
