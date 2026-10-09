@@ -1,7 +1,7 @@
 # Documentation
 
 - [Domain vocabulary](../CONTEXT.md)
-- [Implemented architecture and contracts](technical/architecture.md)
+- [Implemented architecture and contracts](technical/architecture.md), [HTTP calls](technical/http-calls.md)
 - [Parallel execution](parallel-execution-model.md), [dynamic template variables](dynamic-template-variables-reference.md), [ephemeral mode](ephemeral-mode.md)
 - [Core rewrite status](../pkg/core/README.md) and [operators](../pkg/operators/README.md)
 - [Setup](development/setup.md), [testing](development/testing.md), [troubleshooting](development/troubleshooting.md), [agent workflow](development/agent-workflow.md)
