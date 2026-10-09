@@ -116,13 +116,13 @@ func (engine *FlowEngine) startReadyOnSuccessNodes(scheduler *phaseScheduler, st
 			// dependency_skipped outcome.
 			if cause, blocked := engine.upstreamFailure(readyNode, state); blocked {
 				state.failureCause[readyNode.GetID()] = cause
-				engine.recordSkippedNode(readyNode, state, true)
+				engine.recordSkippedNode(readyNode, state)
 				skipped = true
 				continue
 			}
 			if engine.isFullyDead(readyNode, state) ||
 				engine.inputsReferenceSkippedNode(readyNode, state) {
-				engine.recordSkippedNode(readyNode, state, true)
+				engine.recordSkippedNode(readyNode, state)
 				skipped = true
 				continue
 			}
@@ -664,13 +664,11 @@ func (engine *FlowEngine) markNodeFailed(n node.AnyNode, state *executionState) 
 }
 
 // recordSkippedNode builds the skipped result, stores it, emits a NodeFinished
-// event (so SSE/persistence observe the skip), and tracks it. When cascade is
-// true it also unblocks successors via markNodeComplete (used by the always
-// cleanup phase); on_success skips pass cascade=false.
+// event (so SSE/persistence observe the skip), and unblocks successors through
+// markNodeComplete. All skip paths complete their scheduler dependencies.
 func (engine *FlowEngine) recordSkippedNode(
 	n node.AnyNode,
 	state *executionState,
-	cascade bool,
 ) {
 	startedAt := time.Now()
 	result := engine.createSkippedNodeResult(n, nil, state)
@@ -685,9 +683,7 @@ func (engine *FlowEngine) recordSkippedNode(
 		DurationMs:  0,
 		Result:      result,
 	})
-	if cascade {
-		engine.markNodeComplete(n, state)
-	}
+	engine.markNodeComplete(n, state)
 }
 
 func (engine *FlowEngine) finalizeExecution(state *executionState) error {
@@ -755,7 +751,7 @@ func (engine *FlowEngine) resolveBlockedAlwaysNodes(scheduler *phaseScheduler, s
 	}
 
 	for _, currentNode := range toSkip {
-		engine.recordSkippedNode(currentNode, state, true)
+		engine.recordSkippedNode(currentNode, state)
 	}
 	for _, currentNode := range toRun {
 		scheduler.start(currentNode)
