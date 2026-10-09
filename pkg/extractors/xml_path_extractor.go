@@ -18,11 +18,6 @@ func (e XMLPathExtractor) Extract(_ ResponseContext) (any, error) {
 
 	// TODO: Implement XPath extraction
 	// Use a library like github.com/antchfx/xmlquery or similar
-	log.Error().
-		Str("extractorType", string(spi.ExtractorTypeXMLPath)).
-		Str("path", e.Path).
-		Err(ErrNotImplemented).
-		Msg("XML path extraction not implemented")
 	return nil, ErrNotImplemented
 }
 

@@ -26,10 +26,6 @@ func (e BodyExtractor) Extract(ctx ResponseContext) (any, error) {
 	}
 
 	// If no parsed body, return nil with error
-	log.Error().
-		Str("extractorType", string(spi.ExtractorTypeBody)).
-		Err(ErrNotImplemented).
-		Msg("Failed to extract body: ParsedBodyReader not supported")
 	return nil, ErrNotImplemented
 }
 

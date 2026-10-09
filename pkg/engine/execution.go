@@ -533,7 +533,7 @@ func applyAssertionsAndOutputs(
 	}
 	if assertErr != nil {
 		if failer != nil {
-			failer.MergeOutputs(extractAvailableOutputs(n.GetOutputs(), rc))
+			failer.MergeOutputs(extractAvailableOutputs(n, rc))
 			failer.Fail(assertErr, "ASSERTION_FAILED")
 		}
 		// A failed or erroring assertion is a user-caused outcome — the target
@@ -582,12 +582,22 @@ func applyAssertionsAndOutputs(
 
 // extractAvailableOutputs keeps every output a failed node's response still
 // yields, so an always-run cleanup can reference the resource it created.
-func extractAvailableOutputs(outputs []node.Output, rc extractors.ResponseContext) map[string]any {
+func extractAvailableOutputs(n node.AnyNode, rc extractors.ResponseContext) map[string]any {
+	outputs := n.GetOutputs()
 	available := make(map[string]any, len(outputs))
 	for _, output := range outputs {
-		if value, err := output.Extractor.Extract(rc); err == nil {
-			available[output.Name] = value
+		value, err := output.Extractor.Extract(rc)
+		if err != nil {
+			// This extraction is best effort after the assertion already failed;
+			// report its omission at debug without another terminal failure log.
+			log.Debug().
+				Str("nodeID", n.GetID()).
+				Str("outputName", output.Name).
+				Str("error", spi.SafeErrorMessage(err)).
+				Msg("Output unavailable after assertion failure")
+			continue
 		}
+		available[output.Name] = value
 	}
 	return available
 }

@@ -32,20 +32,10 @@ func (e HeaderExtractor) Extract(ctx extractors.ResponseContext) (any, error) {
 			return value, nil
 		}
 		err := fmt.Errorf("header %s not found", e.HeaderName)
-		log.Warn().
-			Str("extractorType", string(spi.ExtractorTypeHeader)).
-			Str("headerName", e.HeaderName).
-			Err(err).
-			Msg("Header not found")
 		return nil, err
 	}
 
 	err := errors.New("context does not implement HeaderAccessor interface")
-	log.Error().
-		Str("extractorType", string(spi.ExtractorTypeHeader)).
-		Str("headerName", e.HeaderName).
-		Err(err).
-		Msg("Failed to extract header")
 	return nil, err
 }
 

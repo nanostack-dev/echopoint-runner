@@ -357,7 +357,7 @@ func TestSseNode_FailingAssertionLogsAtDebugNotError(t *testing.T) {
 
 // The stopping path wraps the assertion error with fmt.Errorf("%w"), which must
 // keep the UserError reachable by errors.As — that is what makes both the node's
-// own failure log and the engine's classify it at debug.
+// returned error to the engine, which classifies it at debug.
 func TestSseNode_AssertionFailureStaysUserError(t *testing.T) {
 	logs := captureLogs(t)
 
@@ -377,13 +377,13 @@ func TestSseNode_AssertionFailureStaysUserError(t *testing.T) {
 	assert.Equal(t, "ASSERTION_FAILED", userErr.Code)
 
 	out := logs.String()
-	require.Contains(t, out, "SSE node execution failed", "the node failure is still logged")
+	assert.NotContains(t, out, "SSE node execution failed", "the engine owns terminal failure logging")
 	assert.NotContains(t, out, `"level":"error"`, "a stopping assertion failure is not a runner fault")
 }
 
 // The classification must not swallow real faults: a non-2xx response is a
-// genuine failure and has to keep error severity.
-func TestSseNode_GenuineFaultStillLogsAtError(t *testing.T) {
+// failure returned to the engine for error-level terminal logging.
+func TestSseNode_GenuineFaultReturnedForEngine(t *testing.T) {
 	logs := captureLogs(t)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -398,5 +398,10 @@ func TestSseNode_GenuineFaultStillLogsAtError(t *testing.T) {
 
 	_, isUser := spi.AsUserError(err)
 	require.False(t, isUser, "a 500 from the target is not a user assertion outcome")
-	assert.Contains(t, logs.String(), `"level":"error"`)
+	assert.NotContains(
+		t,
+		logs.String(),
+		`"level":"error"`,
+		"direct node calls return the fault for their caller to handle",
+	)
 }

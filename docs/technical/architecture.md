@@ -26,3 +26,10 @@ and JSON keys remain the consumer contract. Failed-result constructors share onl
 identity, inputs, error pointers and timestamps; each node still chooses its own
 error code and message (including request `UserError` handling, SSE's `SSE_FAILED`
 code, and poll-specific codes and assertion outcomes).
+
+The engine owns terminal failure logging and chooses severity from `spi.UserError`
+with `SafeErrorMessage`, node identity and flow identity. Extractors and SSE result
+constructors return failures without repeating that record. Best-effort output
+extraction after an assertion failure logs unavailable output names at Debug.
+Recovery/fallback, continued-loop, per-event SSE and cancellation diagnostics keep
+their own existing policies because those branches handle the outcome locally.
