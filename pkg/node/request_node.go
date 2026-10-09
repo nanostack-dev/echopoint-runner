@@ -29,6 +29,17 @@ type RequestData struct {
 	Timeout     int               `json:"timeout"`
 }
 
+// requestExchange carries one request and its completed response through the
+// private execution pipeline. It is not a serialized result or public API.
+type requestExchange struct {
+	URL          string
+	Headers      map[string]string
+	Body         any
+	Response     *http.Response
+	ResponseBody []byte
+	ParsedBody   any
+}
+
 // RequestNode is a typed node for HTTP requests.
 type RequestNode struct {
 	BaseNode
@@ -82,18 +93,25 @@ func (n *RequestNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 		return n.createErrorResult(ctx.Inputs, err, time.Since(startTime)), err
 	}
 
-	url, headers, body, err := n.prepareRequest(ctx.Inputs)
+	exchange, err := n.prepareRequest(ctx.Inputs)
 	if err != nil {
 		return n.createErrorResult(ctx.Inputs, err, time.Since(startTime)), err
 	}
 
-	resp, respBody, err := n.makeRequestAndReadBody(ctx.Context(), url, n.Data.Method, headers, body, n.Data.Timeout)
+	resp, respBody, err := n.makeRequestAndReadBody(
+		ctx.Context(),
+		exchange.URL,
+		n.Data.Method,
+		exchange.Headers,
+		exchange.Body,
+		n.Data.Timeout,
+	)
 	if err != nil {
 		// A transport failure targets a user-configured URL (DNS, connection,
 		// TLS, timeout) — the user's endpoint, not a runner fault. Classify it
 		// into a clean, user-facing result and let it propagate as a UserError;
 		// the engine logs UserErrors at debug rather than tripping error alerts.
-		userErr := classifyRequestError(url, err)
+		userErr := classifyRequestError(exchange.URL, err)
 		return n.createErrorResult(ctx.Inputs, userErr, time.Since(startTime)), userErr
 	}
 	defer resp.Body.Close()
@@ -104,7 +122,9 @@ func (n *RequestNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 		Int("bodySize", len(respBody)).
 		Msg("HTTP response received")
 
-	return n.processResponse(ctx.Inputs, url, headers, body, resp, respBody, startTime)
+	exchange.Response = resp
+	exchange.ResponseBody = respBody
+	return n.processResponse(ctx.Inputs, exchange, startTime)
 }
 
 // processResponse builds the success result for a completed HTTP exchange and
@@ -115,23 +135,16 @@ func (n *RequestNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 // failures are handled earlier in Execute, before any context exists.
 func (n *RequestNode) processResponse(
 	inputs map[string]any,
-	url string,
-	headers map[string]string,
-	body any,
-	resp *http.Response,
-	respBody []byte,
+	exchange requestExchange,
 	startTime time.Time,
 ) (spi.AnyResult, error) {
-	parsedBody := n.parseResponseBody(resp.Header.Get("Content-Type"), respBody)
-	respCtx := extractors.NewResponseContext(resp, respBody, parsedBody)
-
-	result := n.createSuccessResult(
-		inputs, url, headers, body, resp, respBody, parsedBody, respCtx, startTime,
-	)
+	exchange.ParsedBody = n.parseResponseBody(exchange.Response.Header.Get("Content-Type"), exchange.ResponseBody)
+	respCtx := extractors.NewResponseContext(exchange.Response, exchange.ResponseBody, exchange.ParsedBody)
+	result := n.createSuccessResult(inputs, exchange, respCtx, startTime)
 
 	log.Info().
 		Str("nodeID", n.GetID()).
-		Int("statusCode", resp.StatusCode).
+		Int("statusCode", exchange.Response.StatusCode).
 		Int64("durationMs", result.DurationMs).
 		Msg("Request node HTTP exchange completed; deferring assertions/outputs to engine pass")
 
@@ -140,12 +153,7 @@ func (n *RequestNode) processResponse(
 
 func (n *RequestNode) createSuccessResult(
 	inputs map[string]any,
-	url string,
-	headers map[string]string,
-	body any,
-	resp *http.Response,
-	respBody []byte,
-	parsedBody any,
+	exchange requestExchange,
 	respCtx extractors.ResponseContext,
 	startTime time.Time,
 ) *RequestExecutionResult {
@@ -159,13 +167,13 @@ func (n *RequestNode) createSuccessResult(
 			ExecutedAt:  time.Now(),
 		},
 		RequestMethod:      n.Data.Method,
-		RequestURL:         url,
-		RequestHeaders:     headers,
-		RequestBody:        body,
-		ResponseStatusCode: resp.StatusCode,
-		ResponseHeaders:    resp.Header,
-		ResponseBody:       respBody,
-		ResponseBodyParsed: parsedBody,
+		RequestURL:         exchange.URL,
+		RequestHeaders:     exchange.Headers,
+		RequestBody:        exchange.Body,
+		ResponseStatusCode: exchange.Response.StatusCode,
+		ResponseHeaders:    exchange.Response.Header,
+		ResponseBody:       exchange.ResponseBody,
+		ResponseBodyParsed: exchange.ParsedBody,
 		assertionCtx:       respCtx,
 		DurationMs:         time.Since(startTime).Milliseconds(),
 	}
@@ -187,29 +195,16 @@ func (n *RequestNode) createErrorResult(
 	}
 
 	return &RequestExecutionResult{
-		BaseExecutionResult: spi.BaseExecutionResult{
-			NodeID:      n.GetID(),
-			DisplayName: n.GetDisplayName(),
-			NodeType:    spi.KindRequest,
-			Inputs:      inputs,
-			Outputs:     nil,
-			Error:       err,
-			ErrorMsg:    &errMsg,
-			ErrorCode:   &errCode,
-			ExecutedAt:  time.Now(),
-		},
+		BaseExecutionResult: failedNodeBase(n.BaseNode, inputs, err, failureDetails{
+			Kind: spi.KindRequest, Code: errCode, Message: errMsg,
+		}),
 		DurationMs: duration.Milliseconds(),
 	}
 }
 
 func (n *RequestNode) createResponseBackedErrorResult(
 	inputs map[string]any,
-	url string,
-	headers map[string]string,
-	body any,
-	resp *http.Response,
-	respBody []byte,
-	parsedBody any,
+	exchange requestExchange,
 	assertionResults []spi.AssertionResult,
 	err error,
 	duration time.Duration,
@@ -221,15 +216,15 @@ func (n *RequestNode) createResponseBackedErrorResult(
 	}
 
 	reqResult.RequestMethod = n.Data.Method
-	reqResult.RequestURL = url
-	reqResult.RequestHeaders = headers
-	reqResult.RequestBody = body
-	if resp != nil {
-		reqResult.ResponseStatusCode = resp.StatusCode
-		reqResult.ResponseHeaders = resp.Header
+	reqResult.RequestURL = exchange.URL
+	reqResult.RequestHeaders = exchange.Headers
+	reqResult.RequestBody = exchange.Body
+	if exchange.Response != nil {
+		reqResult.ResponseStatusCode = exchange.Response.StatusCode
+		reqResult.ResponseHeaders = exchange.Response.Header
 	}
-	reqResult.ResponseBody = respBody
-	reqResult.ResponseBodyParsed = parsedBody
+	reqResult.ResponseBody = exchange.ResponseBody
+	reqResult.ResponseBodyParsed = exchange.ParsedBody
 	reqResult.AssertionResults = assertionResults
 
 	return reqResult

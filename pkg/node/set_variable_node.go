@@ -111,17 +111,9 @@ func (n *SetVariableNode) createErrorResult(
 	errCode := "SET_VARIABLE_FAILED"
 
 	return &SetVariableExecutionResult{
-		BaseExecutionResult: spi.BaseExecutionResult{
-			NodeID:      n.GetID(),
-			DisplayName: n.GetDisplayName(),
-			NodeType:    spi.KindSetVariable,
-			Inputs:      inputs,
-			Outputs:     nil,
-			Error:       err,
-			ErrorMsg:    &errMsg,
-			ErrorCode:   &errCode,
-			ExecutedAt:  time.Now(),
-		},
+		BaseExecutionResult: failedNodeBase(n.BaseNode, inputs, err, failureDetails{
+			Kind: spi.KindSetVariable, Code: errCode, Message: errMsg,
+		}),
 		DurationMs: time.Since(startedAt).Milliseconds(),
 	}
 }

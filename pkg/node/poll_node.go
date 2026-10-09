@@ -274,21 +274,13 @@ func (n *PollNode) errorResult(
 ) spi.AnyResult {
 	errMsg := err.Error()
 	errCode := code
+	base := failedNodeBase(n.BaseNode, inputs, err, failureDetails{Kind: spi.KindPoll, Code: errCode, Message: errMsg})
+	base.AssertionResults = assertionResults
+
 	return &PollExecutionResult{
-		BaseExecutionResult: spi.BaseExecutionResult{
-			NodeID:           n.GetID(),
-			DisplayName:      n.GetDisplayName(),
-			NodeType:         spi.KindPoll,
-			Inputs:           inputs,
-			Outputs:          nil,
-			Error:            err,
-			ErrorMsg:         &errMsg,
-			ErrorCode:        &errCode,
-			AssertionResults: assertionResults,
-			ExecutedAt:       time.Now(),
-		},
-		Attempts:   attempts,
-		DurationMs: time.Since(startedAt).Milliseconds(),
+		BaseExecutionResult: base,
+		Attempts:            attempts,
+		DurationMs:          time.Since(startedAt).Milliseconds(),
 	}
 }
 

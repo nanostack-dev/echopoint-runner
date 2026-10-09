@@ -76,6 +76,16 @@ type SseNode struct {
 	dynamic spi.DynamicResolver
 }
 
+// sseExchange names the stream state shared by success and failure results.
+// It stays private; SseExecutionResult owns the serialized consumer contract.
+type sseExchange struct {
+	Method           string
+	URL              string
+	Events           []any
+	AssertionResults []spi.AssertionResult
+	StopReason       string
+}
+
 // AsSseNode safely casts an AnyNode to an SseNode.
 // Returns the SseNode and true if the cast succeeds, nil and false otherwise.
 func AsSseNode(node AnyNode) (*SseNode, bool) {
@@ -151,7 +161,7 @@ func (n *SseNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 
 	url, headers, err := n.prepareConnection(ctx.Inputs)
 	if err != nil {
-		return n.createErrorResult(ctx.Inputs, method, n.Data.URL, nil, nil, "", err, startTime), err
+		return n.createErrorResult(ctx.Inputs, sseExchange{Method: method, URL: n.Data.URL}, err, startTime), err
 	}
 
 	timeout := time.Duration(n.timeoutMs()) * time.Millisecond
@@ -163,7 +173,7 @@ func (n *SseNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 		wrapped := spi.NewUserError(
 			"SSE_FAILED", fmt.Sprintf("Could not build the SSE request for %s", requestHost(url)), err,
 		)
-		return n.createErrorResult(ctx.Inputs, method, url, nil, nil, "", wrapped, startTime), wrapped
+		return n.createErrorResult(ctx.Inputs, sseExchange{Method: method, URL: url}, wrapped, startTime), wrapped
 	}
 	req.Header.Set("Accept", "text/event-stream")
 	req.Header.Set("Cache-Control", "no-cache")
@@ -181,27 +191,34 @@ func (n *SseNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 		// timeout_ms stop condition, not a node failure — return a clean,
 		// empty-event success result so callers see "timeout", not an error.
 		if contextDone(streamCtx) {
-			result := n.createSuccessResult(ctx.Inputs, method, url, nil, nil, sseStopTimeout, startTime)
+			result := n.createSuccessResult(
+				ctx.Inputs,
+				sseExchange{Method: method, URL: url, StopReason: sseStopTimeout},
+				startTime,
+			)
 			return result, nil
 		}
 		wrapped := classifyRequestError(url, err)
-		return n.createErrorResult(ctx.Inputs, method, url, nil, nil, "", wrapped, startTime), wrapped
+		return n.createErrorResult(ctx.Inputs, sseExchange{Method: method, URL: url}, wrapped, startTime), wrapped
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		statusErr := fmt.Errorf("SSE endpoint returned non-2xx status: %d", resp.StatusCode)
-		return n.createErrorResult(ctx.Inputs, method, url, nil, nil, "", statusErr, startTime), statusErr
+		return n.createErrorResult(ctx.Inputs, sseExchange{Method: method, URL: url}, statusErr, startTime), statusErr
 	}
 
 	events, assertionResults, stopReason, streamErr := n.consume(streamCtx, resp.Body)
+	exchange := sseExchange{
+		Method: method, URL: url, Events: events, AssertionResults: assertionResults, StopReason: stopReason,
+	}
 	if streamErr != nil {
 		return n.createErrorResult(
-			ctx.Inputs, method, url, events, assertionResults, stopReason, streamErr, startTime,
+			ctx.Inputs, exchange, streamErr, startTime,
 		), streamErr
 	}
 
-	result := n.createSuccessResult(ctx.Inputs, method, url, events, assertionResults, stopReason, startTime)
+	result := n.createSuccessResult(ctx.Inputs, exchange, startTime)
 	log.Info().
 		Str("nodeID", n.GetID()).
 		Int("eventCount", len(events)).
@@ -440,19 +457,16 @@ func splitSseField(line string) (string, string) {
 
 func (n *SseNode) createSuccessResult(
 	inputs map[string]any,
-	method, url string,
-	events []any,
-	assertionResults []spi.AssertionResult,
-	stopReason string,
+	exchange sseExchange,
 	startTime time.Time,
 ) *SseExecutionResult {
 	var last any
-	if len(events) > 0 {
-		last = events[len(events)-1]
+	if len(exchange.Events) > 0 {
+		last = exchange.Events[len(exchange.Events)-1]
 	}
 	outputs := map[string]any{
-		"events":       events,
-		outputKeyCount: len(events),
+		"events":       exchange.Events,
+		outputKeyCount: len(exchange.Events),
 		"last":         last,
 	}
 
@@ -464,23 +478,20 @@ func (n *SseNode) createSuccessResult(
 			Inputs:           inputs,
 			Outputs:          outputs,
 			ExecutedAt:       time.Now(),
-			AssertionResults: assertionResults,
+			AssertionResults: exchange.AssertionResults,
 		},
-		RequestMethod: method,
-		RequestURL:    url,
-		Events:        events,
-		EventCount:    len(events),
-		StopReason:    stopReason,
+		RequestMethod: exchange.Method,
+		RequestURL:    exchange.URL,
+		Events:        exchange.Events,
+		EventCount:    len(exchange.Events),
+		StopReason:    exchange.StopReason,
 		DurationMs:    time.Since(startTime).Milliseconds(),
 	}
 }
 
 func (n *SseNode) createErrorResult(
 	inputs map[string]any,
-	method, url string,
-	events []any,
-	assertionResults []spi.AssertionResult,
-	stopReason string,
+	exchange sseExchange,
 	err error,
 	startTime time.Time,
 ) spi.AnyResult {
@@ -497,29 +508,21 @@ func (n *SseNode) createErrorResult(
 	}
 	event.
 		Str("nodeID", n.GetID()).
-		Int("eventCount", len(events)).
+		Int("eventCount", len(exchange.Events)).
 		Str("errorCode", errCode).
 		Str("error", spi.SafeErrorMessage(err)).
 		Msg("SSE node execution failed")
 
+	base := failedNodeBase(n.BaseNode, inputs, err, failureDetails{Kind: spi.KindSse, Code: errCode, Message: errMsg})
+	base.AssertionResults = exchange.AssertionResults
+
 	return &SseExecutionResult{
-		BaseExecutionResult: spi.BaseExecutionResult{
-			NodeID:           n.GetID(),
-			DisplayName:      n.GetDisplayName(),
-			NodeType:         spi.KindSse,
-			Inputs:           inputs,
-			Outputs:          nil,
-			Error:            err,
-			ErrorMsg:         &errMsg,
-			ErrorCode:        &errCode,
-			ExecutedAt:       time.Now(),
-			AssertionResults: assertionResults,
-		},
-		RequestMethod: method,
-		RequestURL:    url,
-		Events:        events,
-		EventCount:    len(events),
-		StopReason:    stopReason,
-		DurationMs:    time.Since(startTime).Milliseconds(),
+		BaseExecutionResult: base,
+		RequestMethod:       exchange.Method,
+		RequestURL:          exchange.URL,
+		Events:              exchange.Events,
+		EventCount:          len(exchange.Events),
+		StopReason:          exchange.StopReason,
+		DurationMs:          time.Since(startTime).Milliseconds(),
 	}
 }

@@ -34,14 +34,17 @@ func ProcessResponseForTest(
 	respBody []byte,
 	startTime time.Time,
 ) (spi.AnyResult, error) {
-	return n.processResponse(inputs, url, headers, body, resp, respBody, startTime)
+	return n.processResponse(inputs, requestExchange{
+		URL: url, Headers: headers, Body: body, Response: resp, ResponseBody: respBody,
+	}, startTime)
 }
 
 func PrepareRequestForTest(
 	n *RequestNode,
 	inputs map[string]any,
 ) (string, map[string]string, any, error) {
-	return n.prepareRequest(inputs)
+	exchange, err := n.prepareRequest(inputs)
+	return exchange.URL, exchange.Headers, exchange.Body, err
 }
 
 func WebhookWaitTimeoutMsForTest(n *WebhookWaitNode) int {
@@ -61,6 +64,8 @@ func CreateResponseBackedErrorResultForTest(
 	duration time.Duration,
 ) spi.AnyResult {
 	return n.createResponseBackedErrorResult(
-		inputs, url, headers, body, resp, respBody, parsedBody, nil, err, duration,
+		inputs, requestExchange{
+			URL: url, Headers: headers, Body: body, Response: resp, ResponseBody: respBody, ParsedBody: parsedBody,
+		}, nil, err, duration,
 	)
 }
