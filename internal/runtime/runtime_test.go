@@ -171,3 +171,50 @@ func TestJobWithUnknownInitialVariableFailsAtWarn(t *testing.T) {
 	assert.Contains(t, *completion.ErrorMessage, "references unknown initial variable 'nanostackBaseUrl'")
 	assert.Equal(t, []string{"warn"}, levelsOf(t, logs, "runner job failed"))
 }
+
+func TestFailedJobReportsItsHTTPCallsPastTheLimit(t *testing.T) {
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer target.Close()
+	var completion controlplane.CompleteJobRequest
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/complete") {
+			assert.NoError(t, json.NewDecoder(r.Body).Decode(&completion))
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer server.Close()
+
+	claim := `{
+		"job_id": "` + uuid.NewString() + `",
+		"execution_id": "` + uuid.NewString() + `",
+		"max_http_calls_per_execution": 1,
+		"inputs": {},
+		"flow_definition": {
+			"name": "Two calls", "version": "1.0",
+			"nodes": [
+				{"id": "first", "type": "request", "data": {"method": "GET", "url": "` + target.URL + `/a"}},
+				{"id": "second", "type": "request", "data": {"method": "GET", "url": "` + target.URL + `/b"}}
+			],
+			"edges": [{"id": "e", "source": "first", "target": "second"}]
+		}
+	}`
+	var job controlplane.ClaimedJob
+	require.NoError(t, json.Unmarshal([]byte(claim), &job))
+	r := newRuntime(testConfig(server.URL), controlplane.NewRunnerClient(controlplane.Config{BaseURL: server.URL}))
+
+	outcome, err := r.executeClaimedJob(context.Background(), &activeJob{job: &job, startedAt: time.Now()})
+
+	require.NoError(t, err)
+	assert.Equal(t, jobStatusFailed, outcome.Status)
+	require.NotNil(t, completion.ErrorMessage)
+	assert.Equal(t, "The execution reached its limit of 1 HTTP calls", *completion.ErrorMessage)
+	require.NotNil(t, completion.Result, "a failed run must still report its partial result")
+	calls, ok := (*completion.Result)["http_calls"].([]any)
+	require.True(t, ok, "http_calls missing from %v", *completion.Result)
+	require.Len(t, calls, 1)
+	assert.Equal(t, "first", calls[0].(map[string]any)["node_id"])
+}

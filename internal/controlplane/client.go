@@ -56,6 +56,9 @@ type ClaimedJob struct {
 	ReferencedFlows flowpkg.ReferencedFlowRegistry `json:"referenced_flows,omitempty"`
 	// JobToken is set by a self-hosted claim. A one-shot Job gets it from its own claim.
 	JobToken string `json:"job_token,omitempty"`
+	// MaxHTTPCallsPerExecution is the organization's HTTP call limit. Zero, from a
+	// control plane that does not send it, records calls without a limit.
+	MaxHTTPCallsPerExecution int `json:"max_http_calls_per_execution,omitempty"`
 }
 
 func (j *ClaimedJob) UnmarshalJSON(data []byte) error {
@@ -70,6 +73,7 @@ func (j *ClaimedJob) UnmarshalJSON(data []byte) error {
 		SecretInputKeys []string                       `json:"secret_input_keys,omitempty"`
 		ReferencedFlows flowpkg.ReferencedFlowRegistry `json:"referenced_flows,omitempty"`
 		JobToken        string                         `json:"job_token,omitempty"`
+		MaxHTTPCalls    int                            `json:"max_http_calls_per_execution,omitempty"`
 	}
 
 	var raw claimedJobAlias
@@ -94,6 +98,7 @@ func (j *ClaimedJob) UnmarshalJSON(data []byte) error {
 	j.SecretInputKeys = raw.SecretInputKeys
 	j.JobToken = raw.JobToken
 	j.ReferencedFlows = raw.ReferencedFlows
+	j.MaxHTTPCallsPerExecution = raw.MaxHTTPCalls
 	return nil
 }
 

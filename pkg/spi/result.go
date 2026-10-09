@@ -158,4 +158,7 @@ type FlowExecutionResult struct {
 	ErrorCode        *string              `json:"error_code,omitempty"`
 	ErrorMsg         *string              `json:"error_message,omitempty"`
 	DurationMS       int64                `json:"duration_ms"`
+	// HTTPCalls lists every outbound call of the run, nested flows included. It
+	// is set only on the result runner.Run returns.
+	HTTPCalls []HTTPCall `json:"http_calls,omitempty"`
 }

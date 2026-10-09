@@ -38,12 +38,14 @@ runner's stdin contract is unchanged:
   "flow_id": "flow_...",
   "flow_definition": { },
   "inputs": { "BASE_URL": "https://api.example.com", "API_TOKEN": "<resolved secret>" },
-  "referenced_flows": { "flow_child": { "flow_definition": {}, "input_overrides": {} } }
+  "referenced_flows": { "flow_child": { "flow_definition": {}, "input_overrides": {} } },
+  "max_http_calls_per_execution": 5000
 }
 ```
 
 `inputs` are the resolved execution inputs/env and may contain secrets. The flow is executed with
 the existing engine; referenced/module flows are resolved from `referenced_flows`.
+`max_http_calls_per_execution` is optional; see [HTTP calls](technical/http-calls.md).
 
 ## Result output
 
@@ -57,7 +59,7 @@ The result is the runner's stdout contract; the CLI forwards it as the
   "started_at": "2026-06-01T12:00:00Z",
   "completed_at": "2026-06-01T12:00:05Z",
   "duration_ms": 5000,
-  "result": { "execution_results": {}, "final_outputs": {}, "success": true },
+  "result": { "execution_results": {}, "final_outputs": {}, "success": true, "http_calls": [] },
   "error_code": null,
   "error_message": null
 }

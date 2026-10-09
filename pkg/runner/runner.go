@@ -12,6 +12,7 @@ import (
 
 	"github.com/nanostack-dev/echopoint-runner/pkg/engine"
 	"github.com/nanostack-dev/echopoint-runner/pkg/flow"
+	"github.com/nanostack-dev/echopoint-runner/pkg/httpcall"
 	"github.com/nanostack-dev/echopoint-runner/pkg/redact"
 	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 )
@@ -26,6 +27,7 @@ type Options struct {
 	Ctx             context.Context
 	Middleware      []engine.Middleware
 	SecretInputKeys []string
+	HTTPCallLimit   int
 }
 
 // Option mutates Options.
@@ -72,6 +74,13 @@ func WithSecretInputKeys(keys []string) Option {
 	return func(o *Options) { o.SecretInputKeys = keys }
 }
 
+// WithHTTPCallLimit refuses the HTTP call past limit: the node that would send
+// it fails with httpcall.LimitExceededCode. Zero or less records every call
+// without refusing.
+func WithHTTPCallLimit(limit int) Option {
+	return func(o *Options) { o.HTTPCallLimit = limit }
+}
+
 // Run executes flowDef. It overlays inputs on the flow's declared InitialInputs
 // (inputs win), resolves referenced flows into the module resolver, and runs the
 // engine. The returned result is the single source of truth; callers serialize
@@ -80,6 +89,9 @@ func WithSecretInputKeys(keys []string) Option {
 // Run is also the boundary where secret input values are masked: everything the
 // engine hands back — the flow result and every progress event — passes through
 // the redactor before any caller sees it.
+//
+// Run records the run's HTTP calls in the result's HTTPCalls, nested flows
+// included. A call holds no resolved value, so it needs no masking.
 func Run(flowDef flow.Flow, inputs map[string]any, opts ...Option) (*spi.FlowExecutionResult, error) {
 	options := Options{Observer: engine.NoopObserver{}}
 	for _, opt := range opts {
@@ -89,15 +101,25 @@ func Run(flowDef flow.Flow, inputs map[string]any, opts ...Option) (*spi.FlowExe
 	mergedInputs := MergeInputs(flowDef.InitialInputs, inputs)
 	redactor := runtimeRedactor(mergedInputs, options.SecretInputKeys, options.ReferencedFlows)
 
+	ctx := options.Ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	calls := httpcall.NewRecorder(options.HTTPCallLimit)
+
 	result, err := engine.ExecuteFlowDefinition(flowDef, mergedInputs, &engine.Options{
 		Observer:        redactingObserver{inner: options.Observer, redactor: redactor},
 		ModuleResolver:  ModuleResolver(options.ReferencedFlows),
 		ModuleCallStack: options.ModuleCallStack,
 		DynamicVars:     options.DynamicVars,
-		Ctx:             options.Ctx,
+		Ctx:             httpcall.WithRecorder(ctx, calls),
 		Middleware:      options.Middleware,
 	})
-	return redactor.FlowResult(result), redactor.Error(err)
+	masked := redactor.FlowResult(result)
+	if masked != nil {
+		masked.HTTPCalls = calls.Calls()
+	}
+	return masked, redactor.Error(err)
 }
 
 func runtimeRedactor(

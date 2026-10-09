@@ -91,3 +91,17 @@ func isTLSError(err error) bool {
 	var recordErr tls.RecordHeaderError
 	return errors.As(err, &recordErr)
 }
+
+// callErrorClass is the HTTP call error class of a transport failure.
+func callErrorClass(rawURL string, err error) spi.HTTPCallErrorClass {
+	switch classifyRequestError(rawURL, err).Code {
+	case "DNS_RESOLUTION_FAILED":
+		return spi.HTTPCallErrorDNS
+	case "REQUEST_TIMEOUT":
+		return spi.HTTPCallErrorTimeout
+	case "TLS_ERROR":
+		return spi.HTTPCallErrorTLS
+	default:
+		return spi.HTTPCallErrorConnect
+	}
+}
