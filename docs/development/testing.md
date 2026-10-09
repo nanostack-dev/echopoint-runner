@@ -12,3 +12,7 @@ The [CI workflow](../../.github/workflows/go.yml) runs lint, then `gotestsum -- 
 For a focused engine change, run the relevant `pkg/engine`, node, result or execution-event tests first, then the complete suite. Contract work must also verify the Echopoint progress/SSE consumer and CLI flow-run result fixtures. Preserve the initial-input, skip-reason, assertion, module and output regressions already in the suite.
 
 Documentation changes: check relative links, compare commands with the source/workflows above, and run `git diff --check`. There is no repository Markdown linter configured.
+
+Pull-request checks run for every target branch, including intermediate `gh stack`
+branches. This validates each stack entry before it is ready for review; publishing
+and deployment remain restricted by their existing workflow conditions.
