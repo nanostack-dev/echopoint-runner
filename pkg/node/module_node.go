@@ -176,17 +176,9 @@ func (n *ModuleNode) createErrorResult(
 	}
 
 	return &ModuleExecutionResult{
-		BaseExecutionResult: spi.BaseExecutionResult{
-			NodeID:      n.GetID(),
-			DisplayName: n.GetDisplayName(),
-			NodeType:    spi.KindModule,
-			Inputs:      inputs,
-			Outputs:     nil,
-			Error:       err,
-			ErrorMsg:    &errMsg,
-			ErrorCode:   &errCode,
-			ExecutedAt:  time.Now(),
-		},
+		BaseExecutionResult: failedNodeBase(n.BaseNode, inputs, err, failureDetails{
+			Kind: spi.KindModule, Code: errCode, Message: errMsg,
+		}),
 		FlowID:            flowID,
 		ChildFinalOutputs: childOutputs,
 		DurationMs:        time.Since(startedAt).Milliseconds(),

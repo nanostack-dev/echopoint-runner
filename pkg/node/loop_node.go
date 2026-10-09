@@ -244,17 +244,9 @@ func (n *LoopNode) createErrorResult(
 	errCode := "LOOP_FAILED"
 
 	return &LoopExecutionResult{
-		BaseExecutionResult: spi.BaseExecutionResult{
-			NodeID:      n.GetID(),
-			DisplayName: n.GetDisplayName(),
-			NodeType:    spi.KindLoop,
-			Inputs:      inputs,
-			Outputs:     nil,
-			Error:       err,
-			ErrorMsg:    &errMsg,
-			ErrorCode:   &errCode,
-			ExecutedAt:  time.Now(),
-		},
+		BaseExecutionResult: failedNodeBase(n.BaseNode, inputs, err, failureDetails{
+			Kind: spi.KindLoop, Code: errCode, Message: errMsg,
+		}),
 		Iterations: iterations,
 		DurationMs: time.Since(startedAt).Milliseconds(),
 	}

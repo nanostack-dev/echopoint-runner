@@ -23,7 +23,7 @@ func (n *RequestNode) validateInputsPresent(inputs map[string]any) error {
 	return nil
 }
 
-func (n *RequestNode) prepareRequest(inputs map[string]any) (string, map[string]string, any, error) {
+func (n *RequestNode) prepareRequest(inputs map[string]any) (requestExchange, error) {
 	log.Debug().
 		Str("nodeID", n.GetID()).
 		Str("rawURL", n.Data.URL).
@@ -36,7 +36,7 @@ func (n *RequestNode) prepareRequest(inputs map[string]any) (string, map[string]
 			Str("nodeID", n.GetID()).
 			Err(err).
 			Msg("URL template resolution failed")
-		return "", nil, nil, err
+		return requestExchange{}, err
 	}
 
 	// Resolve headers
@@ -73,7 +73,7 @@ func (n *RequestNode) prepareRequest(inputs map[string]any) (string, map[string]
 		Int("timeout", n.Data.Timeout).
 		Msg("Making HTTP request")
 
-	return url, headers, body, nil
+	return requestExchange{URL: url, Headers: headers, Body: body}, nil
 }
 
 func (n *RequestNode) parseResponseBody(contentType string, respBody []byte) any {
