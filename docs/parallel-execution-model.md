@@ -75,7 +75,9 @@ sequenceDiagram
 
 A failure skips only what depends on it. Every on_success node downstream of the failed node is
 skipped with `dependency_failed`, naming the step that failed, and the skip cascades through that
-subtree. Every other branch keeps starting nodes, so one run reports a verdict for each
+subtree. Recording a skipped node always completes its scheduler dependencies,
+including during the always phase; there is no separate non-cascading skip mode.
+Every other branch keeps starting nodes, so one run reports a verdict for each
 independent case. The flow still ends failed.
 
 A node that fails an assertion keeps the outputs its response still yields. An always node that
