@@ -182,6 +182,10 @@ func validateNodeReferences(
 		if err != nil {
 			return fmt.Errorf("node %s: invalid input reference '%s': %w", nodeID, ref, err)
 		}
+		if _, isNode := availableNodeOutputs[sourceNodeID]; !isNode &&
+			hasPathRoot(strings.TrimSpace(ref), availableInitialInputs) {
+			continue
+		}
 
 		if sourceNodeID == "" {
 			if validateErr := validateInitialInputReference(
@@ -248,7 +252,7 @@ func validateNodeOutputReference(
 			ref,
 		)
 	}
-	if _, outputExists := outputs[outputKey]; outputExists || currentNode.GetRunWhen() == spi.RunWhenAlways {
+	if hasPathRoot(outputKey, outputs) || currentNode.GetRunWhen() == spi.RunWhenAlways {
 		return nil
 	}
 
@@ -269,6 +273,21 @@ func buildOutputSet(outputSchema []string) map[string]struct{} {
 		}
 	}
 	return outputs
+}
+
+// hasPathRoot reports whether ref, or a dotted prefix of it that a path such as
+// item.id or accounts.0.id walks into at run time, is one of keys.
+func hasPathRoot(ref string, keys map[string]struct{}) bool {
+	for candidate := ref; ; {
+		if _, ok := keys[candidate]; ok {
+			return true
+		}
+		end := strings.LastIndex(candidate, ".")
+		if end <= 0 {
+			return false
+		}
+		candidate = candidate[:end]
+	}
 }
 
 func parseReference(ref string) (string, string, error) {

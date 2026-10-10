@@ -5,6 +5,8 @@
 | Flow | Directed graph of nodes, edges, inputs, assertions and final outputs executed by the engine. |
 | Execution | One run of a flow with its own scheduling state and result. |
 | Node | A typed operation; node `data` JSON uses the contract's snake_case field names. |
+| Template reference | `{{ref}}` or `{{{ref}}}` in node data naming a flow input or `node_id.output`, optionally followed by a path such as `.0.id` into its value; see [template references](docs/technical/template-references.md). |
+| Loop item | The element of a loop's `items` array injected into its body as the flow input `item` (or `item_var`) for one iteration. |
 | Output view | Read-only snapshot of committed outputs taken when a node starts. |
 | Control plane | Echopoint API owning jobs, authentication, tenant policy and accepted progress/SSE contracts. |
 | Self-hosted runner | Long-lived process which claims jobs and reports progress/completion to the control plane. |

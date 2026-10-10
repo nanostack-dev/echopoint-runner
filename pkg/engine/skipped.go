@@ -157,7 +157,7 @@ func (engine *FlowEngine) nodeDisplayName(nodeID string) string {
 func (engine *FlowEngine) collectMissingInputs(n node.AnyNode, outputView spi.OutputView) []string {
 	missing := []string{}
 	for _, inputKey := range n.InputSchema() {
-		sourceNodeID, outputKey, err := parseDataRef(inputKey)
+		sourceNodeID, outputKey, err := resolveDataRef(inputKey, outputView)
 		if err != nil {
 			missing = append(missing, inputKey)
 			continue
@@ -166,7 +166,7 @@ func (engine *FlowEngine) collectMissingInputs(n node.AnyNode, outputView spi.Ou
 			missing = append(missing, inputKey)
 			continue
 		}
-		if _, exists := outputView.Get(sourceNodeID, outputKey); !exists {
+		if _, exists := lookupOutput(outputView, sourceNodeID, outputKey); !exists {
 			missing = append(missing, inputKey)
 		}
 	}

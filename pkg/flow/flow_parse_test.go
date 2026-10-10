@@ -742,6 +742,50 @@ func TestParseAcceptsADottedFlowInputOnlyWhenItIsKnown(t *testing.T) {
 	require.Error(t, err, "an unknown dotted reference is still a missing node")
 }
 
+func TestParseAcceptsAPathIntoAKnownFlowInput(t *testing.T) {
+	flowJSON := []byte(`{
+		"name": "item path",
+		"version": "1.0",
+		"nodes": [{
+			"id": "get",
+			"type": "request",
+			"data": {"method": "GET", "url": "https://api.example.com/accounts/{{item.id}}"}
+		}],
+		"edges": []
+	}`)
+
+	_, err := flow.ParseFromJSONWithOptions(flowJSON, flow.ParseOptions{
+		AllowedInitialInputKeys: []string{"item"},
+	})
+	require.NoError(t, err, "a path may walk into a known flow input")
+
+	_, err = flow.ParseFromJSONWithOptions(flowJSON, flow.ParseOptions{})
+	require.Error(t, err, "a path into an unknown root is still a missing node")
+}
+
+func TestParseAcceptsAPathIntoADeclaredNodeOutput(t *testing.T) {
+	flowJSON := func(ref string) []byte {
+		return []byte(`{
+			"name": "output path",
+			"version": "1.0",
+			"nodes": [
+				{"id": "list_accounts", "type": "request",
+					"data": {"method": "GET", "url": "https://api.example.com/accounts"},
+					"outputs": [{"name": "accounts", "extractor": {"type": "body"}}]},
+				{"id": "get", "type": "request",
+					"data": {"method": "GET", "url": "https://api.example.com/accounts/{{` + ref + `}}"}}
+			],
+			"edges": [{"id": "e1", "source": "list_accounts", "target": "get"}]
+		}`)
+	}
+
+	_, err := flow.ParseFromJSON(flowJSON("list_accounts.accounts.0.id"))
+	require.NoError(t, err, "a path may walk into a declared output")
+
+	_, err = flow.ParseFromJSON(flowJSON("list_accounts.missing.0.id"))
+	require.ErrorContains(t, err, "output 'missing.0.id' not declared by source node 'list_accounts'")
+}
+
 func TestParseFromJSON_RejectsAnUnknownReferenceInAWebhookExpectation(t *testing.T) {
 	flowJSON := []byte(`{
 		"version": "1.0",
