@@ -17,7 +17,7 @@ The control plane owns API authentication, tenancy and the accepted SSE/progress
 
 Event processing is idempotent because delivery may repeat. Node `data` keys use snake_case and match the consumer's `*NodeData` schemas; unknown JSON fields may be silently dropped. Preserve failure/skip reasons, result JSON and progress semantics across API refactors.
 
-The [parallel execution model](../parallel-execution-model.md) owns scheduler/output visibility details, [dynamic template variables](../dynamic-template-variables-reference.md) owns variable semantics, and [ephemeral mode](../ephemeral-mode.md) owns its transport/result contract.
+The [parallel execution model](../parallel-execution-model.md) owns scheduler/output visibility details, [template references](template-references.md) owns reference and path resolution, [dynamic template variables](../dynamic-template-variables-reference.md) owns generated variable semantics, and [ephemeral mode](../ephemeral-mode.md) owns its transport/result contract.
 
 HTTP request and SSE execution carry their private exchange data in named structs,
 so result construction uses the same request/response or stream state throughout

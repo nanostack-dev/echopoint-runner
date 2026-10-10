@@ -219,6 +219,41 @@ func TestLoopNode_ResolvesItemsFromTemplateRef(t *testing.T) {
 	assert.Equal(t, "y", exec.calls[1].inputs["item"])
 }
 
+func TestLoopNode_IteratesAnArrayReferencedWithDoubleBraces(t *testing.T) {
+	exec := &fakeModuleExecutor{result: cannedResult(map[string]any{})}
+	n := newLoopNode(t, node.LoopData{
+		Items: "{{ prev.list }}",
+		Body:  json.RawMessage(iterBody),
+	})
+
+	_, err := n.Execute(spi.ExecutionContext{
+		Inputs:         map[string]any{"prev.list": []any{"x", "y"}},
+		FlowInputs:     map[string]any{},
+		ModuleExecutor: exec,
+	})
+	require.NoError(t, err)
+	require.Len(t, exec.calls, 2)
+	assert.Equal(t, "x", exec.calls[0].inputs["item"])
+	assert.Equal(t, "y", exec.calls[1].inputs["item"])
+}
+
+func TestLoopNode_InterpolatedItemsTextIsNotAList(t *testing.T) {
+	exec := &fakeModuleExecutor{result: cannedResult(map[string]any{})}
+	n := newLoopNode(t, node.LoopData{
+		Items: "ids: {{prev.list}}",
+		Body:  json.RawMessage(iterBody),
+	})
+
+	_, err := n.Execute(spi.ExecutionContext{
+		Inputs:         map[string]any{"prev.list": []any{"x", "y"}},
+		FlowInputs:     map[string]any{},
+		ModuleExecutor: exec,
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "must resolve to a list")
+	assert.Empty(t, exec.calls)
+}
+
 func TestLoopNode_CustomItemAndIndexVars(t *testing.T) {
 	exec := &fakeModuleExecutor{result: cannedResult(map[string]any{})}
 	n := newLoopNode(t, node.LoopData{

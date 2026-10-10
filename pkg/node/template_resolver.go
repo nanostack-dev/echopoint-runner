@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
@@ -12,6 +13,7 @@ import (
 
 var rawVariablePattern = regexp.MustCompile(`^\{\{\{\s*([^{}]+?)\s*\}\}\}$`)
 var stringVariablePattern = regexp.MustCompile(`\{\{([^}]+)\}\}`)
+var singleVariablePattern = regexp.MustCompile(`^\{\{\s*([^{}]+?)\s*\}\}$`)
 
 // TemplateResolver handles resolution of {{variableName}} templates in strings and objects.
 type TemplateResolver struct {
@@ -91,7 +93,7 @@ func (tr *TemplateResolver) resolveString(s string) string {
 			if val, handled := tr.resolveDynamic(varName); handled {
 				return val
 			}
-			if val, exists := tr.variables[varName]; exists {
+			if val, exists := tr.lookup(varName); exists {
 				return fmt.Sprintf("%v", val)
 			}
 			return match
@@ -111,12 +113,71 @@ func (tr *TemplateResolver) resolveRawVariable(value string) (any, bool) {
 	if val, handled := tr.resolveDynamic(varName); handled {
 		return val, true
 	}
-	resolved, exists := tr.variables[varName]
+	resolved, exists := tr.lookup(varName)
 	if !exists {
 		return value, true
 	}
 
 	return resolved, true
+}
+
+// lookup returns the value named by varName, walking into it when only a
+// dotted prefix of varName is a variable.
+func (tr *TemplateResolver) lookup(varName string) (any, bool) {
+	return LookupPath(varName, func(key string) (any, bool) {
+		val, exists := tr.variables[key]
+		return val, exists
+	})
+}
+
+// LookupPath resolves a dotted reference against get. An exact key wins.
+// Otherwise the longest dotted prefix that get knows is taken, because keys
+// themselves contain dots (list_accounts.accounts), and the remaining segments
+// walk into its value: object fields by name, array elements by zero-based
+// index. Any missing segment reports false.
+func LookupPath(ref string, get func(key string) (any, bool)) (any, bool) {
+	if val, exists := get(ref); exists {
+		return val, true
+	}
+	for end := strings.LastIndex(ref, "."); end > 0; end = strings.LastIndex(ref[:end], ".") {
+		if root, exists := get(ref[:end]); exists {
+			return walkPath(root, strings.Split(ref[end+1:], "."))
+		}
+	}
+	return nil, false
+}
+
+func walkPath(value any, segments []string) (any, bool) {
+	for _, segment := range segments {
+		switch container := value.(type) {
+		case map[string]any:
+			next, exists := container[segment]
+			if !exists {
+				return nil, false
+			}
+			value = next
+		case []any:
+			index, ok := sliceIndex(segment, len(container))
+			if !ok {
+				return nil, false
+			}
+			value = container[index]
+		case []map[string]any:
+			index, ok := sliceIndex(segment, len(container))
+			if !ok {
+				return nil, false
+			}
+			value = container[index]
+		default:
+			return nil, false
+		}
+	}
+	return value, true
+}
+
+func sliceIndex(segment string, length int) (int, bool) {
+	index, err := strconv.Atoi(segment)
+	return index, err == nil && index >= 0 && index < length
 }
 
 // resolveMap recursively resolves templates in all map values.
