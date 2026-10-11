@@ -622,6 +622,12 @@ func (engine *FlowEngine) propagateNodeOutputs(
 	runOutputs := make(map[string]any, len(outputs))
 	if implicit, ok := result.(node.ImplicitOutputResult); ok {
 		maps.Copy(runOutputs, implicit.ImplicitOutputs())
+		// A declared output replaces the implicit one of its name even when it
+		// failed to extract: its absence must stay a missing input, not fall
+		// back to the raw response.
+		for _, declared := range n.OutputSchema() {
+			delete(runOutputs, declared)
+		}
 	}
 	maps.Copy(runOutputs, outputs)
 

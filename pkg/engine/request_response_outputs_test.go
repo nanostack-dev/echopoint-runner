@@ -127,3 +127,29 @@ func TestAReferenceToAnUnknownResponseOutputIsRejected(t *testing.T) {
 
 	require.ErrorContains(t, err, "output 'payload.id' not declared by source node 'create_customer'")
 }
+
+// order declares status from the body; the body has none, so the node fails.
+// An always-run step reading {{order.status}} must find it missing, not the
+// HTTP status the response output would have given.
+func TestADeclaredOutputThatFailsToExtractStillReplacesTheResponseOutput(t *testing.T) {
+	server := customerServer(t, "application/json", `{"data":{"id":"cus_42"}}`)
+	parsed, err := flow.ParseFromJSONWithOptions([]byte(`{
+		"name": "f", "version": "1.0",
+		"nodes": [
+			{"id": "order", "type": "request",
+				"data": {"method": "POST", "url": "`+server.URL+`/orders", "timeout": 1000},
+				"outputs": [{"name": "status", "extractor": {"type": "json_path", "path": "$.status"}}]},
+			{"id": "report", "type": "set_variable", "run_when": "always",
+				"data": {"variables": {"status": "{{order.status}}"}}}
+		],
+		"edges": [{"id": "e1", "source": "order", "target": "report"}]
+	}`), flow.ParseOptions{})
+	require.NoError(t, err)
+	flowEngine, err := engine.NewFlowEngine(*parsed, &engine.Options{})
+	require.NoError(t, err)
+
+	result, _ := flowEngine.Execute(nil)
+
+	require.Contains(t, result.ExecutionResults, "report")
+	assert.NotContains(t, result.ExecutionResults["report"].GetOutputs(), "status")
+}
