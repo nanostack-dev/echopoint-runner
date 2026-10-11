@@ -182,8 +182,8 @@ func validateNodeReferences(
 		if err != nil {
 			return fmt.Errorf("node %s: invalid input reference '%s': %w", nodeID, ref, err)
 		}
-		if _, isNode := availableNodeOutputs[sourceNodeID]; !isNode &&
-			hasPathRoot(strings.TrimSpace(ref), availableInitialInputs) {
+		inputRooted := hasPathRoot(strings.TrimSpace(ref), availableInitialInputs)
+		if _, isNode := availableNodeOutputs[sourceNodeID]; !isNode && inputRooted {
 			continue
 		}
 
@@ -207,6 +207,11 @@ func validateNodeReferences(
 			outputKey,
 			availableNodeOutputs,
 		); validateErr != nil {
+			// A step of the same name that never publishes the path leaves it to
+			// the flow input at run time (resolveDataRef), so accept it here too.
+			if inputRooted {
+				continue
+			}
 			return validateErr
 		}
 	}

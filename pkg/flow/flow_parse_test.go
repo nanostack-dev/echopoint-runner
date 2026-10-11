@@ -855,3 +855,26 @@ func TestParseFromJSON_PrefersSnakeCaseInitialInputs(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, map[string]any{"API_URL": "https://current.example.com"}, flowResult.InitialInputs)
 }
+
+// An upstream step named like a flow input that does not declare the path
+// leaves the reference to the input, as at run time.
+func TestParseAcceptsAnInputPathPastASameNamedStep(t *testing.T) {
+	flowJSON := []byte(`{
+		"name": "input past step",
+		"version": "1.0",
+		"nodes": [
+			{"id": "account", "type": "set_variable", "data": {"variables": {"x": "1"}}},
+			{"id": "get", "type": "request",
+				"data": {"method": "GET", "url": "https://api.example.com/accounts/{{account.id}}"}}
+		],
+		"edges": [{"id": "e1", "source": "account", "target": "get"}]
+	}`)
+
+	_, err := flow.ParseFromJSONWithOptions(flowJSON, flow.ParseOptions{
+		AllowedInitialInputKeys: []string{"account"},
+	})
+	require.NoError(t, err)
+
+	_, err = flow.ParseFromJSONWithOptions(flowJSON, flow.ParseOptions{})
+	require.Error(t, err, "without the input, the step must declare the output")
+}
