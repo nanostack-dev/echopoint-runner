@@ -518,3 +518,50 @@ func captureLogs(t *testing.T) *bytes.Buffer {
 	})
 	return buffer
 }
+
+// A secret a server returns in a response header reaches the next step through
+// the request's implicit headers output. That value is reported only where the
+// next step stored it — its inputs and request headers — and is masked there
+// like the response header itself.
+func TestRun_MasksASecretPassedOnFromAResponseHeader(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Set-Cookie", "session="+r.URL.Query().Get("token"))
+		_, _ = w.Write([]byte("ok"))
+	}))
+	t.Cleanup(server.Close)
+
+	definition := flow.NewBuilder("cookie").
+		Input("baseURL", server.URL).
+		Input("apiToken", secretValue).
+		Add(node.NewRequest("login").GET("{{baseURL}}/login?token={{apiToken}}")).
+		Add(node.NewRequest("profile").
+			GET("{{baseURL}}/profile").
+			Header("Cookie", "{{login.headers.Set-Cookie}}")).
+		Edge("login", "profile").
+		Build()
+
+	observer := &recordingObserver{}
+	result, err := runner.Run(definition, nil,
+		runner.WithObserver(observer),
+		runner.WithSecretInputKeys([]string{"apiToken"}),
+	)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("flow should succeed, error=%v", result.Error)
+	}
+
+	profile := encodeJSON(t, result.ExecutionResults["profile"])
+	if !strings.Contains(profile, `"Cookie":"session=`+redact.Mask+`"`) {
+		t.Errorf("the cookie should reach the next step and be reported masked: %s", profile)
+	}
+	for name, value := range map[string]any{
+		"flow result":         result,
+		"node.finished event": observer.nodeResults,
+	} {
+		if leaks(t, value, secretValue) {
+			t.Errorf("%s leaked the secret from the response header: %s", name, encodeJSON(t, value))
+		}
+	}
+}

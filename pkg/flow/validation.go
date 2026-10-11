@@ -38,7 +38,7 @@ func validateFlowReferences(parsedFlow *Flow, options ParseOptions) error {
 	for _, currentNode := range parsedFlow.Nodes {
 		nodeID := strings.TrimSpace(currentNode.GetID())
 		if nodeID != "" {
-			outputsByNode[nodeID] = buildOutputSet(currentNode.OutputSchema())
+			outputsByNode[nodeID] = buildOutputSet(referenceableOutputs(currentNode))
 		}
 	}
 
@@ -267,6 +267,16 @@ func validateNodeOutputReference(
 		outputKey,
 		sourceNodeID,
 	)
+}
+
+// referenceableOutputs is a node's declared outputs plus the outputs it exposes
+// without a declaration, such as a request's body, status and headers.
+func referenceableOutputs(currentNode node.AnyNode) []string {
+	outputs := currentNode.OutputSchema()
+	if implicit, ok := currentNode.(node.ImplicitOutputNode); ok {
+		outputs = append(slices.Clone(outputs), implicit.ImplicitOutputSchema()...)
+	}
+	return outputs
 }
 
 func buildOutputSet(outputSchema []string) map[string]struct{} {
