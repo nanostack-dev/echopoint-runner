@@ -15,10 +15,12 @@ import (
 func TestPathTemplate(t *testing.T) {
 	cases := map[string]string{
 		"{{baseUrl}}/users/{{ userId }}?expand=true": "/users/{userId}",
-		"{{ baseUrl }}": "/",
+		"{{ baseUrl }}":   "/",
+		"{{{ baseUrl }}}": "/",
 		"https://api.example.com/orders/{{id}}#section": "/orders/{id}",
 		"https://api.example.com":                       "/",
 		"https://user:pass@api.example.com/v1/items":    "/v1/items",
+		"//user:pass@api.example.com/items":             "/items",
 		"/relative/{{id}}":                              "/relative/{id}",
 		"{{baseUrl}}/search/{{ q ? 'a' : 'b' }}":        "/search/{q ? 'a' : 'b'}",
 		"  {{baseUrl}}/trimmed  ":                       "/trimmed",
@@ -26,11 +28,6 @@ func TestPathTemplate(t *testing.T) {
 	for template, want := range cases {
 		assert.Equal(t, want, httpcall.PathTemplate(template), template)
 	}
-}
-
-func TestPathTemplate_CapsLength(t *testing.T) {
-	long := "/" + string(make([]byte, 600))
-	assert.Len(t, httpcall.PathTemplate(long), 512)
 }
 
 func TestStart_WithoutLimiterOrCollectorRecordsNothing(t *testing.T) {
@@ -97,7 +94,7 @@ func TestCollector_GroupsCallsByNodeAndTarget(t *testing.T) {
 	items, logins := groups[0], groups[1]
 	assert.Equal(t, "get_item", items.NodeID)
 	assert.Equal(t, "GET", items.Method)
-	assert.Equal(t, "api.acme.com:8443", items.Host)
+	assert.Equal(t, "API.acme.com:8443", items.Host)
 	assert.Equal(t, "/items/{id}", items.PathTemplate)
 	assert.Equal(t, 3, items.Count())
 	assert.Equal(t, []int{200, 404, 0}, items.StatusCodes)

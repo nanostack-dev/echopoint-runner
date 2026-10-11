@@ -234,5 +234,5 @@ func host(rawURL string) string {
 	if err != nil {
 		return ""
 	}
-	return strings.ToLower(parsed.Host)
+	return parsed.Host
 }

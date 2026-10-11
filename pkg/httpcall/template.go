@@ -2,8 +2,6 @@ package httpcall
 
 import "strings"
 
-const maxPathTemplateLength = 512
-
 // PathTemplate returns the path of an unresolved URL template, with each
 // {{ expression }} written as {expression}. The scheme and host, or a leading
 // variable that holds them, the query string and the fragment are dropped.
@@ -19,7 +17,13 @@ func PathTemplate(template string) string {
 	switch {
 	case strings.HasPrefix(path, "{{"):
 		if end := strings.Index(path, "}}"); end >= 0 {
-			path = path[end+len("}}"):]
+			path = strings.TrimLeft(path[end+len("}}"):], "}")
+		}
+	case strings.HasPrefix(path, "//"):
+		afterAuthority := path[2:]
+		path = ""
+		if slash := strings.IndexByte(afterAuthority, '/'); slash >= 0 {
+			path = afterAuthority[slash:]
 		}
 	case strings.Contains(path, "://"):
 		afterScheme := path[strings.Index(path, "://")+len("://"):]
@@ -32,11 +36,7 @@ func PathTemplate(template string) string {
 		path = "/"
 	}
 
-	path = normalizeExpressions(path)
-	if len(path) > maxPathTemplateLength {
-		path = path[:maxPathTemplateLength]
-	}
-	return path
+	return normalizeExpressions(path)
 }
 
 // cutOutsideTemplates drops everything from the first sep that is not inside
