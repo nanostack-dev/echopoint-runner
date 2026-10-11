@@ -330,3 +330,34 @@ func skippedBaseOf(result spi.AnyResult) (*spi.BaseExecutionResult, bool) {
 		return nil, false
 	}
 }
+
+// A cleanup step reading a missing field of a flow input reports the missing
+// input, not the unrelated skipped step that shares the input's name.
+func TestMissingFlowInputPathIsReportedAsAMissingInput(t *testing.T) {
+	branch := branchNodeForTest(t, "router", "account", "other", "")
+	account := newDataContractMockNode("account", nil, nil)
+	other := newDataContractMockNode("other", nil, nil)
+	cleanup := newDataContractMockNode("cleanup", []string{"account.id"}, nil)
+	cleanup.runWhen = spi.RunWhenAlways
+
+	flowEngine, err := engine.NewFlowEngine(flow.Flow{
+		Name:          "missing-input-path",
+		Version:       "1.0",
+		InitialInputs: map[string]any{"route": "b", "account": map[string]any{}},
+		Nodes:         []node.AnyNode{branch, account, other, cleanup},
+		Edges: []edge.Edge{
+			successEdge("router", "account"),
+			successEdge("router", "other"),
+		},
+	}, &engine.Options{})
+	require.NoError(t, err)
+
+	result, _ := flowEngine.Execute(map[string]any{"route": "b", "account": map[string]any{}})
+
+	require.Contains(t, result.ExecutionResults, "cleanup")
+	skipped, ok := result.ExecutionResults["cleanup"].(*node.RequestExecutionResult)
+	require.True(t, ok)
+	require.NotNil(t, skipped.SkipReason)
+	assert.Equal(t, "missing_inputs", *skipped.SkipReason)
+	assert.Equal(t, []string{"account.id"}, skipped.MissingInputs)
+}

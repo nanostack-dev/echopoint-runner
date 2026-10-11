@@ -57,7 +57,8 @@ func (engine *FlowEngine) describeSkipCause(
 	n node.AnyNode,
 	state *executionState,
 ) (string, string, []string) {
-	missingInputs := engine.collectMissingInputs(n, node.NewOutputView(state.allOutputs))
+	outputView := node.NewOutputView(state.allOutputs)
+	missingInputs := engine.collectMissingInputs(n, outputView)
 	sort.Strings(missingInputs)
 
 	// A node skipped purely because a branch routed every incoming edge away
@@ -72,7 +73,9 @@ func (engine *FlowEngine) describeSkipCause(
 	var failedDep, skippedDep string
 	seen := make(map[string]bool)
 	for _, inputRef := range missingInputs {
-		sourceNodeID, _, err := parseDataRef(inputRef)
+		// resolveDataRef keeps a path rooted at a flow input with that input,
+		// so a missing field is not blamed on a skipped step of the same name.
+		sourceNodeID, _, err := resolveDataRef(inputRef, outputView)
 		if err != nil || sourceNodeID == "" || seen[sourceNodeID] {
 			continue
 		}
@@ -157,7 +160,7 @@ func (engine *FlowEngine) nodeDisplayName(nodeID string) string {
 func (engine *FlowEngine) collectMissingInputs(n node.AnyNode, outputView spi.OutputView) []string {
 	missing := []string{}
 	for _, inputKey := range n.InputSchema() {
-		sourceNodeID, outputKey, err := parseDataRef(inputKey)
+		sourceNodeID, outputKey, err := resolveDataRef(inputKey, outputView)
 		if err != nil {
 			missing = append(missing, inputKey)
 			continue
@@ -166,7 +169,7 @@ func (engine *FlowEngine) collectMissingInputs(n node.AnyNode, outputView spi.Ou
 			missing = append(missing, inputKey)
 			continue
 		}
-		if _, exists := outputView.Get(sourceNodeID, outputKey); !exists {
+		if _, exists := lookupOutput(outputView, sourceNodeID, outputKey); !exists {
 			missing = append(missing, inputKey)
 		}
 	}

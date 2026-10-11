@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -219,19 +220,27 @@ func (n *LoopNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 }
 
 // resolveItems resolves the items template against the node inputs and coerces
-// the result into a []any, erroring when it does not resolve to a list.
+// the result into a []any, erroring when it does not resolve to a list. A lone
+// {{ref}} resolves like {{{ref}}} so the referenced array keeps its type instead
+// of being interpolated into a string.
 func (n *LoopNode) resolveItems(inputs map[string]any) ([]any, error) {
+	items := n.Data.Items
+	if template, ok := items.(string); ok {
+		if match := singleVariablePattern.FindStringSubmatch(strings.TrimSpace(template)); match != nil {
+			items = "{{{" + match[1] + "}}}"
+		}
+	}
 	resolver := NewTemplateResolver(inputs)
-	resolved, err := resolver.Resolve(n.Data.Items)
+	resolved, err := resolver.Resolve(items)
 	if err != nil {
 		return nil, fmt.Errorf("resolve loop items: %w", err)
 	}
 
-	items, ok := resolved.([]any)
+	list, ok := resolved.([]any)
 	if !ok {
 		return nil, fmt.Errorf("loop items must resolve to a list, got %T", resolved)
 	}
-	return items, nil
+	return list, nil
 }
 
 func (n *LoopNode) createErrorResult(

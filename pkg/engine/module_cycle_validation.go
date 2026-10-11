@@ -1,7 +1,9 @@
 package engine
 
 import (
+	"encoding/json"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -10,13 +12,18 @@ import (
 	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 )
 
-func validateModuleGraph(root flow.Flow, resolver spi.ModuleResolver, callStack []string) error {
+// validateModuleGraph walks the module graph from root. inputKeys names the
+// inputs root runs with: every module inherits them, as ModuleNode copies its
+// parent's flow inputs into the child.
+func validateModuleGraph(
+	root flow.Flow, resolver spi.ModuleResolver, callStack []string, inputKeys []string,
+) error {
 	if resolver == nil {
 		return nil
 	}
 
 	parsedFlows := make(map[string]flow.Flow)
-	return validateModuleReferences(root, resolver, parsedFlows, callStack)
+	return validateModuleReferences(root, resolver, parsedFlows, callStack, inputKeys)
 }
 
 func validateModuleReferences(
@@ -24,6 +31,7 @@ func validateModuleReferences(
 	resolver spi.ModuleResolver,
 	parsedFlows map[string]flow.Flow,
 	callStack []string,
+	inheritedInputs []string,
 ) error {
 	for _, currentNode := range current.Nodes {
 		moduleNode, ok := node.AsModuleNode(currentNode)
@@ -40,13 +48,19 @@ func validateModuleReferences(
 			return cycleErr
 		}
 
-		targetFlow, err := resolveModuleFlow(targetFlowID, resolver, parsedFlows)
+		childInputs := append(
+			slices.Clone(inheritedInputs),
+			slices.Collect(maps.Keys(moduleNode.Data.InputBindings))...,
+		)
+		targetFlow, targetInputs, err := resolveModuleFlow(
+			targetFlowID, resolver, parsedFlows, childInputs,
+		)
 		if err != nil {
 			return err
 		}
 
 		nextStack := append(cloneStringSlice(callStack), targetFlowID)
-		validateErr := validateModuleReferences(targetFlow, resolver, parsedFlows, nextStack)
+		validateErr := validateModuleReferences(targetFlow, resolver, parsedFlows, nextStack, targetInputs)
 		if validateErr != nil {
 			return validateErr
 		}
@@ -71,36 +85,47 @@ func detectModuleCycle(callStack []string, targetFlowID string) error {
 	return nil
 }
 
+// resolveModuleFlow parses a module's target flow knowing the inputs it will
+// receive (inherited from its parent, bound by the module, and the flow's
+// overrides), so a path into one, such as {{account.id}}, validates as it will
+// at execution time. It returns those input keys for the module's own children.
 func resolveModuleFlow(
 	flowID string,
 	resolver spi.ModuleResolver,
 	parsedFlows map[string]flow.Flow,
-) (flow.Flow, error) {
-	if cached, ok := parsedFlows[flowID]; ok {
-		return cached, nil
-	}
-
+	receivedInputs []string,
+) (flow.Flow, []string, error) {
 	resolvedFlow, ok := resolver.ResolveFlow(flowID)
 	if !ok {
 		// A dangling module reference is a flow-definition fault, not a runner
 		// fault — classify as a UserError so it logs at debug, not error.
-		return flow.Flow{}, spi.NewUserError(
+		return flow.Flow{}, nil, spi.NewUserError(
 			"MODULE_FLOW_NOT_FOUND",
 			fmt.Sprintf("referenced flow %q not found", flowID),
 			nil,
 		)
 	}
 
+	inputKeys := append(slices.Clone(receivedInputs), slices.Collect(maps.Keys(resolvedFlow.InputOverrides))...)
+	slices.Sort(inputKeys)
+	inputKeys = slices.Compact(inputKeys)
+	// JSON keeps the key unambiguous: input names may contain any separator.
+	encodedKeys, _ := json.Marshal(inputKeys)
+	cacheKey := flowID + "\x00" + string(encodedKeys)
+	if cached, isCached := parsedFlows[cacheKey]; isCached {
+		return cached, inputKeys, nil
+	}
 	parsedFlow, err := flow.ParseFromJSONWithOptions(resolvedFlow.FlowDefinition, flow.ParseOptions{
+		AllowedInitialInputKeys:   inputKeys,
 		AllowUnknownInitialInputs: true,
 	})
 	if err != nil {
 		// The referenced flow's own definition fails to parse — the flow author's
 		// fault. Classify as a UserError (same code as the execution-time path in
 		// moduleExecutor.ExecuteModule) so it logs at debug, not error.
-		return flow.Flow{}, spi.NewUserError("MODULE_FLOW_PARSE_FAILED", "parse module flow", err)
+		return flow.Flow{}, nil, spi.NewUserError("MODULE_FLOW_PARSE_FAILED", "parse module flow", err)
 	}
 
-	parsedFlows[flowID] = *parsedFlow
-	return *parsedFlow, nil
+	parsedFlows[cacheKey] = *parsedFlow
+	return *parsedFlow, inputKeys, nil
 }

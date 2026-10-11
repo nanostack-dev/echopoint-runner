@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"sort"
 	"strings"
@@ -236,6 +237,7 @@ func ExecuteFlowDefinition(
 		flowInstance,
 		nilIfNoModuleResolverFromOptions(options),
 		moduleCallStackFromOptions(options),
+		append(slices.Collect(maps.Keys(initialInputs)), slices.Collect(maps.Keys(flowInstance.InitialInputs))...),
 	); validateErr != nil {
 		errMsg := validateErr.Error()
 		errCode := "FLOW_VALIDATION_FAILED"
@@ -370,7 +372,7 @@ func (engine *FlowEngine) validateInputs(
 			)
 		}
 
-		_, exists := allOutputs.Get(sourceNodeID, outputKey)
+		_, exists := lookupOutput(allOutputs, sourceNodeID, outputKey)
 		if !exists {
 			log.Warn().
 				Str("flowName", engine.flow.Name).
@@ -395,7 +397,7 @@ func (engine *FlowEngine) assembleInputs(
 
 	for _, inputKey := range nodeToExecute.InputSchema() {
 		sourceNodeID, outputKey, _ := resolveDataRef(inputKey, allOutputs)
-		value, _ := allOutputs.Get(sourceNodeID, outputKey)
+		value, _ := lookupOutput(allOutputs, sourceNodeID, outputKey)
 		// Store with full reference key (e.g., "create-user.userId")
 		inputs[inputKey] = value
 	}
@@ -404,17 +406,30 @@ func (engine *FlowEngine) assembleInputs(
 }
 
 // resolveDataRef reads "a.b" as output b of node a, unless no node a has run
-// and the whole reference names a flow input, such as the launch-injected
-// webhook.url.
+// and the reference names a flow input, such as the launch-injected
+// webhook.url or a path into one, such as a loop's item.id.
 func resolveDataRef(ref string, allOutputs spi.OutputView) (string, string, error) {
 	sourceNodeID, outputKey, err := parseDataRef(ref)
 	if err != nil || sourceNodeID == "" || allOutputs.HasNode(sourceNodeID) {
 		return sourceNodeID, outputKey, err
 	}
-	if _, isFlowInput := allOutputs.Get("", ref); isFlowInput {
+	// The flow input owns a path rooted at it even when a field is missing,
+	// so the miss is reported as a missing input, not as a skipped step.
+	if hasFlowInputRoot(ref, func(key string) bool {
+		_, found := allOutputs.Get("", key)
+		return found
+	}) {
 		return "", ref, nil
 	}
 	return sourceNodeID, outputKey, nil
+}
+
+// lookupOutput reads an output, or a dotted path into one such as
+// accounts.0.id, through the same rules as template resolution.
+func lookupOutput(allOutputs spi.OutputView, nodeID, outputKey string) (any, bool) {
+	return node.LookupPath(outputKey, func(key string) (any, bool) {
+		return allOutputs.Get(nodeID, key)
+	})
 }
 
 // parseDataRef parses input references in two formats:
