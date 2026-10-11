@@ -175,21 +175,19 @@ func (engine *FlowEngine) isFullyDead(n node.AnyNode, state *executionState) boo
 // dependency_skipped. Refs to initial inputs (empty source) and refs to nodes
 // that produced output are ignored, so nodes with all inputs available still run.
 func (engine *FlowEngine) inputsReferenceSkippedNode(n node.AnyNode, state *executionState) bool {
+	var view spi.OutputView
 	for _, inputKey := range n.InputSchema() {
 		sourceNodeID, _, err := parseDataRef(inputKey)
-		if err != nil || sourceNodeID == "" {
+		if err != nil || sourceNodeID == "" || !state.skippedNodes[sourceNodeID] {
 			continue
 		}
-		if !state.skippedNodes[sourceNodeID] {
-			continue
+		// Resolve the reference the way input assembly will: a path rooted at
+		// a flow input, such as a loop's {{account.id}}, does not depend on a
+		// skipped step of the same name, unless that step published outputs.
+		if view == nil {
+			view = node.NewOutputView(state.allOutputs)
 		}
-		// A reference rooted at a flow input that shares the skipped node's
-		// name, such as a loop's {{account.id}}, does not depend on that node,
-		// even when the field is missing: input validation reports that.
-		if hasFlowInputRoot(inputKey, func(key string) bool {
-			_, found := state.allOutputs[""][key]
-			return found
-		}) {
+		if resolvedNodeID, _, _ := resolveDataRef(inputKey, view); resolvedNodeID == "" {
 			continue
 		}
 		return true
