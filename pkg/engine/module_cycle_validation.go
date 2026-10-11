@@ -47,8 +47,13 @@ func validateModuleReferences(
 			return cycleErr
 		}
 
-		childInputs := append(slices.Clone(inheritedInputs), slices.Collect(maps.Keys(moduleNode.Data.InputBindings))...)
-		targetFlow, targetInputs, err := resolveModuleFlow(targetFlowID, resolver, parsedFlows, childInputs)
+		childInputs := append(
+			slices.Clone(inheritedInputs),
+			slices.Collect(maps.Keys(moduleNode.Data.InputBindings))...,
+		)
+		targetFlow, targetInputs, err := resolveModuleFlow(
+			targetFlowID, resolver, parsedFlows, childInputs,
+		)
 		if err != nil {
 			return err
 		}
@@ -89,7 +94,6 @@ func resolveModuleFlow(
 	parsedFlows map[string]flow.Flow,
 	receivedInputs []string,
 ) (flow.Flow, []string, error) {
-
 	resolvedFlow, ok := resolver.ResolveFlow(flowID)
 	if !ok {
 		// A dangling module reference is a flow-definition fault, not a runner
@@ -105,7 +109,7 @@ func resolveModuleFlow(
 	slices.Sort(inputKeys)
 	inputKeys = slices.Compact(inputKeys)
 	cacheKey := flowID + "\x00" + strings.Join(inputKeys, ",")
-	if cached, ok := parsedFlows[cacheKey]; ok {
+	if cached, isCached := parsedFlows[cacheKey]; isCached {
 		return cached, inputKeys, nil
 	}
 	parsedFlow, err := flow.ParseFromJSONWithOptions(resolvedFlow.FlowDefinition, flow.ParseOptions{
