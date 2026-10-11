@@ -8,9 +8,9 @@ A flow author who wanted the ID a request created had to declare an output with 
 
 ## Decision
 
-Every request node exposes `body`, `status` and `headers` without a declaration. `body` follows the existing parse rule: JSON when the `Content-Type` is JSON, text otherwise; XML is not converted to a tree, because its shape is ambiguous and XPath outputs already cover it, and bytes that are not UTF-8 text are not exposed. A declared output of the same name replaces the implicit one.
+Every request node exposes `body`, `status` and `headers` without a declaration. `body` follows the existing parse rule: JSON when the `Content-Type` is JSON, text otherwise; XML is not converted to a tree, because its shape is ambiguous (attributes, repeated elements, mixed text), and bytes that are not UTF-8 text are not exposed. A declared output of the same name replaces the implicit one.
 
-Declared outputs stay, permanently and without migration. They name values, extract from XML and text, project with filters, cross module boundaries and are stored in results; paths are a shortcut over values that are already structured.
+Declared outputs stay, permanently and without migration. They name values, project with filters, cross module boundaries and are stored in results; paths are a shortcut over values that are already structured.
 
 The implicit outputs live in run memory only. The node result already reports the response; copying it into `outputs`, `final_outputs` and every loop iteration's `results` would store each body again.
 
@@ -23,4 +23,5 @@ The implicit outputs live in run memory only. The node result already reports th
 
 - References such as `{{create_customer.body.data.id}}` validate and resolve without an extractor.
 - Module output bindings, loop `results` and poll conditions read final outputs, so they still need declared outputs.
+- XML fields stay out of reach until the `xml_path` extractor, still a stub returning `ErrNotImplemented`, is implemented.
 - A referenced value is stored where the consuming step stores its inputs and request, and is masked there by the same secret redaction as the response.
