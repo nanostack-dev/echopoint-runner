@@ -45,10 +45,10 @@ Every request node exposes its response as three outputs nobody declares, so `{{
 
 | Output | Value |
 | --- | --- |
-| `body` | The parsed JSON value when the response `Content-Type` contains `application/json`, otherwise the body text, following [`parseResponseBody`](../../pkg/node/request_execution.go). A body that is not valid UTF-8 text, such as an image, is not exposed. XML stays text; read it with an XPath output. |
+| `body` | The parsed JSON value when the response `Content-Type` contains `application/json`, otherwise the body text, following [`parseResponseBody`](../../pkg/node/request_execution.go). A body that is not valid UTF-8 text, such as an image, is not exposed. XML stays text: it is not converted to a tree, and the `xml_path` extractor is not implemented yet ([`xml_path_extractor.go`](../../pkg/extractors/xml_path_extractor.go)), so an XML field cannot be extracted on its own. |
 | `status` | The HTTP status code as a number. |
 | `headers` | An object of the first value of each response header under its canonical name, such as `Location` or `Set-Cookie`, which is what a `header` output reads. |
 
-A declared output with the same name replaces the response output. Declared outputs remain the way to name a value, extract from XML or text, project with a filter such as `$[*].id`, bind a module output and keep a value in the result.
+A declared output with the same name replaces the response output. Declared outputs remain the way to name a value, extract from text, project with a filter such as `$[*].id`, bind a module output and keep a value in the result.
 
 Response outputs live only in run memory, read by later steps' templates and assertions. They are not added to the node result's `outputs`, the flow's `final_outputs`, a loop's `results` or a module's output bindings, because the result already reports the response once. When a later step references one, the referenced value is stored where that step stores its own inputs and request, and passes through the same secret masking as the response itself. A request that received no response, such as one that timed out, exposes none; a reference to it is then a missing input. A poll condition reads its body's final outputs, so it needs declared outputs.
