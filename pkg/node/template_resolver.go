@@ -156,6 +156,13 @@ func walkPath(value any, segments []string) (any, bool) {
 				return nil, false
 			}
 			value = next
+		case map[string]string:
+			// Webhook waits expose headers and query parameters as string maps.
+			next, exists := container[segment]
+			if !exists {
+				return nil, false
+			}
+			value = next
 		case []any:
 			index, ok := sliceIndex(segment, len(container))
 			if !ok {

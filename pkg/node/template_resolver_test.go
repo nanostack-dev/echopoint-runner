@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	node "github.com/nanostack-dev/echopoint-runner/pkg/node"
+	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -70,4 +71,33 @@ func TestTemplateResolver_IndexesIntoLoopResults(t *testing.T) {
 	variables := map[string]any{"loop.results": []map[string]any{{"status": "ok"}}}
 
 	assert.Equal(t, map[string]any{"status": "ok"}, resolveTemplate(t, variables, "{{{loop.results.0}}}"))
+}
+
+func TestTemplateResolver_WalksIntoAStringMap(t *testing.T) {
+	resolver := node.NewTemplateResolver(map[string]any{
+		"wait.headers": map[string]string{"content-type": "application/json"},
+	})
+
+	resolved, err := resolver.Resolve("{{wait.headers.content-type}}")
+
+	require.NoError(t, err)
+	assert.Equal(t, "application/json", resolved)
+}
+
+func TestResolveAssertions_WalksPathsIntoStepOutputsAndLoopItems(t *testing.T) {
+	ctx := spi.ExecutionContext{
+		AllOutputs: node.NewOutputView(map[string]map[string]any{
+			"producer": {"account": map[string]any{"id": "a1"}},
+		}),
+		FlowInputs: map[string]any{"account": map[string]any{"id": "b2"}},
+	}
+
+	resolved, err := node.ResolveAssertions(ctx, []node.CompositeAssertion{
+		{ExpectedValue: "{{producer.account.id}}"},
+		{ExpectedValue: "{{account.id}}"},
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, "a1", resolved[0].ExpectedValue)
+	assert.Equal(t, "b2", resolved[1].ExpectedValue)
 }

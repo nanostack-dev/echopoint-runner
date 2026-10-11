@@ -468,14 +468,18 @@ func containsDynamicTemplate(value any) bool {
 }
 
 // lookupReference reads "node.output" from a completed step, else the whole
-// reference as a flow input, such as {{webhook.url}} or {{apiUrl}}.
+// reference as a flow input, such as {{webhook.url}} or {{apiUrl}}. Like any
+// template, a dotted path walks into the value: {{producer.account.id}} or a
+// loop's {{account.id}}.
 func lookupReference(ctx spi.ExecutionContext, ref string) (any, bool) {
-	if nodeID, outputKey, dotted := strings.Cut(ref, "."); dotted && ctx.AllOutputs != nil &&
-		ctx.AllOutputs.HasNode(nodeID) {
-		return ctx.AllOutputs.Get(nodeID, outputKey)
-	}
-	value, found := ctx.FlowInputs[ref]
-	return value, found
+	return LookupPath(ref, func(key string) (any, bool) {
+		if nodeID, outputKey, dotted := strings.Cut(key, "."); dotted && ctx.AllOutputs != nil &&
+			ctx.AllOutputs.HasNode(nodeID) {
+			return ctx.AllOutputs.Get(nodeID, outputKey)
+		}
+		value, found := ctx.FlowInputs[key]
+		return value, found
+	})
 }
 
 func unresolvedReferencesError(refs []string) error {
