@@ -3,6 +3,7 @@ package node
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
@@ -156,30 +157,47 @@ func walkPath(value any, segments []string) (any, bool) {
 				return nil, false
 			}
 			value = next
-		case map[string]string:
-			// Webhook waits expose headers and query parameters as string maps.
-			next, exists := container[segment]
-			if !exists {
-				return nil, false
-			}
-			value = next
 		case []any:
 			index, ok := sliceIndex(segment, len(container))
 			if !ok {
 				return nil, false
 			}
 			value = container[index]
-		case []map[string]any:
-			index, ok := sliceIndex(segment, len(container))
+		default:
+			// Typed containers from Go callers and nodes: []string,
+			// []map[string]any, a webhook's map[string]string.
+			next, ok := walkTyped(container, segment)
 			if !ok {
 				return nil, false
 			}
-			value = container[index]
-		default:
-			return nil, false
+			value = next
 		}
 	}
 	return value, true
+}
+
+// walkTyped steps into any other slice, array or string-keyed map.
+func walkTyped(container any, segment string) (any, bool) {
+	rv := reflect.ValueOf(container)
+	switch rv.Kind() { //nolint:exhaustive // only containers can be walked
+	case reflect.Slice, reflect.Array:
+		index, ok := sliceIndex(segment, rv.Len())
+		if !ok {
+			return nil, false
+		}
+		return rv.Index(index).Interface(), true
+	case reflect.Map:
+		if rv.Type().Key().Kind() != reflect.String {
+			return nil, false
+		}
+		next := rv.MapIndex(reflect.ValueOf(segment).Convert(rv.Type().Key()))
+		if !next.IsValid() {
+			return nil, false
+		}
+		return next.Interface(), true
+	default:
+		return nil, false
+	}
 }
 
 func sliceIndex(segment string, length int) (int, bool) {

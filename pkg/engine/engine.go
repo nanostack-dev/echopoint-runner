@@ -413,7 +413,12 @@ func resolveDataRef(ref string, allOutputs spi.OutputView) (string, string, erro
 	if err != nil || sourceNodeID == "" || allOutputs.HasNode(sourceNodeID) {
 		return sourceNodeID, outputKey, err
 	}
-	if _, isFlowInput := lookupOutput(allOutputs, "", ref); isFlowInput {
+	// The flow input owns a path rooted at it even when a field is missing,
+	// so the miss is reported as a missing input, not as a skipped step.
+	if hasFlowInputRoot(ref, func(key string) bool {
+		_, found := allOutputs.Get("", key)
+		return found
+	}) {
 		return "", ref, nil
 	}
 	return sourceNodeID, outputKey, nil

@@ -186,7 +186,10 @@ func (engine *FlowEngine) inputsReferenceSkippedNode(n node.AnyNode, state *exec
 		// A reference rooted at a flow input that shares the skipped node's
 		// name, such as a loop's {{account.id}}, does not depend on that node,
 		// even when the field is missing: input validation reports that.
-		if hasFlowInputRoot(inputKey, state.allOutputs[""]) {
+		if hasFlowInputRoot(inputKey, func(key string) bool {
+			_, found := state.allOutputs[""][key]
+			return found
+		}) {
 			continue
 		}
 		return true
@@ -785,9 +788,9 @@ func (engine *FlowEngine) hasRemainingAlwaysPredecessor(
 
 // hasFlowInputRoot reports whether ref, or a dotted prefix of it, names a flow
 // input: the input owns the reference whether or not its fields resolve.
-func hasFlowInputRoot(ref string, flowInputs map[string]any) bool {
+func hasFlowInputRoot(ref string, isFlowInput func(key string) bool) bool {
 	for candidate := ref; ; {
-		if _, ok := flowInputs[candidate]; ok {
+		if isFlowInput(candidate) {
 			return true
 		}
 		end := strings.LastIndex(candidate, ".")

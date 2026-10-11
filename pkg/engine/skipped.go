@@ -57,7 +57,8 @@ func (engine *FlowEngine) describeSkipCause(
 	n node.AnyNode,
 	state *executionState,
 ) (string, string, []string) {
-	missingInputs := engine.collectMissingInputs(n, node.NewOutputView(state.allOutputs))
+	outputView := node.NewOutputView(state.allOutputs)
+	missingInputs := engine.collectMissingInputs(n, outputView)
 	sort.Strings(missingInputs)
 
 	// A node skipped purely because a branch routed every incoming edge away
@@ -72,7 +73,9 @@ func (engine *FlowEngine) describeSkipCause(
 	var failedDep, skippedDep string
 	seen := make(map[string]bool)
 	for _, inputRef := range missingInputs {
-		sourceNodeID, _, err := parseDataRef(inputRef)
+		// resolveDataRef keeps a path rooted at a flow input with that input,
+		// so a missing field is not blamed on a skipped step of the same name.
+		sourceNodeID, _, err := resolveDataRef(inputRef, outputView)
 		if err != nil || sourceNodeID == "" || seen[sourceNodeID] {
 			continue
 		}

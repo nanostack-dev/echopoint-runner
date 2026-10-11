@@ -117,3 +117,8 @@ func TestResolveAssertions_PathRootedAtAStepNeverReadsAFlowInput(t *testing.T) {
 	require.Error(t, err)
 	assert.Equal(t, "ASSERTION_FAILED", spi.ErrorCode(err))
 }
+
+func TestTemplateResolver_WalksIntoATypedSlice(t *testing.T) {
+	assert.Equal(t, "alice", resolveTemplate(t,
+		map[string]any{"names": []string{"alice"}}, "{{names.0}}"))
+}
