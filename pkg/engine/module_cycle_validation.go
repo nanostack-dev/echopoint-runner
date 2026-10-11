@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"encoding/json"
 	"fmt"
 	"maps"
 	"slices"
@@ -108,7 +109,9 @@ func resolveModuleFlow(
 	inputKeys := append(slices.Clone(receivedInputs), slices.Collect(maps.Keys(resolvedFlow.InputOverrides))...)
 	slices.Sort(inputKeys)
 	inputKeys = slices.Compact(inputKeys)
-	cacheKey := flowID + "\x00" + strings.Join(inputKeys, ",")
+	// JSON keeps the key unambiguous: input names may contain any separator.
+	encodedKeys, _ := json.Marshal(inputKeys)
+	cacheKey := flowID + "\x00" + string(encodedKeys)
 	if cached, isCached := parsedFlows[cacheKey]; isCached {
 		return cached, inputKeys, nil
 	}
