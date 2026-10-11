@@ -14,22 +14,16 @@ func PathTemplate(template string) string {
 	path = cutOutsideTemplates(path, '?')
 	path = cutOutsideTemplates(path, '#')
 
+	scheme := strings.Index(path, "://")
+	firstSlash := strings.IndexByte(path, '/')
 	switch {
+	case scheme >= 0 && (firstSlash < 0 || scheme < firstSlash):
+		path = authorityPath(path[scheme+len("://"):])
+	case strings.HasPrefix(path, "//"):
+		path = authorityPath(path[2:])
 	case strings.HasPrefix(path, "{{"):
 		if end := strings.Index(path, "}}"); end >= 0 {
 			path = strings.TrimLeft(path[end+len("}}"):], "}")
-		}
-	case strings.HasPrefix(path, "//"):
-		afterAuthority := path[2:]
-		path = ""
-		if slash := strings.IndexByte(afterAuthority, '/'); slash >= 0 {
-			path = afterAuthority[slash:]
-		}
-	case strings.Contains(path, "://"):
-		afterScheme := path[strings.Index(path, "://")+len("://"):]
-		path = ""
-		if slash := strings.IndexByte(afterScheme, '/'); slash >= 0 {
-			path = afterScheme[slash:]
 		}
 	}
 	if path == "" {
@@ -77,4 +71,11 @@ func normalizeExpressions(path string) string {
 		out.WriteString("}")
 		path = path[start+end+len("}}"):]
 	}
+}
+
+func authorityPath(value string) string {
+	if slash := strings.IndexByte(value, '/'); slash >= 0 {
+		return value[slash:]
+	}
+	return ""
 }

@@ -20,6 +20,7 @@ func TestPathTemplate(t *testing.T) {
 		"https://api.example.com/orders/{{id}}#section": "/orders/{id}",
 		"https://api.example.com":                       "/",
 		"https://user:pass@api.example.com/v1/items":    "/v1/items",
+		"{{scheme}}://user:pass@api.example.com/items":  "/items",
 		"//user:pass@api.example.com/items":             "/items",
 		"/relative/{{id}}":                              "/relative/{id}",
 		"{{baseUrl}}/search/{{ q ? 'a' : 'b' }}":        "/search/{q ? 'a' : 'b'}",
