@@ -39,7 +39,7 @@ runner's stdin contract is unchanged:
   "flow_definition": { },
   "inputs": { "BASE_URL": "https://api.example.com", "API_TOKEN": "<resolved secret>" },
   "referenced_flows": { "flow_child": { "flow_definition": {}, "input_overrides": {} } },
-  "max_http_calls_per_execution": 5000
+  "max_http_calls_per_execution": 100
 }
 ```
 
@@ -59,7 +59,7 @@ The result is the runner's stdout contract; the CLI forwards it as the
   "started_at": "2026-06-01T12:00:00Z",
   "completed_at": "2026-06-01T12:00:05Z",
   "duration_ms": 5000,
-  "result": { "execution_results": {}, "final_outputs": {}, "success": true, "http_calls": [] },
+  "result": { "execution_results": {}, "final_outputs": {}, "success": true },
   "error_code": null,
   "error_message": null
 }

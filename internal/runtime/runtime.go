@@ -234,7 +234,7 @@ func (r *Runtime) executeClaimedJob(ctx context.Context, active *activeJob) (Out
 	if err != nil {
 		parseErr := spi.NewUserError("FLOW_DEFINITION_INVALID", "parse flow definition", err)
 		message := parseErr.Error()
-		completeErr := r.completeWithFailure(active, reporter, parseErr, message, nil, nil)
+		completeErr := r.completeWithFailure(active, reporter, parseErr, message, nil)
 		return Outcome{Status: jobStatusFailed, ErrorMessage: &message}, completeErr
 	}
 
@@ -261,14 +261,14 @@ func (r *Runtime) executeClaimedJob(ctx context.Context, active *activeJob) (Out
 				Str("job_id", active.job.JobID.String()).
 				Msg("failed to flush runner progress before failed completion")
 		}
-		completeErr := r.completeWithFailure(active, reporter, execErr, errorMsg, errorCode, failedRunPayload(result))
+		completeErr := r.completeWithFailure(active, reporter, execErr, errorMsg, errorCode)
 		return Outcome{Status: jobStatusFailed, Result: result, ErrorMessage: &errorMsg}, completeErr
 	}
 
 	payload, err := controlplane.FlowExecutionResultToPayload(result)
 	if err != nil {
 		message := fmt.Sprintf("encode execution result: %v", err)
-		completeErr := r.completeWithFailure(active, reporter, err, message, nil, nil)
+		completeErr := r.completeWithFailure(active, reporter, err, message, nil)
 		return Outcome{Status: jobStatusFailed, Result: result, ErrorMessage: &message}, completeErr
 	}
 	if flushErr := reporter.FlushWithRetry(context.Background()); flushErr != nil {
@@ -316,27 +316,12 @@ func sortedInputKeys(inputs map[string]any) []string {
 	return keys
 }
 
-// failedRunPayload encodes the partial result of a failed run, so its node
-// results and HTTP calls reach the control plane as the ephemeral runner's do.
-func failedRunPayload(result *spi.FlowExecutionResult) *map[string]any {
-	if result == nil {
-		return nil
-	}
-	payload, err := controlplane.FlowExecutionResultToPayload(result)
-	if err != nil {
-		log.Error().Err(err).Msg("failed to encode partial execution result for failed flow")
-		return nil
-	}
-	return &payload
-}
-
 func (r *Runtime) completeWithFailure(
 	active *activeJob,
 	reporter *jobEventReporter,
 	cause error,
 	errorMsg string,
 	errorCode *string,
-	result *map[string]any,
 ) error {
 	if r.isRejected(active.job.JobID) {
 		log.Warn().
@@ -355,7 +340,6 @@ func (r *Runtime) completeWithFailure(
 		DurationMs:        completedAt.Sub(active.startedAt).Milliseconds(),
 		ErrorMessage:      &errorMsg,
 		ErrorCode:         errorCode,
-		Result:            result,
 		LastEventSequence: reporter.LastSequencePtr(),
 	})
 	if err != nil {

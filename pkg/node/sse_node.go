@@ -182,19 +182,19 @@ func (n *SseNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 		req.Header.Set(key, value)
 	}
 
-	// No client-level timeout: streaming is bounded by streamCtx instead, so a
-	// long-lived stream is not aborted mid-read by an http.Client deadline.
 	call, err := httpcall.Start(ctx.Context(), httpcall.Target{
 		NodeID: n.GetID(), Method: method, URL: url, URLTemplate: n.Data.URL,
 	})
 	if err != nil {
-		return n.createErrorResult(ctx.Inputs, method, url, nil, nil, "", err, startTime), err
+		return n.createErrorResult(ctx.Inputs, sseExchange{Method: method, URL: url}, err, startTime), err
 	}
 
+	// No client-level timeout: streaming is bounded by streamCtx instead, so a
+	// long-lived stream is not aborted mid-read by an http.Client deadline.
 	client := nodeHTTPClient()
 	resp, err := client.Do(req)
 	if err != nil {
-		call.Finish(httpcall.Outcome{ErrorClass: sseCallErrorClass(streamCtx, url, err)})
+		call.Finish(httpcall.Outcome{TransportError: sseCallErrorClass(streamCtx, url, err)})
 		// The overall deadline can elapse during the connect/header phase (a slow
 		// producer that has not yet sent the status line). That is the configured
 		// timeout_ms stop condition, not a node failure — return a clean,
@@ -212,7 +212,7 @@ func (n *SseNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 	}
 	defer resp.Body.Close()
 	// The call lasts as long as the stream is read.
-	defer call.Finish(httpcall.Outcome{StatusCode: &resp.StatusCode})
+	defer call.Finish(httpcall.Outcome{StatusCode: resp.StatusCode})
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		statusErr := fmt.Errorf("SSE endpoint returned non-2xx status: %d", resp.StatusCode)

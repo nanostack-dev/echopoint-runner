@@ -1,14 +1,20 @@
 package runner_test
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
+	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/nanostack-dev/echopoint-runner/pkg/engine"
 	"github.com/nanostack-dev/echopoint-runner/pkg/flow"
 	"github.com/nanostack-dev/echopoint-runner/pkg/httpcall"
 	"github.com/nanostack-dev/echopoint-runner/pkg/runner"
@@ -17,12 +23,21 @@ import (
 
 func statusServer(t *testing.T) *httptest.Server {
 	t.Helper()
+	var exportPolls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/missing" {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/missing":
 			w.WriteHeader(http.StatusNotFound)
-			return
+		case "/export":
+			state := "pending"
+			if exportPolls.Add(1) >= 3 {
+				state = "ready"
+			}
+			_, _ = fmt.Fprintf(w, `{"state":%q}`, state)
+		default:
+			_, _ = w.Write([]byte(`{"ok":true}`))
 		}
-		_, _ = w.Write([]byte(`{"ok":true}`))
 	}))
 	t.Cleanup(server.Close)
 	return server
@@ -42,7 +57,33 @@ func requestNode(id, url string) string {
 	return fmt.Sprintf(`{"id":%q,"type":"request","data":{"method":"get","url":%q}}`, id, url)
 }
 
-func TestRun_RecordsEachHTTPCallWithoutResolvedValues(t *testing.T) {
+func loopFlow(url string, items int) string {
+	list := make([]string, items)
+	for i := range items {
+		list[i] = strconv.Itoa(i)
+	}
+	return `{"version":"1.0","name":"t","nodes":[{"id":"each","type":"loop","data":{
+		"items":[` + strings.Join(list, ",") + `],
+		"body":{"nodes":[` + requestNode("get", url) + `],"edges":[]}
+	}}],"edges":[]}`
+}
+
+func httpCalls(t *testing.T, result *spi.FlowExecutionResult, nodeID string) []spi.HTTPCallGroup {
+	t.Helper()
+	nodeResult, ok := result.ExecutionResults[nodeID]
+	require.True(t, ok, "no result for node %s", nodeID)
+	// Read the wire shape: the result the caller gets is a masked copy whose
+	// node results only keep their fields in JSON.
+	encoded, err := json.Marshal(nodeResult)
+	require.NoError(t, err)
+	var decoded struct {
+		HTTPCalls []spi.HTTPCallGroup `json:"http_calls"`
+	}
+	require.NoError(t, json.Unmarshal(encoded, &decoded))
+	return decoded.HTTPCalls
+}
+
+func TestRun_RequestNodeResultHoldsItsCallWithoutResolvedValues(t *testing.T) {
 	server := statusServer(t)
 	flowDef := parseFlow(t, `{"version":"1.0","name":"t","nodes":[`+
 		requestNode("ok", "{{baseUrl}}/users/{{ userId }}?token={{secret}}")+`,`+
@@ -53,23 +94,23 @@ func TestRun_RecordsEachHTTPCallWithoutResolvedValues(t *testing.T) {
 		"baseUrl": server.URL, "userId": "42", "secret": "s3cr3t",
 	}, runner.WithSecretInputKeys([]string{"secret"}))
 
-	require.Len(t, result.HTTPCalls, 2)
-	first, second := result.HTTPCalls[0], result.HTTPCalls[1]
-	assert.Equal(t, 1, first.Seq)
-	assert.Equal(t, "ok", first.NodeID)
-	assert.Equal(t, "GET", first.Method)
-	assert.Equal(t, server.Listener.Addr().String(), first.Host)
-	assert.Equal(t, "/users/{userId}", first.PathTemplate)
-	assert.Equal(t, http.StatusOK, *first.StatusCode)
-	assert.Empty(t, first.ErrorClass)
-	assert.Equal(t, int64(len(`{"ok":true}`)), *first.ResponseBytes)
+	ok := httpCalls(t, result, "ok")
+	require.Len(t, ok, 1)
+	assert.Equal(t, "ok", ok[0].NodeID)
+	assert.Equal(t, "GET", ok[0].Method)
+	assert.Equal(t, server.Listener.Addr().String(), ok[0].Host)
+	assert.Equal(t, "/users/{userId}", ok[0].PathTemplate)
+	assert.Equal(t, []int64{0}, ok[0].OffsetsMs)
+	assert.Equal(t, []int{http.StatusOK}, ok[0].StatusCodes)
+	assert.Equal(t, []int64{int64(len(`{"ok":true}`))}, ok[0].ResponseBytes)
+	assert.Empty(t, ok[0].TransportErrors)
 
-	assert.Equal(t, "missing", second.NodeID)
-	assert.Equal(t, http.StatusNotFound, *second.StatusCode)
-	assert.Equal(t, spi.HTTPCallError4xx, second.ErrorClass)
+	missing := httpCalls(t, result, "missing")
+	require.Len(t, missing, 1)
+	assert.Equal(t, []int{http.StatusNotFound}, missing[0].StatusCodes)
 }
 
-func TestRun_RecordsTransportFailureClass(t *testing.T) {
+func TestRun_TransportFailureHasNoStatusAndAClass(t *testing.T) {
 	server := statusServer(t)
 	unreachable := server.URL
 	server.Close()
@@ -78,41 +119,94 @@ func TestRun_RecordsTransportFailureClass(t *testing.T) {
 	result, err := runner.Run(flowDef, map[string]any{})
 
 	require.Error(t, err)
-	require.Len(t, result.HTTPCalls, 1)
-	assert.Nil(t, result.HTTPCalls[0].StatusCode)
-	assert.Equal(t, spi.HTTPCallErrorConnect, result.HTTPCalls[0].ErrorClass)
+	down := httpCalls(t, result, "down")
+	require.Len(t, down, 1)
+	assert.Equal(t, []int{0}, down[0].StatusCodes)
+	assert.Equal(t, map[string]spi.HTTPCallErrorClass{"0": spi.HTTPCallErrorConnect}, down[0].TransportErrors)
 }
 
-func TestRun_CountsLoopIterationCalls(t *testing.T) {
+func TestRun_LoopIterationsShareOneGroupOnTheLoopNode(t *testing.T) {
 	server := statusServer(t)
-	flowDef := parseFlow(t, `{"version":"1.0","name":"t","nodes":[{"id":"each","type":"loop","data":{
-		"items":[1,2,3],
-		"body":{"nodes":[`+requestNode("get", server.URL+"/items/{{item}}")+`],"edges":[]}
-	}}],"edges":[]}`)
+	flowDef := parseFlow(t, loopFlow(server.URL+"/items/{{item}}", 3))
 
 	result, err := runner.Run(flowDef, map[string]any{})
 
 	require.NoError(t, err)
-	require.Len(t, result.HTTPCalls, 3)
-	for i, call := range result.HTTPCalls {
-		assert.Equal(t, i+1, call.Seq)
-		assert.Equal(t, "get", call.NodeID)
-		assert.Equal(t, "/items/{item}", call.PathTemplate)
-	}
+	groups := httpCalls(t, result, "each")
+	require.Len(t, groups, 1)
+	assert.Equal(t, "get", groups[0].NodeID, "the group names the body node that sent the calls")
+	assert.Equal(t, "/items/{item}", groups[0].PathTemplate)
+	assert.Equal(t, 3, groups[0].Count())
+	assert.Equal(t, []int{200, 200, 200}, groups[0].StatusCodes)
+	assert.Len(t, groups[0].DurationsMs, 3)
+	assert.True(t, groups[0].OffsetsMs[0] == 0 && groups[0].OffsetsMs[2] >= groups[0].OffsetsMs[1])
 }
 
-func TestRun_HTTPCallLimitFailsTheNodePastIt(t *testing.T) {
+func TestRun_PollAttemptsShareOneGroupOnThePollNode(t *testing.T) {
 	server := statusServer(t)
-	flowDef := parseFlow(t, `{"version":"1.0","name":"t","nodes":[{"id":"each","type":"loop","data":{
+	flowDef := parseFlow(t, `{"version":"1.0","name":"t","nodes":[{"id":"wait_export","type":"poll",
+		"assertions":[{"extractor_type":"json_path","extractor_data":{"path":"$['check.state']"},
+			"operator_type":"equals","operator_data":{"value":"ready"}}],
+		"data":{"max_attempts":5,"interval_ms":1,"body":{"nodes":[
+			{"id":"check","type":"request","data":{"method":"GET","url":"`+server.URL+`/export"},
+			 "outputs":[{"name":"state","extractor":{"type":"json_path","path":"$.state"}}]}
+		],"edges":[]}}}],"edges":[]}`)
+
+	result, err := runner.Run(flowDef, map[string]any{})
+
+	require.NoError(t, err)
+	groups := httpCalls(t, result, "wait_export")
+	require.Len(t, groups, 1)
+	assert.Equal(t, "check", groups[0].NodeID)
+	assert.Equal(t, 3, groups[0].Count(), "the poll stopped on the third attempt")
+}
+
+func TestRun_HTTPCallLimitCountsTheWholeExecution(t *testing.T) {
+	server := statusServer(t)
+	flowDef := parseFlow(t, `{"version":"1.0","name":"t","nodes":[`+
+		requestNode("first", server.URL+"/a")+`,{"id":"each","type":"loop","data":{
 		"items":[1,2,3],
 		"body":{"nodes":[`+requestNode("get", server.URL+"/items/{{item}}")+`],"edges":[]}
-	}}],"edges":[]}`)
+	}}],"edges":[{"id":"e","source":"first","target":"each"}]}`)
 
-	result, err := runner.Run(flowDef, map[string]any{}, runner.WithHTTPCallLimit(2))
+	result, err := runner.Run(flowDef, map[string]any{}, runner.WithHTTPCallLimit(3))
 
 	require.Error(t, err)
-	assert.Len(t, result.HTTPCalls, 2, "the refused call is never sent, so it is not recorded")
 	userErr, ok := spi.AsUserError(err)
 	require.True(t, ok, "expected a user error, got %v", err)
 	assert.Equal(t, httpcall.LimitExceededCode, userErr.Code)
+	assert.Equal(t, 1, httpCalls(t, result, "first")[0].Count())
+	assert.Equal(t, 2, httpCalls(t, result, "each")[0].Count(),
+		"the third loop call would be the fourth of the execution, so it is refused and not recorded")
+}
+
+type finishedNodes struct {
+	engine.NoopObserver
+
+	mu      sync.Mutex
+	results map[string]spi.AnyResult
+}
+
+func (o *finishedNodes) NodeFinished(evt engine.NodeFinishedEvent) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.results[evt.NodeID] = evt.Result
+}
+
+func TestRun_ProgressEventCarriesTheNodeCalls(t *testing.T) {
+	server := statusServer(t)
+	flowDef := parseFlow(t, loopFlow(server.URL+"/items/{{item}}", 2))
+	observer := &finishedNodes{results: map[string]spi.AnyResult{}}
+
+	_, err := runner.Run(flowDef, map[string]any{}, runner.WithObserver(observer))
+
+	require.NoError(t, err)
+	encoded, err := json.Marshal(observer.results["each"])
+	require.NoError(t, err)
+	var decoded struct {
+		HTTPCalls []spi.HTTPCallGroup `json:"http_calls"`
+	}
+	require.NoError(t, json.Unmarshal(encoded, &decoded))
+	require.Len(t, decoded.HTTPCalls, 1)
+	assert.Equal(t, 2, decoded.HTTPCalls[0].Count())
 }

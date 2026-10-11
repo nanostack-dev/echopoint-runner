@@ -90,8 +90,8 @@ func WithHTTPCallLimit(limit int) Option {
 // engine hands back — the flow result and every progress event — passes through
 // the redactor before any caller sees it.
 //
-// Run records the run's HTTP calls in the result's HTTPCalls, nested flows
-// included. A call holds no resolved value, so it needs no masking.
+// Every HTTP call of the run counts against the limit set by
+// WithHTTPCallLimit, whichever node or nested flow sends it.
 func Run(flowDef flow.Flow, inputs map[string]any, opts ...Option) (*spi.FlowExecutionResult, error) {
 	options := Options{Observer: engine.NoopObserver{}}
 	for _, opt := range opts {
@@ -105,21 +105,16 @@ func Run(flowDef flow.Flow, inputs map[string]any, opts ...Option) (*spi.FlowExe
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	calls := httpcall.NewRecorder(options.HTTPCallLimit)
 
 	result, err := engine.ExecuteFlowDefinition(flowDef, mergedInputs, &engine.Options{
 		Observer:        redactingObserver{inner: options.Observer, redactor: redactor},
 		ModuleResolver:  ModuleResolver(options.ReferencedFlows),
 		ModuleCallStack: options.ModuleCallStack,
 		DynamicVars:     options.DynamicVars,
-		Ctx:             httpcall.WithRecorder(ctx, calls),
+		Ctx:             httpcall.WithLimiter(ctx, httpcall.NewLimiter(options.HTTPCallLimit)),
 		Middleware:      options.Middleware,
 	})
-	masked := redactor.FlowResult(result)
-	if masked != nil {
-		masked.HTTPCalls = calls.Calls()
-	}
-	return masked, redactor.Error(err)
+	return redactor.FlowResult(result), redactor.Error(err)
 }
 
 func runtimeRedactor(

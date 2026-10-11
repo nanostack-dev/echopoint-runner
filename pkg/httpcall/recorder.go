@@ -1,17 +1,21 @@
-// Package httpcall records the outbound HTTP calls of one execution and
+// Package httpcall records the outbound HTTP calls of an execution and
 // enforces the HTTP call limit.
 //
-// runner.Run puts one Recorder in the execution context. Nested flows (loops,
-// polls, modules) run on that same context, so their calls land in the same
-// list and count against the same limit.
+// Two values travel in the execution context. A Limiter, put there by
+// runner.Run, counts every call of the execution against the limit. A
+// Collector, put there by the engine around each top-level node, gathers that
+// node's calls into its result. Loop, poll and module bodies run on the
+// node's context, so their calls count against the same limit and land in the
+// same node result.
 package httpcall
 
 import (
+	"cmp"
 	"context"
 	"fmt"
-	"net/http"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -22,49 +26,143 @@ import (
 // LimitExceededCode is the error code of the node whose call passed the limit.
 const LimitExceededCode = "HTTP_CALL_LIMIT_EXCEEDED"
 
-const maxPathTemplateLength = 512
+type (
+	limiterKey   struct{}
+	collectorKey struct{}
+)
 
-type recorderKey struct{}
-
-// Recorder collects the calls of one execution. It is safe for concurrent use
-// by parallel nodes.
-type Recorder struct {
+// Limiter counts the calls of one execution. It is safe for concurrent use.
+type Limiter struct {
 	mu      sync.Mutex
 	limit   int
 	started int
-	calls   []spi.HTTPCall
 }
 
-// NewRecorder returns a recorder that refuses the call past limit. A limit of
-// zero or less records without refusing.
-func NewRecorder(limit int) *Recorder {
-	return &Recorder{limit: limit}
+// NewLimiter returns a limiter that refuses the call past limit. A limit of
+// zero or less never refuses.
+func NewLimiter(limit int) *Limiter {
+	return &Limiter{limit: limit}
 }
 
-// WithRecorder returns ctx carrying recorder.
-func WithRecorder(ctx context.Context, recorder *Recorder) context.Context {
-	return context.WithValue(ctx, recorderKey{}, recorder)
+// WithLimiter returns ctx carrying limiter.
+func WithLimiter(ctx context.Context, limiter *Limiter) context.Context {
+	return context.WithValue(ctx, limiterKey{}, limiter)
 }
 
-// FromContext returns the recorder in ctx, or nil.
-func FromContext(ctx context.Context) *Recorder {
+func (l *Limiter) reserve() error {
+	if l == nil {
+		return nil
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.limit > 0 && l.started >= l.limit {
+		return spi.NewUserError(
+			LimitExceededCode,
+			fmt.Sprintf("The execution reached its limit of %d HTTP calls", l.limit),
+			nil,
+		)
+	}
+	l.started++
+	return nil
+}
+
+// Collector gathers the calls of one top-level node. It is safe for
+// concurrent use by the parallel nodes of a body.
+type Collector struct {
+	mu    sync.Mutex
+	calls []record
+}
+
+type record struct {
+	key           groupKey
+	startedAt     time.Time
+	durationMs    int64
+	statusCode    int
+	transportErr  spi.HTTPCallErrorClass
+	responseBytes *int64
+}
+
+type groupKey struct {
+	nodeID, method, host, pathTemplate string
+}
+
+// NewCollector returns an empty collector.
+func NewCollector() *Collector {
+	return &Collector{}
+}
+
+// WithCollector returns ctx carrying collector.
+func WithCollector(ctx context.Context, collector *Collector) context.Context {
+	return context.WithValue(ctx, collectorKey{}, collector)
+}
+
+// CollectorFrom returns the collector in ctx, or nil.
+func CollectorFrom(ctx context.Context) *Collector {
 	if ctx == nil {
 		return nil
 	}
-	recorder, _ := ctx.Value(recorderKey{}).(*Recorder)
-	return recorder
+	collector, _ := ctx.Value(collectorKey{}).(*Collector)
+	return collector
 }
 
-// Calls returns the finished calls ordered by Seq.
-func (r *Recorder) Calls() []spi.HTTPCall {
-	if r == nil {
+func limiterFrom(ctx context.Context) *Limiter {
+	if ctx == nil {
 		return nil
 	}
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	calls := slices.Clone(r.calls)
-	slices.SortFunc(calls, func(a, b spi.HTTPCall) int { return a.Seq - b.Seq })
-	return calls
+	limiter, _ := ctx.Value(limiterKey{}).(*Limiter)
+	return limiter
+}
+
+// Groups returns the collected calls grouped by node, method, host and path
+// template. Groups are ordered by their first call and calls by start time.
+func (c *Collector) Groups() []spi.HTTPCallGroup {
+	if c == nil {
+		return nil
+	}
+	c.mu.Lock()
+	calls := slices.Clone(c.calls)
+	c.mu.Unlock()
+	if len(calls) == 0 {
+		return nil
+	}
+	slices.SortStableFunc(calls, func(a, b record) int { return a.startedAt.Compare(b.startedAt) })
+
+	index := map[groupKey]int{}
+	var groups []spi.HTTPCallGroup
+	for _, call := range calls {
+		position, seen := index[call.key]
+		if !seen {
+			position = len(groups)
+			index[call.key] = position
+			groups = append(groups, spi.HTTPCallGroup{
+				NodeID:       call.key.nodeID,
+				Method:       call.key.method,
+				Host:         call.key.host,
+				PathTemplate: call.key.pathTemplate,
+				StartedAt:    call.startedAt,
+			})
+		}
+		appendCall(&groups[position], call)
+	}
+	return groups
+}
+
+func appendCall(group *spi.HTTPCallGroup, call record) {
+	i := group.Count()
+	group.OffsetsMs = append(group.OffsetsMs, call.startedAt.Sub(group.StartedAt).Milliseconds())
+	group.DurationsMs = append(group.DurationsMs, call.durationMs)
+	group.StatusCodes = append(group.StatusCodes, call.statusCode)
+	if call.transportErr != "" {
+		if group.TransportErrors == nil {
+			group.TransportErrors = map[string]spi.HTTPCallErrorClass{}
+		}
+		group.TransportErrors[strconv.Itoa(i)] = call.transportErr
+	}
+	if call.responseBytes != nil {
+		// A node either always reads a response size or never does, so the
+		// array is either complete or absent.
+		group.ResponseBytes = append(group.ResponseBytes, *call.responseBytes)
+	}
 }
 
 // Target names the call a node is about to send.
@@ -77,85 +175,58 @@ type Target struct {
 	URLTemplate string
 }
 
-// Call is a started call. A call started without a recorder, and a nil *Call,
-// record nothing, so nodes run without a recorder need no special case.
+// Call is a started call. A nil *Call and a call started without a collector
+// record nothing.
 type Call struct {
-	recorder *Recorder
-	record   spi.HTTPCall
+	collector *Collector
+	record    record
 }
 
 // Start reserves the next call of the execution in ctx. Past the limit it
-// returns a user error with LimitExceededCode and the node must not send the
-// request. Without a recorder in ctx it returns a call that records nothing.
+// returns a user error with LimitExceededCode, and the node must not send the
+// request.
 func Start(ctx context.Context, target Target) (*Call, error) {
-	recorder := FromContext(ctx)
-	if recorder == nil {
-		return &Call{}, nil
+	if err := limiterFrom(ctx).reserve(); err != nil {
+		return nil, err
 	}
-
-	recorder.mu.Lock()
-	if recorder.limit > 0 && recorder.started >= recorder.limit {
-		recorder.mu.Unlock()
-		return nil, spi.NewUserError(
-			LimitExceededCode,
-			fmt.Sprintf("The execution reached its limit of %d HTTP calls", recorder.limit),
-			nil,
-		)
-	}
-	recorder.started++
-	seq := recorder.started
-	recorder.mu.Unlock()
-
 	return &Call{
-		recorder: recorder,
-		record: spi.HTTPCall{
-			Seq:          seq,
-			NodeID:       target.NodeID,
-			Method:       strings.ToUpper(target.Method),
-			Host:         host(target.URL),
-			PathTemplate: PathTemplate(target.URLTemplate),
-			StartedAt:    time.Now().UTC(),
+		collector: CollectorFrom(ctx),
+		record: record{
+			key: groupKey{
+				nodeID:       target.NodeID,
+				method:       strings.ToUpper(target.Method),
+				host:         host(target.URL),
+				pathTemplate: PathTemplate(target.URLTemplate),
+			},
+			startedAt: time.Now().UTC(),
 		},
 	}, nil
 }
 
-// Outcome is how a call ended. Leave StatusCode nil when no response arrived,
-// and ResponseBytes nil for a streamed body.
+// Outcome is how a call ended. StatusCode is 0 when no response arrived, and
+// TransportError then says why. Leave ResponseBytes nil for a streamed body.
 type Outcome struct {
-	StatusCode    *int
-	ErrorClass    spi.HTTPCallErrorClass
-	ResponseBytes *int64
+	StatusCode     int
+	TransportError spi.HTTPCallErrorClass
+	ResponseBytes  *int64
 }
 
-// Finish records the call. A 4xx or 5xx status sets the error class when the
-// outcome has none.
+// Finish records the call in the node's collector.
 func (c *Call) Finish(outcome Outcome) {
-	if c == nil || c.recorder == nil {
+	if c == nil || c.collector == nil {
 		return
 	}
-	record := c.record
-	record.DurationMs = time.Since(record.StartedAt).Milliseconds()
-	record.StatusCode = outcome.StatusCode
-	record.ResponseBytes = outcome.ResponseBytes
-	record.ErrorClass = outcome.ErrorClass
-	if record.ErrorClass == "" && outcome.StatusCode != nil {
-		record.ErrorClass = statusClass(*outcome.StatusCode)
+	call := c.record
+	call.durationMs = time.Since(call.startedAt).Milliseconds()
+	call.statusCode = outcome.StatusCode
+	call.responseBytes = outcome.ResponseBytes
+	if outcome.StatusCode == 0 {
+		call.transportErr = cmp.Or(outcome.TransportError, spi.HTTPCallErrorConnect)
 	}
 
-	c.recorder.mu.Lock()
-	c.recorder.calls = append(c.recorder.calls, record)
-	c.recorder.mu.Unlock()
-}
-
-func statusClass(status int) spi.HTTPCallErrorClass {
-	switch {
-	case status >= http.StatusInternalServerError:
-		return spi.HTTPCallError5xx
-	case status >= http.StatusBadRequest:
-		return spi.HTTPCallError4xx
-	default:
-		return ""
-	}
+	c.collector.mu.Lock()
+	c.collector.calls = append(c.collector.calls, call)
+	c.collector.mu.Unlock()
 }
 
 func host(rawURL string) string {
@@ -164,79 +235,4 @@ func host(rawURL string) string {
 		return ""
 	}
 	return strings.ToLower(parsed.Host)
-}
-
-// PathTemplate returns the path of an unresolved URL template, with each
-// {{ expression }} written as {expression}. The scheme and host, or a leading
-// variable that holds them, the query string and the fragment are dropped.
-//
-//	{{baseUrl}}/users/{{ userId }}?expand=true  ->  /users/{userId}
-//	https://api.example.com/orders/{{id}}       ->  /orders/{id}
-//	https://api.example.com                     ->  /
-func PathTemplate(template string) string {
-	path := strings.TrimSpace(template)
-	path = cutOutsideTemplates(path, '?')
-	path = cutOutsideTemplates(path, '#')
-
-	switch {
-	case strings.HasPrefix(path, "{{"):
-		if end := strings.Index(path, "}}"); end >= 0 {
-			path = path[end+len("}}"):]
-		}
-	case strings.Contains(path, "://"):
-		afterScheme := path[strings.Index(path, "://")+len("://"):]
-		path = ""
-		if slash := strings.IndexByte(afterScheme, '/'); slash >= 0 {
-			path = afterScheme[slash:]
-		}
-	}
-	if path == "" {
-		path = "/"
-	}
-
-	path = normalizeExpressions(path)
-	if len(path) > maxPathTemplateLength {
-		path = path[:maxPathTemplateLength]
-	}
-	return path
-}
-
-// cutOutsideTemplates drops everything from the first sep that is not inside
-// a {{ }} expression.
-func cutOutsideTemplates(value string, sep byte) string {
-	depth := 0
-	for i := 0; i < len(value); i++ {
-		switch {
-		case strings.HasPrefix(value[i:], "{{"):
-			depth++
-			i++
-		case strings.HasPrefix(value[i:], "}}") && depth > 0:
-			depth--
-			i++
-		case value[i] == sep && depth == 0:
-			return value[:i]
-		}
-	}
-	return value
-}
-
-func normalizeExpressions(path string) string {
-	var out strings.Builder
-	for {
-		start := strings.Index(path, "{{")
-		if start < 0 {
-			out.WriteString(path)
-			return out.String()
-		}
-		end := strings.Index(path[start:], "}}")
-		if end < 0 {
-			out.WriteString(path)
-			return out.String()
-		}
-		out.WriteString(path[:start])
-		out.WriteString("{")
-		out.WriteString(strings.TrimSpace(path[start+len("{{") : start+end]))
-		out.WriteString("}")
-		path = path[start+end+len("}}"):]
-	}
 }

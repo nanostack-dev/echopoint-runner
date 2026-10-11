@@ -172,7 +172,7 @@ func TestJobWithUnknownInitialVariableFailsAtWarn(t *testing.T) {
 	assert.Equal(t, []string{"warn"}, levelsOf(t, logs, "runner job failed"))
 }
 
-func TestFailedJobReportsItsHTTPCallsPastTheLimit(t *testing.T) {
+func TestClaimedJobLimitFailsTheCallPastIt(t *testing.T) {
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`{}`))
 	}))
@@ -204,6 +204,7 @@ func TestFailedJobReportsItsHTTPCallsPastTheLimit(t *testing.T) {
 	}`
 	var job controlplane.ClaimedJob
 	require.NoError(t, json.Unmarshal([]byte(claim), &job))
+	assert.Equal(t, 1, job.MaxHTTPCallsPerExecution)
 	r := newRuntime(testConfig(server.URL), controlplane.NewRunnerClient(controlplane.Config{BaseURL: server.URL}))
 
 	outcome, err := r.executeClaimedJob(context.Background(), &activeJob{job: &job, startedAt: time.Now()})
@@ -212,9 +213,4 @@ func TestFailedJobReportsItsHTTPCallsPastTheLimit(t *testing.T) {
 	assert.Equal(t, jobStatusFailed, outcome.Status)
 	require.NotNil(t, completion.ErrorMessage)
 	assert.Equal(t, "The execution reached its limit of 1 HTTP calls", *completion.ErrorMessage)
-	require.NotNil(t, completion.Result, "a failed run must still report its partial result")
-	calls, ok := (*completion.Result)["http_calls"].([]any)
-	require.True(t, ok, "http_calls missing from %v", *completion.Result)
-	require.Len(t, calls, 1)
-	assert.Equal(t, "first", calls[0].(map[string]any)["node_id"])
 }

@@ -1,32 +1,51 @@
 # HTTP calls
 
-Every execution run through `runner.Run` lists its HTTP calls in `FlowExecutionResult.http_calls`, and enforces the HTTP call limit. Echopoint projects the list into its execution analytics ([Echopoint ADR-0017](https://github.com/nanostack-dev/echopoint/blob/main/docs/adr/0017-execution-analytics-are-a-rebuildable-timescale-projection.md)).
+Every node result lists the HTTP calls the node sent in `http_calls`, and every execution run through `runner.Run` enforces the HTTP call limit. Echopoint projects the calls into its execution analytics ([Echopoint ADR-0017](https://github.com/nanostack-dev/echopoint/blob/main/docs/adr/0017-execution-analytics-are-a-rebuildable-timescale-projection.md)).
 
 ## Recording
 
-`runner.Run` puts one [`httpcall.Recorder`](../../pkg/httpcall/recorder.go) in the execution context. Nested flows (loop bodies, poll bodies, modules) run on that context, so their calls join the same list. Request and SSE nodes call `httpcall.Start` just before sending and `Finish` once the response is read (request) or the stream ends (SSE). Webhook-wait and webhook-expectation reads go to the control plane and are not recorded.
+Request and SSE nodes call [`httpcall.Start`](../../pkg/httpcall/recorder.go) just before sending and `Finish` once the response is read (request) or the stream ends (SSE). Webhook-wait and webhook-expectation reads go to the control plane and are not recorded.
 
-Each entry ([`spi.HTTPCall`](../../pkg/spi/http_call.go)):
+The engine runs each top-level node on a context carrying its own `httpcall.Collector` and, once the node returns, sets the collected calls on its result before the `NodeFinished` event. Loop, poll and module bodies run on that node's context, so their calls land on the top-level node: a loop's result holds every iteration's calls, a poll's every attempt's. Retry middleware runs inside the same context, so each attempt is a call. The calls therefore reach the control plane with the node result, through progress events and the completion's `execution_results`.
+
+## Format
+
+Calls are grouped by sending node, method, host and path template ([`spi.HTTPCallGroup`](../../pkg/spi/http_call.go)). The fixed fields are stored once; the varying ones are parallel arrays where index `i` is call `i`, in start order.
+
+```json
+"fetch_each": {
+  "node_type": "loop", "iterations": 4,
+  "http_calls": [{
+    "node_id": "get_item", "method": "GET", "host": "api.acme.com", "path_template": "/items/{item}",
+    "started_at": "2026-10-11T14:00:03.120Z",
+    "offsets_ms":     [0,   72,  140, 215],
+    "durations_ms":   [70,  65,  72,  30000],
+    "status_codes":   [200, 404, 200, 0],
+    "response_bytes": [512, 40,  511, 0],
+    "transport_errors": { "3": "timeout" }
+  }]
+}
+```
 
 | Field | Meaning |
 | --- | --- |
-| `seq` | Order the call was started in, from 1. |
-| `node_id` | The node that sent it. Inside a loop, poll or module this is the node of the nested flow. |
-| `method`, `host` | Upper-case method; resolved host with its port. |
+| `node_id` | The node that sent the calls. Inside a body it is the body's node, not the node holding the group. |
+| `host` | Resolved host, with its port when the URL names one. |
 | `path_template` | Path of the node's URL *before* resolution: `{{baseUrl}}/users/{{ id }}?x=1` gives `/users/{id}`. Capped at 512 bytes. |
-| `status_code` | Absent when no response arrived. |
-| `error_class` | `dns`, `connect`, `tls`, `timeout`, `http_4xx` or `http_5xx`; absent for 1xx-3xx. An SSE deadline that elapses before the headers is `timeout`, although the node reports a normal stop. |
-| `started_at`, `duration_ms` | SSE duration covers the whole stream. |
+| `started_at`, `offsets_ms` | Start of the first call, and each call's start in milliseconds after it. |
+| `durations_ms` | An SSE call lasts as long as the stream. |
+| `status_codes` | `0` when no response arrived. A 4xx or 5xx is a failure the status already says, so it has no class. |
+| `transport_errors` | Index to `dns`, `connect`, `tls` or `timeout`, only for calls without a response. An SSE deadline elapsing before the headers is `timeout`, although the node reports a normal stop. |
 | `response_bytes` | Body size read; absent for SSE. |
 
-A call never holds the resolved URL, query string, headers or body, so a secret resolved into a URL cannot leak through it and the list needs no redaction.
+A group never holds the resolved URL, query string, headers or body.
 
 ## Limit
 
-`runner.WithHTTPCallLimit(n)` refuses the call past `n`: `httpcall.Start` returns a `spi.UserError` with code `HTTP_CALL_LIMIT_EXCEEDED`, the request is not sent and not recorded, and the node fails. A limit of zero or less records without refusing, which is what a control plane that does not send the field gets.
+`runner.WithHTTPCallLimit(n)` puts an `httpcall.Limiter` on the run: it counts every call of the execution, whichever node or nested body sends it. The call past `n` is not sent and not recorded; `httpcall.Start` returns a `spi.UserError` with code `HTTP_CALL_LIMIT_EXCEEDED` and the node fails. Zero or less never refuses, which is what a control plane that does not send the field gets.
 
 The limit reaches the runner as `max_http_calls_per_execution` on a self-hosted claim (`controlplane.ClaimedJob`), a one-shot `jobrunner.Job` and an ephemeral `Package`.
 
-## Completion
+## Compatibility
 
-The list travels inside `result` of the completion body. A failed self-hosted run sends its partial `result` too, so the calls of a failed run, the most useful for analysis, reach the control plane; the ephemeral runner already did. A control plane that does not know `http_calls` ignores it.
+Echopoint decodes node results into typed structs with `encoding/json`, so a control plane that does not know `http_calls` ignores it.

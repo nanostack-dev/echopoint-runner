@@ -317,7 +317,8 @@ func (n *RequestNode) makeRequestAndReadBody(
 	client := nodeHTTPClient()
 	resp, err := client.Do(req)
 	if err != nil {
-		call.Finish(httpcall.Outcome{ErrorClass: callErrorClass(url, err)})
+		var noBody int64
+		call.Finish(httpcall.Outcome{TransportError: callErrorClass(url, err), ResponseBytes: &noBody})
 		return nil, nil, err
 	}
 
@@ -325,12 +326,13 @@ func (n *RequestNode) makeRequestAndReadBody(
 	respBody, readErr := io.ReadAll(resp.Body)
 	if readErr != nil {
 		_ = resp.Body.Close()
-		call.Finish(httpcall.Outcome{StatusCode: &resp.StatusCode, ErrorClass: callErrorClass(url, readErr)})
+		var noBody int64
+		call.Finish(httpcall.Outcome{StatusCode: resp.StatusCode, ResponseBytes: &noBody})
 		return nil, nil, readErr
 	}
 
 	bodySize := int64(len(respBody))
-	call.Finish(httpcall.Outcome{StatusCode: &resp.StatusCode, ResponseBytes: &bodySize})
+	call.Finish(httpcall.Outcome{StatusCode: resp.StatusCode, ResponseBytes: &bodySize})
 	return resp, respBody, nil
 }
 
