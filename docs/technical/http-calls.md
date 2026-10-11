@@ -1,10 +1,10 @@
 # HTTP calls
 
-Every node result lists the HTTP calls the node sent in `http_calls`, and every execution run through `runner.Run` enforces the HTTP call limit. Echopoint projects the calls into its execution analytics ([Echopoint ADR-0017](https://github.com/nanostack-dev/echopoint/blob/main/docs/adr/0017-execution-analytics-are-a-rebuildable-timescale-projection.md)).
+Every node result lists the HTTP calls the node sent in `http_calls`, and every execution run through `runner.Run` enforces the HTTP call limit. The planned Echopoint projection uses these calls for execution analytics ([Echopoint ADR-0017](https://github.com/nanostack-dev/echopoint/blob/main/docs/adr/0017-execution-analytics-are-a-rebuildable-timescale-projection.md)).
 
 ## Recording
 
-Request and SSE nodes call [`httpcall.Start`](../../pkg/httpcall/recorder.go) just before sending and `Finish` once the response is read (request) or the stream ends (SSE). Webhook-wait and webhook-expectation reads go to the control plane and are not recorded.
+Request and SSE nodes record at the HTTP transport boundary, so each followed redirect counts as another call. Calls finish when their response body closes; response sizes include bytes read before a read error. Redirects keep the sending node's original path template and use the destination host and method. Cloud still refuses redirects. Webhook-wait and webhook-expectation reads go to the control plane and are not recorded.
 
 The engine runs each top-level node on a context carrying its own `httpcall.Collector` and, once the node returns, sets the collected calls on its result before the `NodeFinished` event. Loop, poll and module bodies run on that node's context, so their calls land on the top-level node: a loop's result holds every iteration's calls, a poll's every attempt's. Retry middleware runs inside the same context, so each attempt is a call. The calls therefore reach the control plane with the node result, through progress events and the completion's `execution_results`.
 
@@ -30,8 +30,8 @@ Calls are grouped by sending node, method, host and path template ([`spi.HTTPCal
 | Field | Meaning |
 | --- | --- |
 | `node_id` | The node that sent the calls. Inside a body it is the body's node, not the node holding the group. |
-| `host` | Resolved host, with its port when the URL names one. |
-| `path_template` | Path of the node's URL *before* resolution: `{{baseUrl}}/users/{{ id }}?x=1` gives `/users/{id}`. Capped at 512 bytes. |
+| `host` | Resolved host, with its port when the URL names one; casing is preserved so secret-value redaction can match. |
+| `path_template` | Path of the node's URL *before* resolution: `{{baseUrl}}/users/{{ id }}?x=1` gives `/users/{id}`. |
 | `started_at`, `offsets_ms` | Start of the first call, and each call's start in milliseconds after it. |
 | `durations_ms` | An SSE call lasts as long as the stream. |
 | `status_codes` | `0` when no response arrived. A 4xx or 5xx is a failure the status already says, so it has no class. |

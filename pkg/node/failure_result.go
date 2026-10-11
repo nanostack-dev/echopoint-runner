@@ -3,6 +3,7 @@ package node
 import (
 	"time"
 
+	"github.com/nanostack-dev/echopoint-runner/pkg/httpcall"
 	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 )
 
@@ -14,6 +15,10 @@ type failureDetails struct {
 }
 
 func failedNodeBase(n BaseNode, inputs map[string]any, err error, details failureDetails) spi.BaseExecutionResult {
+	if userErr, ok := spi.AsUserError(err); ok && userErr.Code == httpcall.LimitExceededCode {
+		details.Code = userErr.Code
+		details.Message = userErr.Message
+	}
 	return spi.BaseExecutionResult{
 		NodeID:      n.ID,
 		DisplayName: n.DisplayName,

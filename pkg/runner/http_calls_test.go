@@ -175,6 +175,9 @@ func TestRun_HTTPCallLimitCountsTheWholeExecution(t *testing.T) {
 	userErr, ok := spi.AsUserError(err)
 	require.True(t, ok, "expected a user error, got %v", err)
 	assert.Equal(t, httpcall.LimitExceededCode, userErr.Code)
+	encoded, encodeErr := json.Marshal(result.ExecutionResults["each"])
+	require.NoError(t, encodeErr)
+	assert.Contains(t, string(encoded), `"error_code":"HTTP_CALL_LIMIT_EXCEEDED"`)
 	assert.Equal(t, 1, httpCalls(t, result, "first")[0].Count())
 	assert.Equal(t, 2, httpCalls(t, result, "each")[0].Count(),
 		"the third loop call would be the fourth of the execution, so it is refused and not recorded")
@@ -209,4 +212,121 @@ func TestRun_ProgressEventCarriesTheNodeCalls(t *testing.T) {
 	require.NoError(t, json.Unmarshal(encoded, &decoded))
 	require.Len(t, decoded.HTTPCalls, 1)
 	assert.Equal(t, 2, decoded.HTTPCalls[0].Count())
+}
+
+func TestRun_RedirectsCountAgainstTheLimit(t *testing.T) {
+	for _, kind := range []string{"request", "sse"} {
+		t.Run(kind, func(t *testing.T) {
+			var received atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				received.Add(1)
+				if r.URL.Path == "/start" {
+					http.Redirect(w, r, "/end?token=private", http.StatusFound)
+					return
+				}
+				w.Header().Set("Content-Type", "text/event-stream")
+				_, _ = w.Write([]byte("data: done\n\n"))
+			}))
+			defer server.Close()
+			definition := fmt.Sprintf(`{"version":"1.0","name":"redirect","nodes":[
+				{"id":"get","type":%q,"data":{"method":"GET","url":%q}}
+			],"edges":[]}`, kind, server.URL+"/start")
+
+			result, err := runner.Run(parseFlow(t, definition), nil, runner.WithHTTPCallLimit(1))
+			require.Error(t, err)
+			assert.Equal(t, int32(1), received.Load(), "the redirected call must be refused before sending")
+			encoded, encodeErr := json.Marshal(result.ExecutionResults["get"])
+			require.NoError(t, encodeErr)
+			var wire struct {
+				ErrorCode string `json:"error_code"`
+			}
+			require.NoError(t, json.Unmarshal(encoded, &wire))
+			assert.Equal(t, httpcall.LimitExceededCode, wire.ErrorCode)
+			groups := httpCalls(t, result, "get")
+			require.Len(t, groups, 1)
+			assert.Equal(t, []int{http.StatusFound}, groups[0].StatusCodes)
+
+			received.Store(0)
+			result, err = runner.Run(parseFlow(t, definition), nil, runner.WithHTTPCallLimit(2))
+			require.NoError(t, err)
+			assert.Equal(t, int32(2), received.Load())
+			groups = httpCalls(t, result, "get")
+			require.Len(t, groups, 1)
+			assert.Equal(t, "/start", groups[0].PathTemplate)
+			assert.Equal(t, []int{http.StatusFound, http.StatusOK}, groups[0].StatusCodes)
+		})
+	}
+}
+
+func TestRun_HTTPCallKeepsPartialResponseBytes(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Length", "20")
+		_, _ = w.Write([]byte("partial"))
+	}))
+	defer server.Close()
+	definition := parseFlow(t, `{"version":"1.0","name":"partial","nodes":[`+
+		requestNode("get", server.URL)+`],"edges":[]}`)
+	result, err := runner.Run(definition, nil)
+	require.Error(t, err)
+	groups := httpCalls(t, result, "get")
+	require.Len(t, groups, 1)
+	assert.Equal(t, []int{http.StatusOK}, groups[0].StatusCodes)
+	assert.Equal(t, []int64{7}, groups[0].ResponseBytes)
+}
+
+func TestRun_ModuleCallsShareTheExecutionLimit(t *testing.T) {
+	server := statusServer(t)
+	definition := parseFlow(t, `{"version":"1.0","name":"parent","nodes":[
+		{"id":"child","type":"module","data":{"flow_id":"child-flow"}}
+	],"edges":[]}`)
+	refs := flow.ReferencedFlowRegistry{
+		"child-flow": {FlowDefinition: []byte(loopFlow(server.URL+"/items/{{item}}", 3))},
+	}
+	result, err := runner.Run(definition, nil, runner.WithReferencedFlows(refs), runner.WithHTTPCallLimit(2))
+	require.Error(t, err)
+	groups := httpCalls(t, result, "child")
+	require.Len(t, groups, 1)
+	assert.Equal(t, 2, groups[0].Count())
+	assert.Equal(t, "get", groups[0].NodeID)
+	encoded, encodeErr := json.Marshal(result.ExecutionResults["child"])
+	require.NoError(t, encodeErr)
+	assert.Contains(t, string(encoded), `"error_code":"HTTP_CALL_LIMIT_EXCEEDED"`)
+}
+
+func TestRun_ParallelCallsCannotPassTheLimit(t *testing.T) {
+	var received atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		received.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+	nodes := make([]string, 10)
+	for i := range nodes {
+		nodes[i] = requestNode(strconv.Itoa(i), server.URL)
+	}
+	definition := parseFlow(t, `{"version":"1.0","name":"parallel","nodes":[`+
+		strings.Join(nodes, ",")+`],"edges":[]}`)
+	result, err := runner.Run(definition, nil, runner.WithHTTPCallLimit(3))
+	require.Error(t, err)
+	assert.Equal(t, int32(3), received.Load())
+	count := 0
+	for id := range result.ExecutionResults {
+		for _, group := range httpCalls(t, result, id) {
+			count += group.Count()
+		}
+	}
+	assert.Equal(t, 3, count)
+}
+
+func TestRun_RetryCallsSurviveTheLastAttempt(t *testing.T) {
+	server := statusServer(t)
+	definition := parseFlow(t, `{"version":"1.0","name":"retry","nodes":[
+  {"id":"get","type":"request","data":{"method":"GET","url":"`+server.URL+`"},
+   "assertions":[{"extractor_type":"status_code","operator_type":"equals","operator_data":{"value":201}}]}
+ ],"edges":[]}`)
+	result, err := runner.Run(definition, nil, runner.WithMiddleware(runner.Retry(3)))
+	require.Error(t, err)
+	groups := httpCalls(t, result, "get")
+	require.Len(t, groups, 1)
+	assert.Equal(t, []int{200, 200, 200}, groups[0].StatusCodes)
 }
