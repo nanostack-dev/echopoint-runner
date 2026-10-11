@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"strings"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -182,12 +183,10 @@ func (engine *FlowEngine) inputsReferenceSkippedNode(n node.AnyNode, state *exec
 		if !state.skippedNodes[sourceNodeID] {
 			continue
 		}
-		// A path into a flow input that shares the skipped node's name, such
-		// as a loop's {{account.id}}, does not depend on that node.
-		if _, isFlowInput := node.LookupPath(inputKey, func(key string) (any, bool) {
-			value, found := state.allOutputs[""][key]
-			return value, found
-		}); isFlowInput {
+		// A reference rooted at a flow input that shares the skipped node's
+		// name, such as a loop's {{account.id}}, does not depend on that node,
+		// even when the field is missing: input validation reports that.
+		if hasFlowInputRoot(inputKey, state.allOutputs[""]) {
 			continue
 		}
 		return true
@@ -782,4 +781,19 @@ func (engine *FlowEngine) hasRemainingAlwaysPredecessor(
 		}
 	}
 	return false
+}
+
+// hasFlowInputRoot reports whether ref, or a dotted prefix of it, names a flow
+// input: the input owns the reference whether or not its fields resolve.
+func hasFlowInputRoot(ref string, flowInputs map[string]any) bool {
+	for candidate := ref; ; {
+		if _, ok := flowInputs[candidate]; ok {
+			return true
+		}
+		end := strings.LastIndex(candidate, ".")
+		if end <= 0 {
+			return false
+		}
+		candidate = candidate[:end]
+	}
 }

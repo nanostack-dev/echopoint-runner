@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"sort"
 	"strings"
@@ -236,6 +237,7 @@ func ExecuteFlowDefinition(
 		flowInstance,
 		nilIfNoModuleResolverFromOptions(options),
 		moduleCallStackFromOptions(options),
+		append(slices.Collect(maps.Keys(initialInputs)), slices.Collect(maps.Keys(flowInstance.InitialInputs))...),
 	); validateErr != nil {
 		errMsg := validateErr.Error()
 		errCode := "FLOW_VALIDATION_FAILED"
