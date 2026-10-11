@@ -619,12 +619,15 @@ func (engine *FlowEngine) propagateNodeOutputs(
 	outputs := result.GetOutputs()
 	nodeID := n.GetID()
 	nodeType := n.GetType()
-	copiedOutputs := make(map[string]any, len(outputs))
-	maps.Copy(copiedOutputs, outputs)
+	runOutputs := make(map[string]any, len(outputs))
+	if implicit, ok := result.(node.ImplicitOutputResult); ok {
+		maps.Copy(runOutputs, implicit.ImplicitOutputs())
+	}
+	maps.Copy(runOutputs, outputs)
 
-	state.allOutputs[nodeID] = copiedOutputs
+	state.allOutputs[nodeID] = runOutputs
 
-	for key, value := range copiedOutputs {
+	for key, value := range outputs {
 		flatKey := fmt.Sprintf("%s.%s", nodeID, key)
 		state.result.FinalOutputs[flatKey] = value
 	}
