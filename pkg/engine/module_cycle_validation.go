@@ -2,6 +2,7 @@ package engine
 
 import (
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -40,7 +41,9 @@ func validateModuleReferences(
 			return cycleErr
 		}
 
-		targetFlow, err := resolveModuleFlow(targetFlowID, resolver, parsedFlows)
+		targetFlow, err := resolveModuleFlow(
+			targetFlowID, resolver, parsedFlows, slices.Collect(maps.Keys(moduleNode.Data.InputBindings)),
+		)
 		if err != nil {
 			return err
 		}
@@ -71,12 +74,18 @@ func detectModuleCycle(callStack []string, targetFlowID string) error {
 	return nil
 }
 
+// resolveModuleFlow parses a module's target flow knowing the inputs it will
+// receive (its bindings and the flow's overrides), so a path into one, such as
+// {{account.id}}, validates as it will at execution time.
 func resolveModuleFlow(
 	flowID string,
 	resolver spi.ModuleResolver,
 	parsedFlows map[string]flow.Flow,
+	boundInputs []string,
 ) (flow.Flow, error) {
-	if cached, ok := parsedFlows[flowID]; ok {
+	slices.Sort(boundInputs)
+	cacheKey := flowID + "\x00" + strings.Join(boundInputs, ",")
+	if cached, ok := parsedFlows[cacheKey]; ok {
 		return cached, nil
 	}
 
@@ -91,7 +100,9 @@ func resolveModuleFlow(
 		)
 	}
 
+	inputKeys := append(slices.Clone(boundInputs), slices.Collect(maps.Keys(resolvedFlow.InputOverrides))...)
 	parsedFlow, err := flow.ParseFromJSONWithOptions(resolvedFlow.FlowDefinition, flow.ParseOptions{
+		AllowedInitialInputKeys:   inputKeys,
 		AllowUnknownInitialInputs: true,
 	})
 	if err != nil {
@@ -101,6 +112,6 @@ func resolveModuleFlow(
 		return flow.Flow{}, spi.NewUserError("MODULE_FLOW_PARSE_FAILED", "parse module flow", err)
 	}
 
-	parsedFlows[flowID] = *parsedFlow
+	parsedFlows[cacheKey] = *parsedFlow
 	return *parsedFlow, nil
 }

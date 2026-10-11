@@ -101,3 +101,19 @@ func TestResolveAssertions_WalksPathsIntoStepOutputsAndLoopItems(t *testing.T) {
 	assert.Equal(t, "a1", resolved[0].ExpectedValue)
 	assert.Equal(t, "b2", resolved[1].ExpectedValue)
 }
+
+func TestResolveAssertions_PathRootedAtAStepNeverReadsAFlowInput(t *testing.T) {
+	ctx := spi.ExecutionContext{
+		AllOutputs: node.NewOutputView(map[string]map[string]any{
+			"producer": {"name": "p"},
+		}),
+		FlowInputs: map[string]any{"producer": map[string]any{"id": "fallback"}},
+	}
+
+	_, err := node.ResolveAssertions(ctx, []node.CompositeAssertion{
+		{ExpectedValue: "{{producer.id}}"},
+	})
+
+	require.Error(t, err)
+	assert.Equal(t, "ASSERTION_FAILED", spi.ErrorCode(err))
+}

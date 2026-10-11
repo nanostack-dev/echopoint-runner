@@ -179,9 +179,18 @@ func (engine *FlowEngine) inputsReferenceSkippedNode(n node.AnyNode, state *exec
 		if err != nil || sourceNodeID == "" {
 			continue
 		}
-		if state.skippedNodes[sourceNodeID] {
-			return true
+		if !state.skippedNodes[sourceNodeID] {
+			continue
 		}
+		// A path into a flow input that shares the skipped node's name, such
+		// as a loop's {{account.id}}, does not depend on that node.
+		if _, isFlowInput := node.LookupPath(inputKey, func(key string) (any, bool) {
+			value, found := state.allOutputs[""][key]
+			return value, found
+		}); isFlowInput {
+			continue
+		}
+		return true
 	}
 	return false
 }

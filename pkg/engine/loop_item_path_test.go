@@ -64,3 +64,59 @@ func TestNodeOutputPathResolvesIntoAnUpstreamArray(t *testing.T) {
 
 	assert.Equal(t, "a1", outputs["pick"].(map[string]any)["first_id"])
 }
+
+// A child module reads a field of an input it only receives through the
+// module's bindings; prevalidation must know the bound key.
+func TestModuleChildReadsAPathIntoABoundInput(t *testing.T) {
+	child := `{
+		"name": "child", "version": "1.0",
+		"nodes": [{"id": "pick", "type": "set_variable",
+			"data": {"variables": {"first_id": "{{account.id}}"}}}],
+		"edges": []
+	}`
+	parent, err := flow.ParseFromJSONWithOptions([]byte(`{
+		"name": "parent", "version": "1.0",
+		"nodes": [{"id": "mod", "type": "module",
+			"data": {"flow_id": "child", "input_bindings": {"account": "{{{account}}}"}}}],
+		"edges": [],
+		"initial_inputs": {"account": {}}
+	}`), flow.ParseOptions{})
+	require.NoError(t, err)
+	flowEngine, err := engine.NewFlowEngine(*parent, &engine.Options{
+		ModuleResolver: staticModuleResolver{"child": {FlowDefinition: []byte(child)}},
+	})
+	require.NoError(t, err)
+
+	result, err := flowEngine.Execute(map[string]any{"account": map[string]any{"id": "a1"}})
+
+	require.NoError(t, err)
+	assert.True(t, result.Success)
+}
+
+// A branch skips a step named like a flow input; a consumer reading a path
+// into that input still runs.
+func TestPathIntoAFlowInputIgnoresASkippedStepOfTheSameName(t *testing.T) {
+	outputs := executeFlowJSON(t, `{
+		"name": "f", "version": "1.0",
+		"nodes": [
+			{"id": "router", "type": "branch", "data": {"target": "{{route}}", "cases": [
+				{"when": {"extractor_type": "body", "extractor_data": {}, "operator_type": "equals",
+					"operator_data": {"value": "a"}}, "target": "account"},
+				{"when": {"extractor_type": "body", "extractor_data": {}, "operator_type": "equals",
+					"operator_data": {"value": "b"}}, "target": "other"}]}},
+			{"id": "account", "type": "set_variable", "data": {"variables": {"x": "1"}}},
+			{"id": "other", "type": "set_variable", "data": {"variables": {"y": "2"}}},
+			{"id": "consumer", "type": "set_variable",
+				"data": {"variables": {"first_id": "{{account.id}}"}}}
+		],
+		"edges": [
+			{"id": "e1", "source": "router", "target": "account"},
+			{"id": "e2", "source": "router", "target": "other"},
+			{"id": "e3", "source": "other", "target": "consumer"}
+		],
+		"initial_inputs": {"route": "b", "account": {}}
+	}`, map[string]any{"route": "b", "account": map[string]any{"id": "a1"}})
+
+	require.Contains(t, outputs, "consumer")
+	assert.Equal(t, "a1", outputs["consumer"].(map[string]any)["first_id"])
+}
