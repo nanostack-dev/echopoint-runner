@@ -1,6 +1,7 @@
 package node
 
 import (
+	"errors"
 	"io"
 	"net/http"
 
@@ -58,11 +59,20 @@ func (b *callBody) Read(p []byte) (int, error) {
 	if b.outcome.ResponseBytes != nil {
 		*b.outcome.ResponseBytes += int64(n)
 	}
+	if errors.Is(err, io.EOF) {
+		b.finish()
+	}
 	return n, err
 }
 
+// Close finishes a call whose body was not read to the end. A body read to the
+// end finished at EOF, so the node's own processing is not counted.
 func (b *callBody) Close() error {
+	b.finish()
+	return b.ReadCloser.Close()
+}
+
+func (b *callBody) finish() {
 	b.call.Finish(b.outcome)
 	b.call = nil
-	return b.ReadCloser.Close()
 }
