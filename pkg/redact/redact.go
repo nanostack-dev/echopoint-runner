@@ -1,5 +1,6 @@
-// Package redact masks the values of secret flow inputs in everything the
-// runner reports back — node results, the flow result, and progress events.
+// Package redact masks the values of secret flow inputs and secret node outputs
+// in everything the runner reports back — node results, the flow result, and
+// progress events.
 // It is applied once, at the boundary where results leave the runner, so the
 // engine keeps working with the real values while a flow runs.
 package redact
@@ -12,6 +13,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 )
@@ -25,8 +27,18 @@ const Mask = "***"
 // search for, so the field is decoded, masked, and re-encoded.
 const responseBodyField = "response_body"
 
-// Redactor masks a fixed set of secret values. A nil Redactor is a valid no-op.
+// Redactor masks a set of secret values. A nil or zero Redactor is a valid
+// no-op. Learn grows the set while a run executes, so a value a node extracts
+// into a secret output is masked in everything reported after it.
 type Redactor struct {
+	mu      sync.RWMutex
+	current *secretSet
+}
+
+// secretSet is an immutable snapshot of the values a Redactor masks. Each
+// public call masks against one snapshot, so a value learned concurrently never
+// leaves a single report half masked.
+type secretSet struct {
 	secrets []string
 	// bodyForms is secrets plus, for each, the forms a JSON encoder writes it in.
 	// A response body is text the target server produced, so a secret it echoed
@@ -65,10 +77,70 @@ func NewFromSources(sources ...Source) *Redactor {
 	if len(secrets) == 0 {
 		return nil
 	}
-	// Longest first: a secret that contains a shorter one is masked whole,
-	// instead of being left as a recognizable fragment around the shorter mask.
+	return &Redactor{current: newSecretSet(secrets)}
+}
+
+// newSecretSet orders secrets longest first: a secret that contains a shorter
+// one is masked whole, instead of being left as a recognizable fragment around
+// the shorter mask.
+func newSecretSet(secrets []string) *secretSet {
 	slices.SortFunc(secrets, longestFirst)
-	return &Redactor{secrets: secrets, bodyForms: bodyForms(secrets)}
+	return &secretSet{secrets: secrets, bodyForms: bodyForms(secrets)}
+}
+
+// Learn adds the text of value to the masked set. A map or slice contributes
+// each of its leaves. Empty text is ignored, as is a value already masked.
+func (r *Redactor) Learn(value any) {
+	learned := leafTexts(value, nil)
+	if r == nil || len(learned) == 0 {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var secrets []string
+	if r.current != nil {
+		secrets = slices.Clone(r.current.secrets)
+	}
+	before := len(secrets)
+	for _, text := range learned {
+		if !slices.Contains(secrets, text) {
+			secrets = append(secrets, text)
+		}
+	}
+	if len(secrets) == before {
+		return
+	}
+	r.current = newSecretSet(secrets)
+}
+
+func leafTexts(value any, into []string) []string {
+	switch typed := value.(type) {
+	case nil:
+		return into
+	case map[string]any:
+		for _, item := range typed {
+			into = leafTexts(item, into)
+		}
+		return into
+	case []any:
+		for _, item := range typed {
+			into = leafTexts(item, into)
+		}
+		return into
+	}
+	if text := fmt.Sprintf("%v", value); text != "" {
+		into = append(into, text)
+	}
+	return into
+}
+
+func (r *Redactor) load() *secretSet {
+	if r == nil {
+		return nil
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.current
 }
 
 func longestFirst(a, b string) int { return len(b) - len(a) }
@@ -105,10 +177,14 @@ func jsonEscape(s string, escapeHTML bool) string {
 
 // Text masks every secret occurrence in s.
 func (r *Redactor) Text(s string) string {
-	if r == nil {
+	return r.load().text(s)
+}
+
+func (set *secretSet) text(s string) string {
+	if set == nil {
 		return s
 	}
-	for _, secret := range r.secrets {
+	for _, secret := range set.secrets {
 		s = strings.ReplaceAll(s, secret, Mask)
 	}
 	return s
@@ -126,23 +202,31 @@ func (r *Redactor) Text(s string) string {
 // A value that cannot be normalized is replaced by the mask. This is a security
 // seam: it fails closed.
 func (r *Redactor) Value(v any) any {
-	if r == nil || v == nil {
+	return r.load().value(v)
+}
+
+func (set *secretSet) value(v any) any {
+	if set == nil || v == nil {
 		return v
 	}
 	tree, err := jsonTree(v)
 	if err != nil {
 		return Mask
 	}
-	return r.mask(tree)
+	return set.mask(tree)
 }
 
 // Map is Value for a map, keeping the map type. A value that cannot be
 // normalized yields an empty map rather than the original.
 func (r *Redactor) Map(values map[string]any) map[string]any {
-	if r == nil || values == nil {
+	return r.load().mapValues(values)
+}
+
+func (set *secretSet) mapValues(values map[string]any) map[string]any {
+	if set == nil || values == nil {
 		return values
 	}
-	masked, ok := r.Value(values).(map[string]any)
+	masked, ok := set.value(values).(map[string]any)
 	if !ok {
 		return map[string]any{}
 	}
@@ -152,15 +236,19 @@ func (r *Redactor) Map(values map[string]any) map[string]any {
 // Error returns err with its message masked, preserving a UserError's code so
 // the engine's user-fault classification survives.
 func (r *Redactor) Error(err error) error {
-	if r == nil || err == nil {
+	return r.load().maskError(err)
+}
+
+func (set *secretSet) maskError(err error) error {
+	if set == nil || err == nil {
 		return err
 	}
-	masked := r.Text(err.Error())
+	masked := set.text(err.Error())
 	if masked == err.Error() {
 		return err
 	}
 	if userErr, ok := spi.AsUserError(err); ok {
-		return spi.NewUserError(userErr.Code, r.Text(userErr.Message), nil)
+		return spi.NewUserError(userErr.Code, set.text(userErr.Message), nil)
 	}
 	return errors.New(masked)
 }
@@ -168,23 +256,23 @@ func (r *Redactor) Error(err error) error {
 // mask walks a decoded JSON tree in place, masking every string leaf. The tree
 // is always a fresh copy produced by jsonTree, so mutating it cannot reach the
 // caller's value.
-func (r *Redactor) mask(v any) any {
+func (set *secretSet) mask(v any) any {
 	switch value := v.(type) {
 	case string:
-		return r.Text(value)
+		return set.text(value)
 	case []any:
 		for i, item := range value {
-			value[i] = r.mask(item)
+			value[i] = set.mask(item)
 		}
 		return value
 	case map[string]any:
 		for key, item := range value {
 			encoded, isText := item.(string)
 			if key == responseBodyField && isText {
-				value[key] = r.maskBase64(encoded)
+				value[key] = set.maskBase64(encoded)
 				continue
 			}
-			value[key] = r.mask(item)
+			value[key] = set.mask(item)
 		}
 		return value
 	default:
@@ -196,14 +284,14 @@ func (r *Redactor) mask(v any) any {
 // scanned as text as well: not every value is base64 of something, and one that
 // merely fits the alphabet decodes to bytes the secret is absent from, so it
 // would otherwise ship whole.
-func (r *Redactor) maskBase64(encoded string) string {
+func (set *secretSet) maskBase64(encoded string) string {
 	decoded, err := base64.StdEncoding.DecodeString(encoded)
 	if err != nil {
-		return r.maskText(encoded)
+		return set.maskText(encoded)
 	}
-	masked := r.maskBody(decoded)
+	masked := set.maskBody(decoded)
 	if masked == string(decoded) {
-		return r.maskText(encoded)
+		return set.maskText(encoded)
 	}
 	return base64.StdEncoding.EncodeToString([]byte(masked))
 }
@@ -216,19 +304,19 @@ func (r *Redactor) maskBase64(encoded string) string {
 // has no literal form in these bytes. A body that does not parse — an event
 // stream, NDJSON, a truncated response — is masked as text against every form a
 // JSON encoder writes a secret in.
-func (r *Redactor) maskBody(decoded []byte) string {
+func (set *secretSet) maskBody(decoded []byte) string {
 	if !json.Valid(decoded) {
-		return r.maskText(string(decoded))
+		return set.maskText(string(decoded))
 	}
 	tree, err := decodeJSON(decoded)
 	if err != nil {
-		return r.maskText(string(decoded))
+		return set.maskText(string(decoded))
 	}
 	before, err := json.Marshal(tree)
 	if err != nil {
-		return r.maskText(string(decoded))
+		return set.maskText(string(decoded))
 	}
-	after, err := json.Marshal(r.mask(tree))
+	after, err := json.Marshal(set.mask(tree))
 	if err != nil {
 		return Mask
 	}
@@ -239,8 +327,8 @@ func (r *Redactor) maskBody(decoded []byte) string {
 }
 
 // maskText masks every form of every secret in body text.
-func (r *Redactor) maskText(s string) string {
-	for _, form := range r.bodyForms {
+func (set *secretSet) maskText(s string) string {
+	for _, form := range set.bodyForms {
 		s = strings.ReplaceAll(s, form, Mask)
 	}
 	return s
