@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -107,6 +108,10 @@ func (n *RequestNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 		n.Data.Timeout,
 	)
 	if err != nil {
+		// The HTTP call limit refused the request before it was sent.
+		if limitErr, ok := errors.AsType[*spi.UserError](err); ok {
+			return n.createErrorResult(ctx.Inputs, limitErr, time.Since(startTime)), limitErr
+		}
 		// A transport failure targets a user-configured URL (DNS, connection,
 		// TLS, timeout) — the user's endpoint, not a runner fault. Classify it
 		// into a clean, user-facing result and let it propagate as a UserError;
@@ -301,7 +306,7 @@ func (n *RequestNode) makeRequestAndReadBody(
 		req.ContentLength = int64(len(payload))
 	}
 
-	client := nodeHTTPClient()
+	client := recordingClient(n.GetID(), n.Data.URL, false)
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, nil, err

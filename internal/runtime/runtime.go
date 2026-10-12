@@ -244,6 +244,7 @@ func (r *Runtime) executeClaimedJob(ctx context.Context, active *activeJob) (Out
 		runner.WithDynamicVars(dynamicvars.New(active.job.ExecutionID.String())),
 		runner.WithSecretInputKeys(active.job.SecretInputKeys),
 		runner.WithContext(spi.WithJobToken(ctx, active.job.JobToken)),
+		runner.WithHTTPCallLimit(active.job.MaxHTTPCallsPerExecution),
 	)
 	if execErr != nil {
 		errorMsg := execErr.Error()

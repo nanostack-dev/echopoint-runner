@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"maps"
@@ -10,6 +11,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/nanostack-dev/echopoint-runner/pkg/extractors"
+	"github.com/nanostack-dev/echopoint-runner/pkg/httpcall"
 	"github.com/nanostack-dev/echopoint-runner/pkg/node"
 	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 )
@@ -438,8 +440,12 @@ func (engine *FlowEngine) runNode(
 		StartedAt:   startedAt,
 	})
 
+	nodeCtx, calls := engine.nodeCallContext()
 	executor := chainMiddleware(evalExecutor(n), engine.middleware)
-	result, err := executor(engine.buildExecutionContext(inputs, outputView))
+	result, err := executor(engine.buildExecutionContext(nodeCtx, inputs, outputView))
+	if setter, ok := result.(httpCallSetter); ok && calls != nil {
+		setter.SetHTTPCalls(calls.Groups())
+	}
 	finishedAt := time.Now()
 	if result != nil && !result.GetExecutedAt().IsZero() {
 		finishedAt = result.GetExecutedAt()
@@ -637,14 +643,34 @@ func (engine *FlowEngine) propagateNodeOutputs(
 		Msg("Node outputs stored")
 }
 
+type httpCallSetter interface {
+	SetHTTPCalls(groups []spi.HTTPCallGroup)
+}
+
+// nodeCallContext returns the context a node runs on. A top-level node gets
+// its own HTTP call collector; a node of a loop, poll or module body already
+// runs on its top-level node's context, so its calls join that node's result.
+func (engine *FlowEngine) nodeCallContext() (context.Context, *httpcall.Collector) {
+	ctx := engine.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if httpcall.CollectorFrom(ctx) != nil {
+		return ctx, nil
+	}
+	collector := httpcall.NewCollector()
+	return httpcall.WithCollector(ctx, collector), collector
+}
+
 // buildExecutionContext assembles the per-node ExecutionContext, propagating the
-// flow's context, module resolver/executor, and dynamic vars.
+// node's context, module resolver/executor, and dynamic vars.
 func (engine *FlowEngine) buildExecutionContext(
+	ctx context.Context,
 	inputs map[string]any,
 	outputView spi.OutputView,
 ) spi.ExecutionContext {
 	return spi.ExecutionContext{
-		Ctx:            engine.ctx,
+		Ctx:            ctx,
 		Inputs:         inputs,
 		FlowInputs:     outputView.Node(""),
 		AllOutputs:     outputView,
@@ -652,7 +678,7 @@ func (engine *FlowEngine) buildExecutionContext(
 		ModuleExecutor: moduleExecutor{
 			resolver:    engine.moduleResolver,
 			callStack:   engine.moduleCallStack,
-			ctx:         engine.ctx,
+			ctx:         ctx,
 			dynamicVars: engine.dynamicVars,
 		},
 		DynamicVars: engine.dynamicVars,

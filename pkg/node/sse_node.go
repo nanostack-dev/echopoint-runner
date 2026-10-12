@@ -183,9 +183,12 @@ func (n *SseNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 
 	// No client-level timeout: streaming is bounded by streamCtx instead, so a
 	// long-lived stream is not aborted mid-read by an http.Client deadline.
-	client := nodeHTTPClient()
+	client := recordingClient(n.GetID(), n.Data.URL, true)
 	resp, err := client.Do(req)
 	if err != nil {
+		if userErr, ok := spi.AsUserError(err); ok {
+			return n.createErrorResult(ctx.Inputs, sseExchange{Method: method, URL: url}, userErr, startTime), userErr
+		}
 		// The overall deadline can elapse during the connect/header phase (a slow
 		// producer that has not yet sent the status line). That is the configured
 		// timeout_ms stop condition, not a node failure — return a clean,
@@ -497,9 +500,6 @@ func (n *SseNode) createErrorResult(
 ) spi.AnyResult {
 	errMsg := err.Error()
 	errCode := "SSE_FAILED"
-
-	// SSE retains its result code/message policy. The engine owns the terminal
-	// failure log and severity after this error propagates.
 
 	base := failedNodeBase(n.BaseNode, inputs, err, failureDetails{Kind: spi.KindSse, Code: errCode, Message: errMsg})
 	base.AssertionResults = exchange.AssertionResults

@@ -69,3 +69,8 @@ func CreateResponseBackedErrorResultForTest(
 		}, nil, err, duration,
 	)
 }
+
+// RecordingClientForTest exposes the HTTP call recording client.
+func RecordingClientForTest(nodeID, urlTemplate string) *http.Client {
+	return recordingClient(nodeID, urlTemplate, false)
+}

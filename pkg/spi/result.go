@@ -55,7 +55,14 @@ type BaseExecutionResult struct {
 	// it uniformly for every node kind. The JSON tag is a wire contract consumed
 	// by echopoint.
 	AssertionResults []AssertionResult `json:"assertion_results,omitempty"`
+
+	// HTTPCalls holds every HTTP call the node sent, the calls of its loop, poll
+	// and module bodies included. The engine fills it for top-level nodes.
+	HTTPCalls []HTTPCallGroup `json:"http_calls,omitempty"`
 }
+
+// SetHTTPCalls replaces the node's HTTP call groups.
+func (b *BaseExecutionResult) SetHTTPCalls(groups []HTTPCallGroup) { b.HTTPCalls = groups }
 
 // GetNodeID returns the node ID.
 func (b *BaseExecutionResult) GetNodeID() string { return b.NodeID }
