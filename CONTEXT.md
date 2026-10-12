@@ -13,6 +13,8 @@
 | Ephemeral runner | Short-lived execution initiated by a caller with flow-level authentication; it does not claim queued jobs. |
 | Observer | Receives execution progress without becoming a control-flow decision hook. |
 | User error | Flow-author error represented by `spi.UserError`; the engine reports it at debug rather than as a runner fault. |
+| Secret input | A flow input named in `secret_input_keys`; its value is replaced by `***` in every result, progress event and error the run reports. See [secret redaction](docs/technical/secret-redaction.md). |
+| Secret output | A node output declared with `"secret": true`; from the moment the node extracts it, its value is masked like a secret input wherever it appears, including module outputs and downstream inputs that carry it. |
 | HTTP call | One outbound HTTP request a node sent during an execution; each loop iteration, poll attempt and retry is its own call. Control-plane reads such as webhook-wait polling are not HTTP calls. A top-level node's result lists its calls, its bodies' included, in `http_calls`. |
 | HTTP call limit | The most HTTP calls one execution may send (`max_http_calls_per_execution`). The node whose call would pass it fails with `HTTP_CALL_LIMIT_EXCEEDED`. |
 

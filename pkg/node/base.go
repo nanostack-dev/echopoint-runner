@@ -5,10 +5,14 @@ import (
 	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 )
 
-// Output represents a named output with an associated extractor.
+// Output represents a named output with an associated extractor. A secret
+// output's value is masked in every result and progress event reported after
+// the node extracts it, wherever the value appears, including module outputs
+// that re-export it.
 type Output struct {
 	Name      string                  `json:"name"`
 	Extractor extractors.AnyExtractor `json:"extractor"`
+	Secret    bool                    `json:"secret,omitempty"`
 }
 
 // BaseNode contains common fields and behavior shared across all node types.

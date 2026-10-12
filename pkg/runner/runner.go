@@ -86,9 +86,10 @@ func WithHTTPCallLimit(limit int) Option {
 // engine. The returned result is the single source of truth; callers serialize
 // it as their transport requires.
 //
-// Run is also the boundary where secret input values are masked: everything the
+// Run is also the boundary where secret values are masked: everything the
 // engine hands back — the flow result and every progress event — passes through
-// the redactor before any caller sees it.
+// the redactor before any caller sees it. The redactor starts with the secret
+// input values and learns each secret output value as a node extracts it.
 //
 // Every HTTP call of the run counts against the limit set by
 // WithHTTPCallLimit, whichever node or nested flow sends it.
@@ -105,6 +106,7 @@ func Run(flowDef flow.Flow, inputs map[string]any, opts ...Option) (*spi.FlowExe
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	ctx = redact.WithLearner(ctx, redactor)
 
 	result, err := engine.ExecuteFlowDefinition(flowDef, mergedInputs, &engine.Options{
 		Observer:        redactingObserver{inner: options.Observer, redactor: redactor},
@@ -130,7 +132,11 @@ func runtimeRedactor(
 			SecretKeys: referencedFlow.SecretInputKeys,
 		})
 	}
-	return redact.NewFromSources(sources...)
+	if redactor := redact.NewFromSources(sources...); redactor != nil {
+		return redactor
+	}
+	// A run without secret inputs can still learn secret output values.
+	return &redact.Redactor{}
 }
 
 // redactingObserver masks secret values in the results carried by progress

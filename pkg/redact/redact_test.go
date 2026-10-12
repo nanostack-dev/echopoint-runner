@@ -236,3 +236,40 @@ func TestValue_FailsClosedOnAnUninspectableValue(t *testing.T) {
 		t.Errorf("uninspectable map should be dropped, got %v", got)
 	}
 }
+
+func TestLearn_MasksALearnedValueFromThenOn(t *testing.T) {
+	redactor := &redact.Redactor{}
+	if got := redactor.Text("token=minted"); got != "token=minted" {
+		t.Fatalf("nothing learned yet, got %q", got)
+	}
+	redactor.Learn("minted")
+	if got := redactor.Text("token=minted"); got != "token="+redact.Mask {
+		t.Errorf("learned value should be masked, got %q", got)
+	}
+}
+
+func TestLearn_AddsEveryLeafOfAStructuredValue(t *testing.T) {
+	redactor := &redact.Redactor{}
+	redactor.Learn(map[string]any{"user": "u-secret", "keys": []any{"k-secret"}})
+	got := redactor.Text("u-secret k-secret")
+	if got != redact.Mask+" "+redact.Mask {
+		t.Errorf("every leaf should be masked, got %q", got)
+	}
+}
+
+func TestLearn_KeepsSecretsKnownAtConstruction(t *testing.T) {
+	redactor := redact.New(map[string]any{"apiKey": "input-secret"}, []string{"apiKey"})
+	redactor.Learn("output-secret")
+	got := redactor.Text("input-secret output-secret")
+	if got != redact.Mask+" "+redact.Mask {
+		t.Errorf("both secrets should be masked, got %q", got)
+	}
+}
+
+func TestLearn_IgnoresANilRedactor(t *testing.T) {
+	var redactor *redact.Redactor
+	redactor.Learn("value")
+	if got := redactor.Text("value"); got != "value" {
+		t.Errorf("nil redactor stays a no-op, got %q", got)
+	}
+}

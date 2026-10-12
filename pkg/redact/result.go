@@ -23,27 +23,31 @@ func (m *maskedResult) MarshalJSON() ([]byte, error) {
 // Result returns a masked copy of result. The original is left untouched: while
 // a flow runs it is still the engine's live value, feeding downstream nodes.
 func (r *Redactor) Result(result spi.AnyResult) spi.AnyResult {
-	if r == nil || result == nil {
+	return r.load().result(result)
+}
+
+func (set *secretSet) result(result spi.AnyResult) spi.AnyResult {
+	if set == nil || result == nil {
 		return result
 	}
 	base := spi.BaseExecutionResult{
 		NodeID:      result.GetNodeID(),
 		DisplayName: result.GetDisplayName(),
 		NodeType:    result.GetNodeType(),
-		Inputs:      r.Map(result.GetInputs()),
-		Outputs:     r.Map(result.GetOutputs()),
-		Error:       r.Error(result.GetError()),
+		Inputs:      set.mapValues(result.GetInputs()),
+		Outputs:     set.mapValues(result.GetOutputs()),
+		Error:       set.maskError(result.GetError()),
 		ExecutedAt:  result.GetExecutedAt(),
 	}
-	return &maskedResult{BaseExecutionResult: base, encoded: r.encodeMasked(result, base)}
+	return &maskedResult{BaseExecutionResult: base, encoded: set.encodeMasked(result, base)}
 }
 
 // encodeMasked serializes the masked form of result. Any failure falls back to
 // the masked base fields alone: losing the node-kind detail is the closed side
 // of this seam, reporting the unmasked original is not.
-func (r *Redactor) encodeMasked(result spi.AnyResult, base spi.BaseExecutionResult) json.RawMessage {
+func (set *secretSet) encodeMasked(result spi.AnyResult, base spi.BaseExecutionResult) json.RawMessage {
 	if tree, err := jsonTree(result); err == nil {
-		if encoded, marshalErr := json.Marshal(r.mask(tree)); marshalErr == nil {
+		if encoded, marshalErr := json.Marshal(set.mask(tree)); marshalErr == nil {
 			return encoded
 		}
 	}
@@ -57,18 +61,19 @@ func (r *Redactor) encodeMasked(result spi.AnyResult, base spi.BaseExecutionResu
 // FlowResult returns a masked copy of the flow result and of every node result
 // it carries.
 func (r *Redactor) FlowResult(result *spi.FlowExecutionResult) *spi.FlowExecutionResult {
-	if r == nil || result == nil {
+	set := r.load()
+	if set == nil || result == nil {
 		return result
 	}
 	masked := *result
 	masked.ExecutionResults = make(map[string]spi.AnyResult, len(result.ExecutionResults))
 	for nodeID, nodeResult := range result.ExecutionResults {
-		masked.ExecutionResults[nodeID] = r.Result(nodeResult)
+		masked.ExecutionResults[nodeID] = set.result(nodeResult)
 	}
-	masked.FinalOutputs = r.Map(result.FinalOutputs)
-	masked.Error = r.Error(result.Error)
+	masked.FinalOutputs = set.mapValues(result.FinalOutputs)
+	masked.Error = set.maskError(result.Error)
 	if result.ErrorMsg != nil {
-		maskedMsg := r.Text(*result.ErrorMsg)
+		maskedMsg := set.text(*result.ErrorMsg)
 		masked.ErrorMsg = &maskedMsg
 	}
 	return &masked

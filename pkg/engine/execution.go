@@ -13,6 +13,7 @@ import (
 	"github.com/nanostack-dev/echopoint-runner/pkg/extractors"
 	"github.com/nanostack-dev/echopoint-runner/pkg/httpcall"
 	"github.com/nanostack-dev/echopoint-runner/pkg/node"
+	"github.com/nanostack-dev/echopoint-runner/pkg/redact"
 	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 )
 
@@ -446,6 +447,7 @@ func (engine *FlowEngine) runNode(
 	if setter, ok := result.(httpCallSetter); ok && calls != nil {
 		setter.SetHTTPCalls(calls.Groups())
 	}
+	learnSecretOutputs(nodeCtx, n, result)
 	finishedAt := time.Now()
 	if result != nil && !result.GetExecutedAt().IsZero() {
 		finishedAt = result.GetExecutedAt()
@@ -488,6 +490,24 @@ func (engine *FlowEngine) runNode(
 	})
 
 	return result, err
+}
+
+// learnSecretOutputs adds the values of the node's secret outputs to the run's
+// redaction before the node's result is reported, so the node's own response
+// and every later report carrying them are masked.
+func learnSecretOutputs(ctx context.Context, n node.AnyNode, result spi.AnyResult) {
+	if result == nil {
+		return
+	}
+	produced := result.GetOutputs()
+	for _, output := range n.GetOutputs() {
+		if !output.Secret {
+			continue
+		}
+		if value, ok := produced[output.Name]; ok {
+			redact.Learn(ctx, value)
+		}
+	}
 }
 
 // evalExecutor wraps a node's Execute so the engine-level assertion/output pass
