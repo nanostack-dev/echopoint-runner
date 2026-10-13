@@ -19,12 +19,13 @@ Redaction works by value, not by field. Every string in a report that contains a
 - A module output bound to a child's secret output (`output_bindings: {"token": "mint.jwt"}`) is masked in the module result, its `child_final_outputs` and its consumers, without its own flag: it carries the same value.
 - A map or array output marks each of its leaves secret.
 
-The engine adds a secret output's value before it reports the node that extracted it ([`learnSecretOutputs`](../../pkg/engine/execution.go)). The run's redactor travels in the node context, so module, loop and poll bodies add to the same set.
+The engine adds a secret output's value before it reports the node that extracted it ([`learnSecretOutputs`](../../pkg/engine/execution.go)). The run's redactor travels in the node context, so module, loop and poll bodies add to the same set. A node that fails before reporting a secret output, because another output or an assertion template erred, still has the value extracted from its response and added.
 
 ## Limitations
 
-- Masking matches text. A short or common secret value such as `1` or `true` masks every occurrence of that text in the run's reports. Only flag outputs that hold credentials or tokens.
+- Masking matches text. A short or common secret value such as `1` or `true` masks every occurrence of that text in the run's reports. Only flag outputs that hold credentials or tokens. The fields the runner writes itself (`node_id`, `node_type`, `run_when`, `error_code`, `executed_at`) are never masked, so the report still decodes. A secret found only in the base64 text of a `response_body`, not in its bytes, replaces the whole body.
 - Inside JSON structures only string leaves are scanned. A numeric secret is masked in text such as a body or an error, but not as a JSON number.
+- Only the value's exact text and its JSON-escaped forms are matched. A server that echoes it URL-encoded, base64-encoded or split, such as a JWT's segments, is not caught.
 - A value is masked from the moment it becomes secret. A secret output value that already appeared in an earlier report, for example one a server returned before the flow extracted it, is not masked retroactively.
 - Results that were stored before a value was declared secret keep the value. Removing it means purging those results in the control plane, and the credential should be rotated.
 

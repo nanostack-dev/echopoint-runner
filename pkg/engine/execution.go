@@ -500,11 +500,24 @@ func learnSecretOutputs(ctx context.Context, n node.AnyNode, result spi.AnyResul
 		return
 	}
 	produced := result.GetOutputs()
+	var response extractors.ResponseContext
+	if provider, ok := result.(node.AssertionContextProvider); ok {
+		response = provider.AssertionContext()
+	}
 	for _, output := range n.GetOutputs() {
 		if !output.Secret {
 			continue
 		}
 		if value, ok := produced[output.Name]; ok {
+			redact.Learn(ctx, value)
+			continue
+		}
+		// A node that failed before reporting this output (another extractor or
+		// an assertion template erred) still reports the response carrying it.
+		if response == nil {
+			continue
+		}
+		if value, err := output.Extractor.Extract(response); err == nil {
 			redact.Learn(ctx, value)
 		}
 	}
