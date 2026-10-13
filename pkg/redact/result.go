@@ -2,6 +2,7 @@ package redact
 
 import (
 	"encoding/json"
+	"maps"
 
 	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 )
@@ -47,7 +48,12 @@ func (set *secretSet) result(result spi.AnyResult) spi.AnyResult {
 // of this seam, reporting the unmasked original is not.
 func (set *secretSet) encodeMasked(result spi.AnyResult, base spi.BaseExecutionResult) json.RawMessage {
 	if tree, err := jsonTree(result); err == nil {
-		if encoded, marshalErr := json.Marshal(set.mask(tree)); marshalErr == nil {
+		identity := identityFields(tree)
+		masked := set.mask(tree)
+		if fields, ok := masked.(map[string]any); ok {
+			maps.Copy(fields, identity)
+		}
+		if encoded, marshalErr := json.Marshal(masked); marshalErr == nil {
 			return encoded
 		}
 	}
@@ -77,4 +83,22 @@ func (r *Redactor) FlowResult(result *spi.FlowExecutionResult) *spi.FlowExecutio
 		masked.ErrorMsg = &maskedMsg
 	}
 	return &masked
+}
+
+// identityFields copies the fields the runner writes itself, never a target or
+// a flow. Masking them could only corrupt the report: a short secret such as
+// "1" would rewrite executed_at, and the control plane could no longer decode it.
+func identityFields(tree any) map[string]any {
+	fields, ok := tree.(map[string]any)
+	if !ok {
+		return nil
+	}
+	names := []string{"node_id", "node_type", "run_when", "error_code", "executed_at"}
+	identity := make(map[string]any, len(names))
+	for _, name := range names {
+		if value, present := fields[name]; present {
+			identity[name] = value
+		}
+	}
+	return identity
 }

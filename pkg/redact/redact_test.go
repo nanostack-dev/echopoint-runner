@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/nanostack-dev/echopoint-runner/pkg/redact"
 	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
@@ -159,7 +160,8 @@ func TestValue_MasksTheBase64ResponseBody(t *testing.T) {
 
 // Not every response_body is base64 of anything. A value that merely fits the
 // base64 alphabet at a length base64 accepts decodes to bytes the secret is
-// absent from, so the encoded string itself has to be scanned too.
+// absent from, so the encoded string itself has to be scanned too. The body is
+// replaced whole so it still decodes.
 func TestValue_MasksASecretInAResponseBodyThatOnlyLooksLikeBase64(t *testing.T) {
 	const secret = "absklive12cd" // base64 alphabet, length divisible by 4
 	redactor := redact.New(map[string]any{"token": secret}, []string{"token"})
@@ -168,8 +170,53 @@ func TestValue_MasksASecretInAResponseBodyThatOnlyLooksLikeBase64(t *testing.T) 
 	if !ok {
 		t.Fatal("expected a map back")
 	}
-	if masked["response_body"] != redact.Mask {
-		t.Errorf("plain text in response_body shipped unmasked: %v", masked["response_body"])
+	if want := base64.StdEncoding.EncodeToString([]byte(redact.Mask)); masked["response_body"] != want {
+		t.Errorf("plain text in response_body should be replaced by the encoded mask, got %v", masked["response_body"])
+	}
+}
+
+// A short secret appears inside base64 text by chance. Masking it there would
+// leave a response_body that no longer decodes.
+func TestValue_KeepsAResponseBodyDecodableWhenOnlyItsEncodingHoldsAShortSecret(t *testing.T) {
+	redactor := redact.New(map[string]any{"code": "J"}, []string{"code"})
+	body := base64.StdEncoding.EncodeToString([]byte(`{"ok":true}`)) // eyJvayI6dHJ1ZX0=, no J in the bytes
+
+	masked, ok := redactor.Value(map[string]any{"response_body": body}).(map[string]any)
+	if !ok {
+		t.Fatal("expected a map back")
+	}
+	if _, err := base64.StdEncoding.DecodeString(masked["response_body"].(string)); err != nil {
+		t.Errorf("response_body must stay valid base64, got %v: %v", masked["response_body"], err)
+	}
+}
+
+// A short secret such as "1" also occurs in fields the runner writes itself.
+// Masking those would leave a result the control plane cannot decode.
+func TestResult_KeepsTheFieldsTheRunnerWritesWhenASecretIsShort(t *testing.T) {
+	redactor := &redact.Redactor{}
+	redactor.Learn("1")
+	code := "OUTPUT_EXTRACTION_FAILED"
+	result := &spi.BaseExecutionResult{
+		NodeID:     "mint1",
+		NodeType:   "request",
+		ErrorCode:  &code,
+		Outputs:    map[string]any{"pin": "1"},
+		ExecutedAt: time.Date(2026, 10, 11, 10, 11, 1, 0, time.UTC),
+	}
+
+	encoded, err := json.Marshal(redactor.Result(result))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded spi.BaseExecutionResult
+	if decodeErr := json.Unmarshal(encoded, &decoded); decodeErr != nil {
+		t.Fatalf("masked result must decode: %v\n%s", decodeErr, encoded)
+	}
+	if decoded.NodeID != "mint1" || !decoded.ExecutedAt.Equal(result.ExecutedAt) {
+		t.Errorf("runner-written fields changed: %s", encoded)
+	}
+	if decoded.Outputs["pin"] != redact.Mask {
+		t.Errorf("the secret output should still be masked: %s", encoded)
 	}
 }
 

@@ -183,3 +183,27 @@ func TestRun_MasksASecretOutputReExportedByAModule(t *testing.T) {
 		t.Errorf("module consumer should send the real token, server received %q", got)
 	}
 }
+
+// The mint response carries the token, but a sibling output fails to extract,
+// so the node fails before reporting jwt. Its response is still reported.
+func TestRun_MasksASecretOutputWhenAnotherOutputOfItsNodeFails(t *testing.T) {
+	server := newTokenServer(t)
+	observer := &recordingObserver{}
+	flowDef := parseFlow(t, `{"name":"token","nodes":[
+		{"id":"mint","type":"request","data":{"method":"POST","url":"{{baseURL}}/token"},
+		 "outputs":[
+			{"name":"jwt","secret":true,"extractor":{"type":"json_path","path":"$.jwt"}},
+			{"name":"absent","extractor":{"type":"json_path","path":"$.absent"}}
+		 ]}
+	],"edges":[]}`, "baseURL")
+
+	result, err := runner.Run(flowDef, map[string]any{"baseURL": server.URL}, runner.WithObserver(observer))
+	if err == nil || result == nil || result.Success {
+		t.Fatalf("the flow should report a failure on the absent output, err=%v", err)
+	}
+	for name, value := range map[string]any{"flow result": result, "node.finished event": observer.nodeResults} {
+		if encoded := encodeJSON(t, value); strings.Contains(encoded, mintedToken) {
+			t.Errorf("%s leaked the secret output of a failed node: %s", name, encoded)
+		}
+	}
+}

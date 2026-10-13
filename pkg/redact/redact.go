@@ -290,10 +290,15 @@ func (set *secretSet) maskBase64(encoded string) string {
 		return set.maskText(encoded)
 	}
 	masked := set.maskBody(decoded)
-	if masked == string(decoded) {
-		return set.maskText(encoded)
+	if masked != string(decoded) {
+		return base64.StdEncoding.EncodeToString([]byte(masked))
 	}
-	return base64.StdEncoding.EncodeToString([]byte(masked))
+	if set.maskText(encoded) == encoded {
+		return encoded
+	}
+	// Masking inside the encoded text would leave a body nobody can decode, so
+	// the whole body is replaced instead.
+	return base64.StdEncoding.EncodeToString([]byte(Mask))
 }
 
 // maskBody masks a decoded response body, returning it unchanged when nothing
