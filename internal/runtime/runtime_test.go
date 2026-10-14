@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -213,4 +214,53 @@ func TestClaimedJobLimitFailsTheCallPastIt(t *testing.T) {
 	assert.Equal(t, jobStatusFailed, outcome.Status)
 	require.NotNil(t, completion.ErrorMessage)
 	assert.Equal(t, "The execution reached its limit of 1 HTTP calls", *completion.ErrorMessage)
+}
+
+func TestRejectedLeaseStopsTheRunBeforeItsNextRequest(t *testing.T) {
+	var targetHits atomic.Int32
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		targetHits.Add(1)
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer target.Close()
+
+	jobID := uuid.New()
+	var completions atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/heartbeat"):
+			_, _ = w.Write([]byte(`[{"job_id":"` + jobID.String() + `","status":"rejected"}]`))
+		case strings.HasSuffix(r.URL.Path, "/complete"):
+			completions.Add(1)
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			_, _ = w.Write([]byte(`{}`))
+		}
+	}))
+	defer server.Close()
+
+	config := testConfig(server.URL)
+	config.HeartbeatInterval = 20 * time.Millisecond
+	job := &controlplane.ClaimedJob{
+		JobID:       jobID,
+		ExecutionID: uuid.New(),
+		FlowDefinition: json.RawMessage(`{
+			"name": "Wait then call", "version": "1.0",
+			"nodes": [
+				{"id": "wait", "type": "delay", "data": {"duration": 10000}},
+				{"id": "call", "type": "request", "data": {"method": "POST", "url": "` + target.URL + `/orders"}}
+			],
+			"edges": [{"id": "e", "source": "wait", "target": "call"}]
+		}`),
+		Inputs: map[string]any{},
+	}
+
+	started := time.Now()
+	outcome, err := RunOne(context.Background(), config, "job-token", uuid.New(), job)
+
+	require.Error(t, err)
+	assert.Equal(t, jobStatusFailed, outcome.Status)
+	assert.Less(t, time.Since(started), 5*time.Second)
+	assert.Zero(t, targetHits.Load())
+	assert.Zero(t, completions.Load())
 }

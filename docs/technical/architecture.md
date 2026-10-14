@@ -4,6 +4,8 @@ The live engine is in `pkg/engine`, `pkg/node` and `pkg/flow`, supported by `pkg
 
 `cmd/runner` starts a long-lived process by default, with `serve` as its explicit equivalent; `ephemeral` invokes `pkg/ephemeral`. The long-lived path reads [configuration](../../internal/config/config.go), runs `internal/runtime`, and talks to the control plane through `internal/controlplane`. The CLI embeds the execution library rather than starting the runner binary.
 
+The runtime heartbeats every claimed Job. Each Job runs on its own cancellable context; when a heartbeat answers `rejected` (the lease expired or the control plane already failed the execution), the runtime cancels that context, so in-flight HTTP calls and delays abort and later requests are never sent. A rejected Job sends no completion.
+
 ```mermaid
 flowchart LR
     CP[Echopoint control plane] --> RT[Long-lived runtime]
