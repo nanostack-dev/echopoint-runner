@@ -37,6 +37,9 @@ type executionState struct {
 	// dead (or whose predecessors were all skipped/failed) is itself skipped,
 	// cascading the routing decision through the untaken subtree.
 	deadEdges map[string]map[string]bool
+	// routedAway holds the skipped nodes a branch routed every path away from,
+	// so an always node below them is skipped too instead of running as cleanup.
+	routedAway map[string]bool
 }
 
 type nodeRunResult struct {
@@ -71,6 +74,7 @@ func (engine *FlowEngine) executeNodes(
 		skippedNodes:    make(map[string]bool),
 		failureCause:    make(map[string]string),
 		deadEdges:       make(map[string]map[string]bool),
+		routedAway:      make(map[string]bool),
 	}
 
 	state.allOutputs[""] = initialInputs
@@ -205,6 +209,9 @@ func (engine *FlowEngine) runAlwaysPhase(state *executionState) {
 	scheduler := newPhaseScheduler(engine, state)
 	for {
 		engine.startReadyOnSuccessNodes(scheduler, state)
+		if engine.skipRoutedAwayAlwaysNodes(scheduler, state) {
+			continue
+		}
 		for _, readyNode := range scheduler.ready(spi.RunWhenAlways) {
 			scheduler.start(readyNode)
 		}
@@ -223,6 +230,37 @@ func (engine *FlowEngine) runAlwaysPhase(state *executionState) {
 		}
 		engine.recordAlwaysResults([]nodeRunResult{engine.settleAlwaysSkip(finished, state)}, state)
 	}
+}
+
+// skipRoutedAwayAlwaysNodes skips the ready always nodes a branch routed away
+// from, reporting whether it skipped any.
+func (engine *FlowEngine) skipRoutedAwayAlwaysNodes(scheduler *phaseScheduler, state *executionState) bool {
+	skipped := false
+	for _, readyNode := range scheduler.ready(spi.RunWhenAlways) {
+		if engine.isRoutedAway(readyNode, state) {
+			engine.recordSkippedNode(readyNode, state)
+			skipped = true
+		}
+	}
+	return skipped
+}
+
+// isRoutedAway reports whether every incoming path of n was routed away by a
+// branch: each predecessor's edge to n is dead, or the predecessor was itself
+// routed away.
+func (engine *FlowEngine) isRoutedAway(n node.AnyNode, state *executionState) bool {
+	predecessors := engine.nodeEdgeSource[n]
+	if len(predecessors) == 0 {
+		return false
+	}
+	nodeID := n.GetID()
+	for _, predecessor := range predecessors {
+		predID := predecessor.GetID()
+		if !state.deadEdges[predID][nodeID] && !state.routedAway[predID] {
+			return false
+		}
+	}
+	return true
 }
 
 // settleAlwaysSkip turns an always node that ran without its inputs into a
@@ -329,6 +367,9 @@ func (engine *FlowEngine) recordAlwaysResults(completed []nodeRunResult, state *
 		}
 		if nodeResult.result != nil {
 			engine.propagateNodeOutputs(nodeResult.node, nodeResult.result, state)
+		}
+		if nodeResult.err == nil {
+			engine.recordRoutingDecision(nodeResult.node, nodeResult.result, state)
 		}
 	}
 
@@ -742,6 +783,9 @@ func (engine *FlowEngine) recordSkippedNode(
 	result := engine.createSkippedNodeResult(n, nil, state)
 	state.result.ExecutionResults[n.GetID()] = result
 	state.skippedNodes[n.GetID()] = true
+	if engine.isRoutedAway(n, state) {
+		state.routedAway[n.GetID()] = true
+	}
 	engine.observer.NodeFinished(NodeFinishedEvent{
 		NodeID:      n.GetID(),
 		DisplayName: n.GetDisplayName(),
@@ -807,7 +851,8 @@ func (engine *FlowEngine) resolveBlockedAlwaysNodes(scheduler *phaseScheduler, s
 		if engine.hasRemainingAlwaysPredecessor(currentNode, state) {
 			continue
 		}
-		if len(engine.collectMissingInputs(currentNode, outputView)) == 0 {
+		if !engine.isRoutedAway(currentNode, state) &&
+			len(engine.collectMissingInputs(currentNode, outputView)) == 0 {
 			toRun = append(toRun, currentNode)
 		} else {
 			toSkip = append(toSkip, currentNode)

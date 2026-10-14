@@ -275,6 +275,71 @@ func TestBranchRouting_TreeShapedSkipsSubtree(t *testing.T) {
 	requireSkipped(t, result.ExecutionResults["nodeB1"])
 }
 
+// A branch that runs in the always phase, after a main-phase failure, routes
+// only to the arm it chose: the other arm and its subtree are skipped, and a
+// join of both arms still runs.
+func TestBranchRouting_AlwaysPhaseBranchRoutesOnlyToChosenArm(t *testing.T) {
+	boom := newDataContractMockNode("boom", nil, nil)
+	boom.shouldError = true
+	router := alwaysBranchForTest(t, "router", "armA", "armB")
+	armA := newDataContractMockNode("armA", nil, nil)
+	armB := newDataContractMockNode("armB", nil, nil)
+	armB1 := newDataContractMockNode("armB1", nil, nil)
+	join := newDataContractMockNode("join", nil, nil)
+	for _, always := range []*DataContractMockNode{armA, armB, armB1, join} {
+		always.runWhen = spi.RunWhenAlways
+	}
+
+	flowInstance := flow.Flow{
+		Name:          "always-branch",
+		Version:       "1.0",
+		InitialInputs: map[string]any{"route": "a"},
+		Nodes:         []node.AnyNode{boom, router, armA, armB, armB1, join},
+		Edges: []edge.Edge{
+			successEdge("boom", "router"),
+			successEdge("router", "armA"),
+			successEdge("router", "armB"),
+			successEdge("armB", "armB1"),
+			successEdge("armA", "join"),
+			successEdge("armB1", "join"),
+		},
+	}
+
+	result, err := engine.ExecuteFlowDefinition(flowInstance, map[string]any{"route": "a"}, nil)
+	require.Error(t, err, "boom fails the flow")
+
+	assert.NotNil(t, armA.executedAt, "the chosen arm runs")
+	assert.Nil(t, armB.executedAt, "the arm routed away must not run")
+	assert.Nil(t, armB1.executedAt, "the routed-away arm's subtree must not run")
+	assert.NotNil(t, join.executedAt, "a join of both arms runs")
+	requireSkipped(t, result.ExecutionResults["armB"])
+	armBResult, _ := skippedBaseOf(result.ExecutionResults["armB"])
+	assert.Equal(t, "routed_away_by_branch", *armBResult.SkipReason)
+	requireSkipped(t, result.ExecutionResults["armB1"])
+}
+
+func alwaysBranchForTest(t *testing.T, id, targetA, targetB string) node.AnyNode {
+	t.Helper()
+	raw := `{
+      "id": "` + id + `",
+      "type": "branch",
+      "run_when": "always",
+      "data": {
+        "target": "{{route}}",
+        "cases": [
+          {"when": {"extractor_type": "body", "extractor_data": {}, "operator_type": "equals",
+                    "operator_data": {"value": "a"}}, "target": "` + targetA + `"},
+          {"when": {"extractor_type": "body", "extractor_data": {}, "operator_type": "equals",
+                    "operator_data": {"value": "b"}}, "target": "` + targetB + `"}
+        ]
+      }
+    }`
+	parsed, err := node.UnmarshalNode([]byte(raw))
+	require.NoError(t, err)
+	require.Equal(t, spi.RunWhenAlways, parsed.GetRunWhen())
+	return parsed
+}
+
 // innerBranchForTest builds a branch routing on initial input {{inner}}: "x" ->
 // targetX, else targetY (default).
 func innerBranchForTest(t *testing.T, id, targetX, targetY string) node.AnyNode {
