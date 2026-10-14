@@ -30,6 +30,10 @@ A body flagged secret therefore masks its long leaves wherever they appear, keep
 
 The engine adds a secret output's value before it reports the node that extracted it ([`learnSecretOutputs`](../../pkg/engine/execution.go)). The run's redactor travels in the node context, so module, loop and poll bodies add to the same set. A node that fails before reporting a secret output, because another output or an assertion template erred, still has the value extracted from its response and added.
 
+## Logs
+
+Log lines are written outside the reporting boundary, so no producer logs a resolved value. A node failure message can still quote one: a failed assertion reports `expected=… actual=…`. The engine's `Node execution failed` line, the loop's `Loop iteration failed; continuing` line and the poll's `Poll body execution failed` and `Poll exit condition not yet met` lines therefore mask that message through the run's redactor with [`redact.ErrorMessage`](../../pkg/redact/context.go), which the node context carries. A value masked by name only, rather than by value, is not masked in logs.
+
 ## Limitations
 
 - Masking matches text. A short secret input such as `1` masks every occurrence of that text in the run's reports. A withheld secret output is masked only by name, so a consumer that embeds it in its request URL, headers or body, or a response that echoes it, still reports it. Only flag outputs that hold credentials or tokens. The fields the runner writes itself (`node_id`, `node_type`, `run_when`, `error_code`, `executed_at`) are never masked, so the report still decodes. A secret found only in the base64 text of a `response_body`, not in its bytes, replaces the whole body.
@@ -38,4 +42,4 @@ The engine adds a secret output's value before it reports the node that extracte
 - A value is masked from the moment it becomes secret. A secret output value that already appeared in an earlier report, for example one a server returned before the flow extracted it, is not masked retroactively.
 - Results that were stored before a value was declared secret keep the value. Removing it means purging those results in the control plane, and the credential should be rotated.
 
-Tests: [`pkg/redact`](../../pkg/redact/redact_test.go), [secret input redaction](../../pkg/runner/redaction_test.go) and [secret output redaction](../../pkg/runner/secret_output_test.go).
+Tests: [`pkg/redact`](../../pkg/redact/redact_test.go), [secret input redaction](../../pkg/runner/redaction_test.go), [secret output redaction](../../pkg/runner/secret_output_test.go) and [log redaction](../../pkg/runner/log_redaction_test.go).

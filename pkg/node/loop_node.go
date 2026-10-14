@@ -11,6 +11,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/nanostack-dev/echopoint-runner/pkg/extractors"
+	"github.com/nanostack-dev/echopoint-runner/pkg/redact"
 	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 )
 
@@ -173,7 +174,7 @@ func (n *LoopNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 					Str("nodeID", n.GetID()).
 					Int("index", i).
 					Str("errorCode", spi.ErrorCode(iterErr)).
-					Str("error", spi.SafeErrorMessage(iterErr)).
+					Str("error", redact.ErrorMessage(ctx.Context(), iterErr)).
 					Msg("Loop iteration failed; continuing")
 				results = append(results, map[string]any{"index": i, "error": iterErr.Error()})
 				continue

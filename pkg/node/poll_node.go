@@ -11,6 +11,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/nanostack-dev/echopoint-runner/pkg/extractors"
+	"github.com/nanostack-dev/echopoint-runner/pkg/redact"
 	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 )
 
@@ -158,7 +159,7 @@ func (n *PollNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 			Inputs:         childInputs,
 		})
 		if err != nil {
-			return n.bodyFailure(ctx.Inputs, err, attempt, lastAssertionResults, startTime)
+			return n.bodyFailure(ctx, err, attempt, lastAssertionResults, startTime)
 		}
 
 		rc := extractors.NewValueResponseContext(res.FinalOutputs)
@@ -172,7 +173,7 @@ func (n *PollNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 		log.Debug().
 			Str("nodeID", n.GetID()).
 			Int("attempt", attempt).
-			Err(assertErr).
+			Str("error", redact.ErrorMessage(ctx.Context(), assertErr)).
 			Msg("Poll exit condition not yet met")
 
 		// Wait interval_ms before retrying, unless this was the final attempt.
@@ -203,9 +204,9 @@ func (n *PollNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 
 // bodyFailure reports a poll attempt whose body flow failed. The child error's
 // cause carries the resolved URL, so the log line takes the stable code and the
-// authored message only — logs are never redacted.
+// authored message only, masked by the run's redaction.
 func (n *PollNode) bodyFailure(
-	inputs map[string]any,
+	ctx spi.ExecutionContext,
 	err error,
 	attempt int,
 	assertionResults []spi.AssertionResult,
@@ -216,10 +217,10 @@ func (n *PollNode) bodyFailure(
 		Str("nodeID", n.GetID()).
 		Int("attempt", attempt).
 		Str("errorCode", spi.ErrorCode(err)).
-		Str("error", spi.SafeErrorMessage(err)).
+		Str("error", redact.ErrorMessage(ctx.Context(), err)).
 		Msg("Poll body execution failed")
 	return n.errorResult(
-		inputs, pollErr, "POLL_BODY_FAILED", attempt, assertionResults, startTime,
+		ctx.Inputs, pollErr, "POLL_BODY_FAILED", attempt, assertionResults, startTime,
 	), pollErr
 }
 
