@@ -221,9 +221,10 @@ func (n *LoopNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 }
 
 // resolveItems resolves the items template against the node inputs and coerces
-// the result into a []any, erroring when it does not resolve to a list. A lone
-// {{ref}} resolves like {{{ref}}} so the referenced array keeps its type instead
-// of being interpolated into a string.
+// the result into a []any. A lone {{ref}} resolves like {{{ref}}} so the
+// referenced array keeps its type instead of being interpolated into a string.
+// Any other non-null value is one item: a json_path wildcard that matches a
+// single element yields that element rather than a one-element array.
 func (n *LoopNode) resolveItems(inputs map[string]any) ([]any, error) {
 	items := n.Data.Items
 	if template, ok := items.(string); ok {
@@ -237,11 +238,17 @@ func (n *LoopNode) resolveItems(inputs map[string]any) ([]any, error) {
 		return nil, fmt.Errorf("resolve loop items: %w", err)
 	}
 
-	list, ok := resolved.([]any)
-	if !ok {
-		return nil, fmt.Errorf("loop items must resolve to a list, got %T", resolved)
+	switch value := resolved.(type) {
+	case nil:
+		return nil, fmt.Errorf("loop items resolved to null: %v", n.Data.Items)
+	case []any:
+		return value, nil
+	case string:
+		if stringVariablePattern.MatchString(value) {
+			return nil, fmt.Errorf("loop items did not resolve: %v", n.Data.Items)
+		}
 	}
-	return list, nil
+	return []any{resolved}, nil
 }
 
 func (n *LoopNode) createErrorResult(

@@ -10,7 +10,9 @@ Node `data` values reference flow inputs and upstream node outputs through templ
 | `{{{ref}}}` as the whole value | The value with its type kept: an array stays an array, an object stays an object. |
 | `{{ref}}` as the whole loop `items` value | The same as `{{{ref}}}`, so `"items": "{{list_users.ids}}"` iterates the array. |
 
-An unresolved reference is left unchanged: `{{ref}}` stays in the text and `{{{ref}}}` returns the original string. A loop whose `items` does not resolve to an array fails with `loop items must resolve to a list`.
+An unresolved reference is left unchanged: `{{ref}}` stays in the text and `{{{ref}}}` returns the original string.
+
+A loop iterates an array `items` element by element. Any other value is one item, because a `json_path` output whose wildcard matches one element, such as `$.items[*]` over a one-item array, yields that element rather than a one-element array. A loop whose `items` is null fails with `loop items resolved to null`; one whose `items` still contains an unresolved reference fails with `loop items did not resolve`.
 
 ## References
 
