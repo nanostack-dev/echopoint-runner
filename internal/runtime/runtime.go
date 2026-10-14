@@ -37,7 +37,11 @@ type Runtime struct {
 type activeJob struct {
 	job       *controlplane.ClaimedJob
 	startedAt time.Time
+	// cancel stops the job's run; a rejected heartbeat calls it with errLeaseRejected.
+	cancel context.CancelCauseFunc
 }
+
+var errLeaseRejected = errors.New("runner Job lease was rejected")
 
 func New(config configpkg.Config) *Runtime {
 	return newRuntime(config, controlplane.NewRunnerClient(controlplane.Config{
@@ -225,6 +229,9 @@ func RunOne(
 func (r *Runtime) executeClaimedJob(ctx context.Context, active *activeJob) (Outcome, error) {
 	defer r.releaseSlot()
 	defer r.removeActiveJob(active.job.JobID)
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
+	r.cancelOnRejection(active, cancel)
 	reporter := newJobEventReporter(r.client, active.job, r.config.RunnerID, r.bootID, r.config.RequestTimeout)
 	defer reporter.Close()
 
@@ -281,7 +288,7 @@ func (r *Runtime) executeClaimedJob(ctx context.Context, active *activeJob) (Out
 		log.Warn().
 			Str("job_id", active.job.JobID.String()).
 			Msg("skipping completion for rejected runner job")
-		return Outcome{Status: jobStatusFailed, Result: result}, errors.New("runner Job lease was rejected")
+		return Outcome{Status: jobStatusFailed, Result: result}, errLeaseRejected
 	}
 
 	completedAt := time.Now().UTC()
@@ -327,7 +334,7 @@ func (r *Runtime) completeWithFailure(
 		log.Warn().
 			Str("job_id", active.job.JobID.String()).
 			Msg("skipping failure completion for rejected runner job")
-		return errors.New("runner Job lease was rejected")
+		return errLeaseRejected
 	}
 
 	completedAt := time.Now().UTC()
@@ -437,10 +444,25 @@ func (r *Runtime) storeActiveJob(job *activeJob) {
 	r.active[job.job.JobID] = job
 }
 
+// cancelOnRejection registers the job's cancel for markJobRejected, and cancels
+// at once when a heartbeat rejected the job before its run started.
+func (r *Runtime) cancelOnRejection(active *activeJob, cancel context.CancelCauseFunc) {
+	r.activeMu.Lock()
+	active.cancel = cancel
+	r.activeMu.Unlock()
+
+	if r.isRejected(active.job.JobID) {
+		cancel(errLeaseRejected)
+	}
+}
+
 func (r *Runtime) markJobRejected(jobID uuid.UUID) {
 	r.activeMu.Lock()
 	defer r.activeMu.Unlock()
 
+	if active, ok := r.active[jobID]; ok && active.cancel != nil {
+		active.cancel(errLeaseRejected)
+	}
 	delete(r.active, jobID)
 
 	r.rejectedMu.Lock()
