@@ -237,7 +237,25 @@ func TestLoopNode_IteratesAnArrayReferencedWithDoubleBraces(t *testing.T) {
 	assert.Equal(t, "y", exec.calls[1].inputs["item"])
 }
 
-func TestLoopNode_InterpolatedItemsTextIsNotAList(t *testing.T) {
+func TestLoopNode_IteratesASingleObjectAsOneItem(t *testing.T) {
+	exec := &fakeModuleExecutor{result: cannedResult(map[string]any{})}
+	n := newLoopNode(t, node.LoopData{
+		Items: "{{prev.items}}",
+		Body:  json.RawMessage(iterBody),
+	})
+
+	_, err := n.Execute(spi.ExecutionContext{
+		Inputs:         map[string]any{"prev.items": map[string]any{"id": "a1"}},
+		FlowInputs:     map[string]any{},
+		ModuleExecutor: exec,
+	})
+	require.NoError(t, err)
+	require.Len(t, exec.calls, 1)
+	assert.Equal(t, map[string]any{"id": "a1"}, exec.calls[0].inputs["item"])
+	assert.Equal(t, 0, exec.calls[0].inputs["index"])
+}
+
+func TestLoopNode_IteratesInterpolatedItemsTextAsOneItem(t *testing.T) {
 	exec := &fakeModuleExecutor{result: cannedResult(map[string]any{})}
 	n := newLoopNode(t, node.LoopData{
 		Items: "ids: {{prev.list}}",
@@ -249,9 +267,9 @@ func TestLoopNode_InterpolatedItemsTextIsNotAList(t *testing.T) {
 		FlowInputs:     map[string]any{},
 		ModuleExecutor: exec,
 	})
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "must resolve to a list")
-	assert.Empty(t, exec.calls)
+	require.NoError(t, err)
+	require.Len(t, exec.calls, 1)
+	assert.Equal(t, `ids: ["x","y"]`, exec.calls[0].inputs["item"])
 }
 
 func TestLoopNode_CustomItemAndIndexVars(t *testing.T) {
@@ -389,10 +407,10 @@ func TestLoopNode_NilModuleExecutorErrors(t *testing.T) {
 	assert.Equal(t, "LOOP_FAILED", *loopRes.ErrorCode)
 }
 
-func TestLoopNode_NonListItemsErrors(t *testing.T) {
+func TestLoopNode_UnresolvedItemsReferenceErrors(t *testing.T) {
 	exec := &fakeModuleExecutor{result: cannedResult(map[string]any{})}
 	n := newLoopNode(t, node.LoopData{
-		Items: "not-a-list",
+		Items: "{{prev.list}}",
 		Body:  json.RawMessage(iterBody),
 	})
 
@@ -402,7 +420,24 @@ func TestLoopNode_NonListItemsErrors(t *testing.T) {
 		ModuleExecutor: exec,
 	})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "must resolve to a list")
+	assert.Contains(t, err.Error(), "loop items did not resolve: {{prev.list}}")
+	assert.Empty(t, exec.calls)
+}
+
+func TestLoopNode_NullItemsErrors(t *testing.T) {
+	exec := &fakeModuleExecutor{result: cannedResult(map[string]any{})}
+	n := newLoopNode(t, node.LoopData{
+		Items: "{{prev.list}}",
+		Body:  json.RawMessage(iterBody),
+	})
+
+	_, err := n.Execute(spi.ExecutionContext{
+		Inputs:         map[string]any{"prev.list": nil},
+		FlowInputs:     map[string]any{},
+		ModuleExecutor: exec,
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "loop items resolved to null")
 	assert.Empty(t, exec.calls)
 }
 
