@@ -108,7 +108,7 @@ func (n *RequestNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 		n.Data.Timeout,
 	)
 	if err != nil {
-		// The HTTP call limit refused the request before it was sent.
+		// The HTTP call limit refused the request, or the response outgrew its limit.
 		if limitErr, ok := errors.AsType[*spi.UserError](err); ok {
 			return n.createErrorResult(ctx.Inputs, limitErr, time.Since(startTime)), limitErr
 		}
@@ -162,6 +162,7 @@ func (n *RequestNode) createSuccessResult(
 	respCtx extractors.ResponseContext,
 	startTime time.Time,
 ) *RequestExecutionResult {
+	body, parsed, truncated := reportedBody(exchange.ResponseBody, exchange.ParsedBody)
 	return &RequestExecutionResult{
 		BaseExecutionResult: spi.BaseExecutionResult{
 			NodeID:      n.GetID(),
@@ -171,16 +172,17 @@ func (n *RequestNode) createSuccessResult(
 			Outputs:     map[string]any{},
 			ExecutedAt:  time.Now(),
 		},
-		RequestMethod:      n.Data.Method,
-		RequestURL:         exchange.URL,
-		RequestHeaders:     exchange.Headers,
-		RequestBody:        exchange.Body,
-		ResponseStatusCode: exchange.Response.StatusCode,
-		ResponseHeaders:    exchange.Response.Header,
-		ResponseBody:       exchange.ResponseBody,
-		ResponseBodyParsed: exchange.ParsedBody,
-		assertionCtx:       respCtx,
-		DurationMs:         time.Since(startTime).Milliseconds(),
+		RequestMethod:         n.Data.Method,
+		RequestURL:            exchange.URL,
+		RequestHeaders:        exchange.Headers,
+		RequestBody:           exchange.Body,
+		ResponseStatusCode:    exchange.Response.StatusCode,
+		ResponseHeaders:       exchange.Response.Header,
+		ResponseBody:          body,
+		ResponseBodyParsed:    parsed,
+		ResponseBodyTruncated: truncated,
+		assertionCtx:          respCtx,
+		DurationMs:            time.Since(startTime).Milliseconds(),
 	}
 }
 
@@ -228,8 +230,9 @@ func (n *RequestNode) createResponseBackedErrorResult(
 		reqResult.ResponseStatusCode = exchange.Response.StatusCode
 		reqResult.ResponseHeaders = exchange.Response.Header
 	}
-	reqResult.ResponseBody = exchange.ResponseBody
-	reqResult.ResponseBodyParsed = exchange.ParsedBody
+	reqResult.ResponseBody, reqResult.ResponseBodyParsed, reqResult.ResponseBodyTruncated = reportedBody(
+		exchange.ResponseBody, exchange.ParsedBody,
+	)
 	reqResult.AssertionResults = assertionResults
 
 	return reqResult
@@ -312,11 +315,20 @@ func (n *RequestNode) makeRequestAndReadBody(
 		return nil, nil, err
 	}
 
+	limit := maxResponseBytes(parent)
+	if resp.ContentLength > limit {
+		_ = resp.Body.Close()
+		return nil, nil, responseTooLargeError(url, limit)
+	}
 	// Read the response body while still within the timeout context
-	respBody, readErr := io.ReadAll(resp.Body)
+	respBody, readErr := io.ReadAll(io.LimitReader(resp.Body, limit+1))
 	if readErr != nil {
 		_ = resp.Body.Close()
 		return nil, nil, readErr
+	}
+	if int64(len(respBody)) > limit {
+		_ = resp.Body.Close()
+		return nil, nil, responseTooLargeError(url, limit)
 	}
 
 	return resp, respBody, nil

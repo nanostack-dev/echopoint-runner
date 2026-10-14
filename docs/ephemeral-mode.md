@@ -48,6 +48,7 @@ the existing engine; referenced/module flows are resolved from `referenced_flows
 module's flow, including modules inside loop and poll bodies and inside other modules; a module whose
 flow is absent fails with `referenced flow "<flow_id>" not found`.
 `max_http_calls_per_execution` is optional; see [HTTP calls](technical/http-calls.md).
+`ECHOPOINT_MAX_RESPONSE_BYTES` bounds each response body a request node reads; see [response size](technical/http-calls.md#response-size).
 
 ## Result output
 

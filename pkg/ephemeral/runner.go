@@ -16,7 +16,7 @@ import (
 // Run executes the flow described by pkg and returns the structured result.
 // Inputs are treated as secrets: only key names are logged, never values.
 // No control-plane clients (claim/heartbeat/complete) are constructed or called.
-func Run(pkg *Package) Result {
+func Run(pkg *Package, opts ...runner.Option) Result {
 	startedAt := time.Now().UTC()
 
 	inputKeys := sortedKeys(pkg.Inputs)
@@ -38,12 +38,12 @@ func Run(pkg *Package) Result {
 		return failedResult(startedAt, fmt.Sprintf("parse flow definition: %v", err), nil)
 	}
 
-	execResult, execErr := runner.Run(*flowDef, pkg.Inputs,
+	execResult, execErr := runner.Run(*flowDef, pkg.Inputs, append([]runner.Option{
 		runner.WithReferencedFlows(pkg.ReferencedFlows),
 		runner.WithDynamicVars(dynamicvars.New(pkg.ExecutionID)),
 		runner.WithSecretInputKeys(pkg.SecretInputKeys),
 		runner.WithHTTPCallLimit(pkg.MaxHTTPCallsPerExecution),
-	)
+	}, opts...)...)
 
 	completedAt := time.Now().UTC()
 	durationMs := completedAt.Sub(startedAt).Milliseconds()

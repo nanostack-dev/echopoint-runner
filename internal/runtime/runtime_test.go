@@ -264,3 +264,39 @@ func TestRejectedLeaseStopsTheRunBeforeItsNextRequest(t *testing.T) {
 	assert.Zero(t, targetHits.Load())
 	assert.Zero(t, completions.Load())
 }
+
+func TestClaimedJobFailsAResponsePastTheConfiguredMaxResponseBytes(t *testing.T) {
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(strings.Repeat("a", 2048)))
+	}))
+	defer target.Close()
+	var completion controlplane.CompleteJobRequest
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/complete") {
+			assert.NoError(t, json.NewDecoder(r.Body).Decode(&completion))
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer server.Close()
+	config := testConfig(server.URL)
+	config.MaxResponseBytes = 1024
+	job := &controlplane.ClaimedJob{
+		JobID:       uuid.New(),
+		ExecutionID: uuid.New(),
+		FlowDefinition: json.RawMessage(`{
+			"name": "Download", "version": "1.0", "edges": [],
+			"nodes": [{"id": "download", "type": "request", "data": {"method": "GET", "url": "` + target.URL + `"}}]
+		}`),
+		Inputs: map[string]any{},
+	}
+	r := newRuntime(config, controlplane.NewRunnerClient(controlplane.Config{BaseURL: server.URL}))
+
+	outcome, err := r.executeClaimedJob(context.Background(), &activeJob{job: job, startedAt: time.Now()})
+
+	require.NoError(t, err)
+	assert.Equal(t, jobStatusFailed, outcome.Status)
+	require.NotNil(t, completion.ErrorMessage)
+	assert.Contains(t, *completion.ErrorMessage, "larger than the 1024 bytes limit")
+}

@@ -8,7 +8,9 @@ import (
 	"os"
 	"time"
 
+	"github.com/nanostack-dev/echopoint-runner/internal/config"
 	internalLogger "github.com/nanostack-dev/echopoint-runner/internal/logger"
+	"github.com/nanostack-dev/echopoint-runner/pkg/runner"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
@@ -56,7 +58,11 @@ Does not require ECHOPOINT_RUNNER_API_KEY.`,
 				return fmt.Errorf("read package: %w", err)
 			}
 
-			result := Run(pkg)
+			maxResponseBytes, err := config.MaxResponseBytes()
+			if err != nil {
+				return fmt.Errorf("read configuration: %w", err)
+			}
+			result := Run(pkg, runner.WithMaxResponseBytes(maxResponseBytes))
 
 			if writeErr := writeResult(outputPath, result, cmd.OutOrStdout()); writeErr != nil {
 				log.Error().Err(writeErr).Str("output", outputPath).Msg("failed to write ephemeral result")

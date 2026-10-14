@@ -252,6 +252,7 @@ func (r *Runtime) executeClaimedJob(ctx context.Context, active *activeJob) (Out
 		runner.WithSecretInputKeys(active.job.SecretInputKeys),
 		runner.WithContext(spi.WithJobToken(ctx, active.job.JobToken)),
 		runner.WithHTTPCallLimit(active.job.MaxHTTPCallsPerExecution),
+		runner.WithMaxResponseBytes(r.config.MaxResponseBytes),
 	)
 	if execErr != nil {
 		errorMsg := execErr.Error()

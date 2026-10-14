@@ -37,6 +37,9 @@ type RequestExecutionResult struct {
 	ResponseHeaders    map[string][]string `json:"response_headers"`
 	ResponseBody       []byte              `json:"response_body,omitempty"`
 	ResponseBodyParsed any                 `json:"response_body_parsed,omitempty"`
+	// ResponseBodyTruncated reports a body cut to ReportedResponseBodyBytes and
+	// sent without its parsed form.
+	ResponseBodyTruncated bool `json:"response_body_truncated,omitempty"`
 
 	// AssertionResults now lives on the embedded BaseExecutionResult so the
 	// engine-level assertion pass fills it uniformly; the wire shape (the

@@ -46,6 +46,12 @@ A group never holds the resolved URL, query string, headers or body.
 
 The limit reaches the runner as `max_http_calls_per_execution` on a self-hosted claim (`controlplane.ClaimedJob`), a one-shot `jobrunner.Job` and an ephemeral `Package`.
 
+## Response size
+
+A request node reads at most 10 MiB of response body (`node.DefaultMaxResponseBytes`). A larger body is not kept: the node fails with `RESPONSE_TOO_LARGE`, naming the host and the limit. A `Content-Length` above the limit fails before the body is read; otherwise the read stops one byte past the limit. `runner.WithMaxResponseBytes(n)` changes the limit for a run; the self-hosted runner and ephemeral mode read it from `ECHOPOINT_MAX_RESPONSE_BYTES` (bytes, default 10485760).
+
+Assertions and outputs evaluate against the whole body, but a request result reports at most 1 MiB of it (`node.ReportedResponseBodyBytes`). Past that, `response_body` holds the first 1 MiB, `response_body_parsed` is left out and `response_body_truncated` is `true`, in progress events and the completion alike. The full size remains in the call's `response_bytes`. Secret masking runs on the reported body, so only a secret cut by the 1 MiB boundary can leave its first characters unmasked.
+
 ## Compatibility
 
 Echopoint decodes node results into typed structs with `encoding/json`, so a control plane that does not know `http_calls` ignores it.
