@@ -45,6 +45,23 @@ type ClaimNextRequest struct {
 	MaxParallelFlows int       `json:"max_parallel_flows"`
 }
 
+// CapabilitySecretOutputs declares that this runner masks secret node outputs.
+// The control plane refuses a job whose flow declares one to a claim without it.
+const CapabilitySecretOutputs = "secret_outputs"
+
+// Capabilities lists what this runner build supports, declared on every claim.
+func Capabilities() []string {
+	return []string{CapabilitySecretOutputs}
+}
+
+// claimNextBody is the wire form of a claim: the request plus the capabilities
+// of this build, which a caller cannot misstate.
+type claimNextBody struct {
+	ClaimNextRequest
+
+	Capabilities []string `json:"capabilities"`
+}
+
 type ClaimedJob struct {
 	JobID           uuid.UUID                      `json:"job_id"`
 	ExecutionID     uuid.UUID                      `json:"execution_id"`
@@ -178,7 +195,9 @@ func newClient(baseURL string, timeout time.Duration, headers http.Header) *Clie
 
 func (c *Client) ClaimNext(ctx context.Context, request ClaimNextRequest) (*ClaimedJob, error) {
 	startedAt := time.Now()
-	statusCode, responseBody, requestErr := c.postJSON(ctx, nextJobPath, request)
+	statusCode, responseBody, requestErr := c.postJSON(
+		ctx, nextJobPath, claimNextBody{ClaimNextRequest: request, Capabilities: Capabilities()},
+	)
 	if requestErr != nil {
 		log.Warn().
 			Err(requestErr).

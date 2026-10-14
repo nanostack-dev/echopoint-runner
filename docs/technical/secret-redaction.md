@@ -19,6 +19,10 @@ Redaction works by value, not by field. Every string in a report that contains a
 - A module output bound to a child's secret output (`output_bindings: {"token": "mint.jwt"}`) is masked in the module result, its `child_final_outputs` and its consumers, without its own flag: it carries the same value.
 - A map or array output marks each of its leaves secret.
 
+## Capability declaration
+
+A runner older than secret output support ignores the flag and reports the value in clear. So every self-hosted claim (`POST /runner/jobs/next`) declares `"capabilities": ["secret_outputs"]` ([`controlplane.Capabilities`](../../internal/controlplane/client.go)). A caller that claims a job itself, such as the CLI's ephemeral run, declares [`jobrunner.Capabilities()`](../../pkg/jobrunner/capabilities.go). The control plane fails a job whose flow or referenced flows declare a secret output when its claim lacks the capability (Echopoint ADR-0019).
+
 ## Learned values
 
 A secret output's value is learned leaf by leaf. A leaf of at least 6 characters (`redact.MinLearnedLength`) is masked by value, up to 500 distinct values per run (`redact.MaxLearnedValues`); a value learned twice counts once. Any other leaf is too short to mask by value without masking that text everywhere in the run, or would pass the cap, so the output is **withheld** instead. This fails closed:
