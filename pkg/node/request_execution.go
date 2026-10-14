@@ -1,6 +1,7 @@
 package node
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -84,7 +85,7 @@ func (n *RequestNode) parseResponseBody(contentType string, respBody []byte) any
 
 	if strings.Contains(contentType, "application/json") {
 		var parsedBody any
-		if unmarshalErr := json.Unmarshal(respBody, &parsedBody); unmarshalErr != nil {
+		if unmarshalErr := json.Unmarshal(trimUTF8BOM(respBody), &parsedBody); unmarshalErr != nil {
 			log.Warn().
 				Str("nodeID", n.GetID()).
 				Err(unmarshalErr).
@@ -94,4 +95,12 @@ func (n *RequestNode) parseResponseBody(contentType string, respBody []byte) any
 		return parsedBody
 	}
 	return string(respBody)
+}
+
+const utf8BOM = "\xEF\xBB\xBF"
+
+// trimUTF8BOM drops a leading byte order mark, which RFC 8259 lets a JSON parser
+// ignore but encoding/json rejects.
+func trimUTF8BOM(body []byte) []byte {
+	return bytes.TrimPrefix(body, []byte(utf8BOM))
 }

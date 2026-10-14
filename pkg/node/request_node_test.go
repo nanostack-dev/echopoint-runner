@@ -231,3 +231,26 @@ func TestRequestNode_SendsNoContentTypeWhenTheNodeSetsItEmpty(t *testing.T) {
 
 	assert.NotContains(t, received, "Content-Type")
 }
+
+func TestRequestNode_ParsesAJSONResponseThatStartsWithAUTF8BOM(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(append([]byte{0xEF, 0xBB, 0xBF}, `[{"id":"a1"}]`...))
+	}))
+	defer srv.Close()
+
+	parsed, err := node.UnmarshalNode([]byte(`{"id":"payload","type":"request","data":{` +
+		`"method":"GET","url":"` + srv.URL + `/v1/payloads/json-utf8-bom","timeout":1000},` +
+		`"assertions":[{"extractor_type":"json_path","extractor_data":{"path":"$[0].id"},` +
+		`"operator_type":"equals","operator_data":{"value":"a1"}}]}`))
+	require.NoError(t, err)
+	reqNode, ok := node.AsRequestNode(parsed)
+	require.True(t, ok)
+
+	res, err := reqNode.Execute(spi.ExecutionContext{Ctx: context.Background()})
+	require.NoError(t, err)
+	require.NoError(t, applyEnginePass(reqNode, res))
+	result, ok := spi.As[*node.RequestExecutionResult](res)
+	require.True(t, ok)
+	assert.Equal(t, []any{map[string]any{"id": "a1"}}, result.ResponseBodyParsed)
+}
