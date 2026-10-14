@@ -492,3 +492,95 @@ func decodeObject(t *testing.T, value any) map[string]any {
 	}
 	return decoded
 }
+
+// A JSON number holding a secret output has no string leaf to scan, so it is
+// matched as a whole literal wherever the run reports it.
+func TestLearnOutput_MasksANumericValueReportedAsAJSONNumber(t *testing.T) {
+	redactor := &redact.Redactor{}
+	redactor.LearnOutput("mint", "num", float64(123456))
+
+	mint := decodeObject(t, redactor.Result(&requestResult{
+		BaseExecutionResult: spi.BaseExecutionResult{
+			NodeID: "mint", NodeType: "request",
+			Outputs: map[string]any{"num": float64(123456), "other": float64(1234567)},
+		},
+		Body: []byte(`{"num":123456}`),
+	}))
+	consumer := decodeObject(t, redactor.Result(&bodyResult{
+		BaseExecutionResult: spi.BaseExecutionResult{
+			NodeID: "read", NodeType: "request",
+			Inputs: map[string]any{"mint.num": float64(123456)},
+		},
+		RequestBody: map[string]any{"typed": int64(123456)},
+	}))
+	flowResult := redactor.FlowResult(&spi.FlowExecutionResult{
+		FinalOutputs: map[string]any{"mint.num": float64(123456)},
+	})
+
+	outputs := mint["outputs"].(map[string]any)
+	if outputs["num"] != redact.Mask || outputs["other"] != float64(1234567) {
+		t.Errorf("only the secret number is masked in its node's outputs: %v", outputs)
+	}
+	body, err := base64.StdEncoding.DecodeString(mint["response_body"].(string))
+	if err != nil || string(body) != `{"num":"`+redact.Mask+`"}` {
+		t.Errorf("the response that produced it masks the number, got %s (%v)", body, err)
+	}
+	if inputs := consumer["inputs"].(map[string]any); inputs["mint.num"] != redact.Mask {
+		t.Errorf("a consumer's input masks the number: %v", inputs)
+	}
+	if requestBody := consumer["request_body"].(map[string]any); requestBody["typed"] != redact.Mask {
+		t.Errorf("a typed request body masks the number: %v", requestBody)
+	}
+	if got := flowResult.FinalOutputs["mint.num"]; got != redact.Mask {
+		t.Errorf("final_outputs masks the number, got %v", got)
+	}
+}
+
+// fmt writes a float64 of seven or more digits in exponent form, which no
+// report contains; the value is learned in the form JSON writes it.
+func TestLearnOutput_LearnsALargeNumberInItsJSONForm(t *testing.T) {
+	redactor := &redact.Redactor{}
+	redactor.LearnOutput("mint", "num", float64(12345678))
+	if got := redactor.Text("id=12345678"); got != "id="+redact.Mask {
+		t.Errorf("a large number should be masked by value, got %q", got)
+	}
+}
+
+// A duration or byte count the runner writes can equal a numeric secret by
+// chance. Masking it would leave a result the control plane cannot decode.
+func TestResult_KeepsTheNumbersTheRunnerWritesWhenTheyEqualANumericSecret(t *testing.T) {
+	redactor := &redact.Redactor{}
+	redactor.LearnOutput("mint", "num", float64(123456))
+
+	got := decodeObject(t, redactor.Result(&timedResult{
+		BaseExecutionResult: spi.BaseExecutionResult{
+			NodeID: "read", NodeType: "request",
+			HTTPCalls: []spi.HTTPCallGroup{{
+				NodeID: "read", Host: "api.example.com",
+				OffsetsMs: []int64{0}, DurationsMs: []int64{123456},
+				StatusCodes: []int{200}, ResponseBytes: []int64{123456},
+			}},
+		},
+		DurationMs: 123456,
+	}))
+
+	if got["duration_ms"] != float64(123456) {
+		t.Errorf("duration_ms must stay a number: %v", got)
+	}
+	call := got["http_calls"].([]any)[0].(map[string]any)
+	if call["durations_ms"].([]any)[0] != float64(123456) || call["response_bytes"].([]any)[0] != float64(123456) {
+		t.Errorf("http call counters must stay numbers: %v", call)
+	}
+}
+
+type bodyResult struct {
+	spi.BaseExecutionResult
+
+	RequestBody any `json:"request_body,omitempty"`
+}
+
+type timedResult struct {
+	spi.BaseExecutionResult
+
+	DurationMs int64 `json:"duration_ms"`
+}
