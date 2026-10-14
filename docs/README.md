@@ -1,7 +1,7 @@
 # Documentation
 
 - [Domain vocabulary](../CONTEXT.md)
-- [Implemented architecture and contracts](technical/architecture.md), [HTTP calls](technical/http-calls.md), [secret redaction](technical/secret-redaction.md)
+- [Implemented architecture and contracts](technical/architecture.md), [HTTP calls](technical/http-calls.md), [secret redaction](technical/secret-redaction.md), [webhook wait](technical/webhook-wait.md)
 - [Template references](technical/template-references.md): `{{ref}}`, `{{{ref}}}` and paths into objects and arrays
 - [Parallel execution](parallel-execution-model.md), [dynamic template variables](dynamic-template-variables-reference.md), [ephemeral mode](ephemeral-mode.md)
 - [Core rewrite status](../pkg/core/README.md) and [operators](../pkg/operators/README.md)
