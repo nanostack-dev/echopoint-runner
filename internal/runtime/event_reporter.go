@@ -185,13 +185,24 @@ func (r *jobEventReporter) FlushWithRetry(ctx context.Context) error {
 	return lastErr
 }
 
+// Flush sends every pending event in batches the control plane accepts. A
+// failed flush puts its batch back, so the backlog can outgrow one request.
 func (r *jobEventReporter) Flush(ctx context.Context) error {
 	r.flushMu.Lock()
 	defer r.flushMu.Unlock()
 
+	for {
+		sent, err := r.flushBatch(ctx)
+		if err != nil || !sent {
+			return err
+		}
+	}
+}
+
+func (r *jobEventReporter) flushBatch(ctx context.Context) (bool, error) {
 	batch, batchBytes := r.drainPending()
 	if len(batch) == 0 {
-		return nil
+		return false, nil
 	}
 
 	response, err := r.client.SendJobEvents(ctx, r.jobID, controlplane.SendJobEventsRequest{
@@ -201,12 +212,12 @@ func (r *jobEventReporter) Flush(ctx context.Context) error {
 	})
 	if err != nil {
 		r.prependPending(batch, batchBytes)
-		return err
+		return false, err
 	}
 
 	lastAccepted := response.LastAcceptedSequence
 	if lastAccepted >= batch[len(batch)-1].Sequence {
-		return nil
+		return true, nil
 	}
 
 	remaining := make([]controlplane.RunnerProgressEvent, 0, len(batch))
@@ -219,7 +230,7 @@ func (r *jobEventReporter) Flush(ctx context.Context) error {
 		remainingBytes += eventSize(event)
 	}
 	r.prependPending(remaining, remainingBytes)
-	return nil
+	return false, nil
 }
 
 func (r *jobEventReporter) enqueue(eventType string, payload any) error {
@@ -252,10 +263,22 @@ func (r *jobEventReporter) drainPending() ([]controlplane.RunnerProgressEvent, i
 		return nil, 0
 	}
 
-	batch := append([]controlplane.RunnerProgressEvent(nil), r.pending...)
-	bytes := r.pendingBytes
-	r.pending = nil
-	r.pendingBytes = 0
+	count, bytes := 0, 0
+	for count < len(r.pending) && count < reporterMaxBatchEvents {
+		size := eventSize(r.pending[count])
+		if count > 0 && bytes+size > reporterMaxBatchBytes {
+			break
+		}
+		bytes += size
+		count++
+	}
+
+	batch := append([]controlplane.RunnerProgressEvent(nil), r.pending[:count]...)
+	r.pending = append([]controlplane.RunnerProgressEvent(nil), r.pending[count:]...)
+	r.pendingBytes -= bytes
+	if len(r.pending) == 0 {
+		r.pendingBytes = 0
+	}
 	return batch, bytes
 }
 
