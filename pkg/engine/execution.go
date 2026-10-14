@@ -468,7 +468,7 @@ func (engine *FlowEngine) runNode(
 			Str("nodeID", nodeID).
 			Str("nodeType", string(nodeType)).
 			Str("errorCode", spi.ErrorCode(err)).
-			Str("error", spi.SafeErrorMessage(err)).
+			Str("error", redact.ErrorMessage(nodeCtx, err)).
 			Msg("Node execution failed")
 	} else {
 		log.Info().

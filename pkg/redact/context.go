@@ -1,6 +1,10 @@
 package redact
 
-import "context"
+import (
+	"context"
+
+	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
+)
 
 type learnerKey struct{}
 
@@ -33,4 +37,16 @@ func Withhold(ctx context.Context, nodeID, name string) {
 func Withheld(ctx context.Context, ref string) bool {
 	r, ok := ctx.Value(learnerKey{}).(*Redactor)
 	return ok && r.Withheld(ref)
+}
+
+// ErrorMessage returns spi.SafeErrorMessage(err) masked by the Redactor ctx
+// carries, for a log line. A UserError message can quote a value a node
+// compared, such as an assertion's actual value, and logs are written outside
+// the reporting boundary that masks results.
+func ErrorMessage(ctx context.Context, err error) string {
+	message := spi.SafeErrorMessage(err)
+	if r, ok := ctx.Value(learnerKey{}).(*Redactor); ok {
+		return r.Text(message)
+	}
+	return message
 }
