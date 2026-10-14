@@ -4,7 +4,9 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -190,11 +192,10 @@ func TestValue_KeepsAResponseBodyDecodableWhenOnlyItsEncodingHoldsAShortSecret(t
 	}
 }
 
-// A short secret such as "1" also occurs in fields the runner writes itself.
-// Masking those would leave a result the control plane cannot decode.
+// A short secret input such as "1" also occurs in fields the runner writes
+// itself. Masking those would leave a result the control plane cannot decode.
 func TestResult_KeepsTheFieldsTheRunnerWritesWhenASecretIsShort(t *testing.T) {
-	redactor := &redact.Redactor{}
-	redactor.Learn("1")
+	redactor := redact.New(map[string]any{"pin": "1"}, []string{"pin"})
 	code := "OUTPUT_EXTRACTION_FAILED"
 	result := &spi.BaseExecutionResult{
 		NodeID:     "mint1",
@@ -284,39 +285,210 @@ func TestValue_FailsClosedOnAnUninspectableValue(t *testing.T) {
 	}
 }
 
-func TestLearn_MasksALearnedValueFromThenOn(t *testing.T) {
+func TestLearnOutput_MasksALearnedValueFromThenOn(t *testing.T) {
 	redactor := &redact.Redactor{}
 	if got := redactor.Text("token=minted"); got != "token=minted" {
 		t.Fatalf("nothing learned yet, got %q", got)
 	}
-	redactor.Learn("minted")
+	redactor.LearnOutput("mint", "jwt", "minted")
 	if got := redactor.Text("token=minted"); got != "token="+redact.Mask {
 		t.Errorf("learned value should be masked, got %q", got)
 	}
 }
 
-func TestLearn_AddsEveryLeafOfAStructuredValue(t *testing.T) {
+func TestLearnOutput_AddsEveryLeafOfAStructuredValue(t *testing.T) {
 	redactor := &redact.Redactor{}
-	redactor.Learn(map[string]any{"user": "u-secret", "keys": []any{"k-secret"}})
+	redactor.LearnOutput("mint", "keys", map[string]any{"user": "u-secret", "keys": []any{"k-secret"}})
 	got := redactor.Text("u-secret k-secret")
 	if got != redact.Mask+" "+redact.Mask {
 		t.Errorf("every leaf should be masked, got %q", got)
 	}
 }
 
-func TestLearn_KeepsSecretsKnownAtConstruction(t *testing.T) {
+func TestLearnOutput_KeepsSecretsKnownAtConstruction(t *testing.T) {
 	redactor := redact.New(map[string]any{"apiKey": "input-secret"}, []string{"apiKey"})
-	redactor.Learn("output-secret")
+	redactor.LearnOutput("mint", "jwt", "output-secret")
 	got := redactor.Text("input-secret output-secret")
 	if got != redact.Mask+" "+redact.Mask {
 		t.Errorf("both secrets should be masked, got %q", got)
 	}
 }
 
-func TestLearn_IgnoresANilRedactor(t *testing.T) {
+func TestLearnOutput_IgnoresANilRedactor(t *testing.T) {
 	var redactor *redact.Redactor
-	redactor.Learn("value")
+	redactor.LearnOutput("mint", "jwt", "value")
 	if got := redactor.Text("value"); got != "value" {
 		t.Errorf("nil redactor stays a no-op, got %q", got)
 	}
+}
+
+// A short leaf such as true, 1 or a status word would mask every occurrence of
+// that text in the run, so it is not learned by value.
+func TestLearnOutput_DoesNotMaskAValueShorterThanTheMinimumByValue(t *testing.T) {
+	redactor := &redact.Redactor{}
+	short := strings.Repeat("7", redact.MinLearnedLength-1)
+	redactor.LearnOutput("mint", "pin", short)
+	if got := redactor.Text("code " + short); got != "code "+short {
+		t.Errorf("a short value must not be masked by value, got %q", got)
+	}
+}
+
+func TestLearnOutput_MasksAValueOfTheMinimumLengthByValue(t *testing.T) {
+	redactor := &redact.Redactor{}
+	value := strings.Repeat("7", redact.MinLearnedLength)
+	redactor.LearnOutput("mint", "pin", value)
+	if got := redactor.Text("code " + value); got != "code "+redact.Mask {
+		t.Errorf("a value of the minimum length must be masked, got %q", got)
+	}
+}
+
+// A value that is not learned by value is masked by name instead: wherever the
+// run reports the output under its own name or reference.
+func TestLearnOutput_MasksAShortValueByNameInItsNodeFlowOutputsAndConsumers(t *testing.T) {
+	redactor := &redact.Redactor{}
+	redactor.LearnOutput("mint", "pin", "4821")
+
+	mint := redactor.Result(&spi.BaseExecutionResult{
+		NodeID: "mint", NodeType: "request",
+		Outputs: map[string]any{"pin": "4821", "session": "4821-visible"},
+	})
+	consumer := redactor.Result(&spi.BaseExecutionResult{
+		NodeID: "me", NodeType: "request",
+		Inputs: map[string]any{"mint.pin": "4821", "mint.pin.0": "4", "mint.pinned": "kept"},
+	})
+	flowResult := redactor.FlowResult(&spi.FlowExecutionResult{
+		FinalOutputs: map[string]any{"mint.pin": "4821", "mint.session": "4821-visible"},
+	})
+
+	outputs := decodeObject(t, mint)["outputs"].(map[string]any)
+	if outputs["pin"] != redact.Mask || outputs["session"] != "4821-visible" {
+		t.Errorf("only the withheld output is masked by name: %v", outputs)
+	}
+	inputs := decodeObject(t, consumer)["inputs"].(map[string]any)
+	if inputs["mint.pin"] != redact.Mask || inputs["mint.pin.0"] != redact.Mask || inputs["mint.pinned"] != "kept" {
+		t.Errorf("a consumer's inputs referencing the output are masked: %v", inputs)
+	}
+	if flowResult.FinalOutputs["mint.pin"] != redact.Mask || flowResult.FinalOutputs["mint.session"] != "4821-visible" {
+		t.Errorf("final_outputs masks the withheld output: %v", flowResult.FinalOutputs)
+	}
+}
+
+// The producing node's response holds the value in clear and cannot be masked
+// by value, so the report drops its request and response detail.
+func TestLearnOutput_DropsTheResponseOfTheNodeThatProducedAWithheldValue(t *testing.T) {
+	redactor := &redact.Redactor{}
+	redactor.LearnOutput("mint", "pin", "4821")
+
+	got := decodeObject(t, redactor.Result(&requestResult{
+		BaseExecutionResult: spi.BaseExecutionResult{NodeID: "mint", NodeType: "request", DisplayName: "Mint"},
+		StatusCode:          201,
+		Body:                []byte(`{"pin":"4821"}`),
+		URL:                 "https://api.example.com/pin/4821",
+	}))
+
+	for _, dropped := range []string{"response_body", "request_url"} {
+		if _, present := got[dropped]; present {
+			t.Errorf("%s must be dropped from the producing node: %v", dropped, got)
+		}
+	}
+	if got["response_status_code"] != float64(201) || got["display_name"] != "Mint" || got["node_id"] != "mint" {
+		t.Errorf("fields that cannot carry the value are kept: %v", got)
+	}
+}
+
+func TestLearnOutput_KeepsTheResponseOfANodeWhoseValuesWereAllLearned(t *testing.T) {
+	redactor := &redact.Redactor{}
+	redactor.LearnOutput("mint", "jwt", "minted-token")
+
+	got := decodeObject(t, redactor.Result(&requestResult{
+		BaseExecutionResult: spi.BaseExecutionResult{NodeID: "mint", NodeType: "request"},
+		StatusCode:          201,
+		URL:                 "https://api.example.com/token",
+	}))
+	if got["request_url"] != "https://api.example.com/token" {
+		t.Errorf("a node whose secrets are masked by value keeps its detail: %v", got)
+	}
+}
+
+func TestLearnOutput_MasksValuesPastTheCapByName(t *testing.T) {
+	redactor := &redact.Redactor{}
+	for i := range redact.MaxLearnedValues {
+		redactor.LearnOutput("loop", "token", fmt.Sprintf("token-%06d", i))
+	}
+	redactor.LearnOutput("late", "token", "token-past-the-cap")
+
+	if got := redactor.Text("token-000000"); got != redact.Mask {
+		t.Errorf("values under the cap are masked by value, got %q", got)
+	}
+	if got := redactor.Text("token-past-the-cap"); got != "token-past-the-cap" {
+		t.Errorf("a value past the cap is not learned by value, got %q", got)
+	}
+	flowResult := redactor.FlowResult(&spi.FlowExecutionResult{
+		FinalOutputs: map[string]any{"late.token": "token-past-the-cap"},
+	})
+	if flowResult.FinalOutputs["late.token"] != redact.Mask {
+		t.Errorf("a value past the cap is masked by name: %v", flowResult.FinalOutputs)
+	}
+}
+
+func TestLearnOutput_CountsARepeatedValueOnceTowardTheCap(t *testing.T) {
+	redactor := &redact.Redactor{}
+	for range redact.MaxLearnedValues + 10 {
+		redactor.LearnOutput("loop", "token", "same-token")
+	}
+	redactor.LearnOutput("next", "token", "another-token")
+	if got := redactor.Text("another-token"); got != redact.Mask {
+		t.Errorf("a repeated value must not use up the cap, got %q", got)
+	}
+}
+
+// A body flagged secret learns its long leaves, while its short leaves stay
+// readable in every other node's report.
+func TestLearnOutput_LearnsOnlyTheLongLeavesOfAStructuredValue(t *testing.T) {
+	redactor := &redact.Redactor{}
+	redactor.LearnOutput("mint", "body", map[string]any{"jwt": "eyJ.long.token", "active": true, "n": 1})
+	if got := redactor.Text("eyJ.long.token active=true n=1"); got != redact.Mask+" active=true n=1" {
+		t.Errorf("only long leaves are masked by value, got %q", got)
+	}
+}
+
+func TestLearnOutput_IsSafeWhileReportsAreMasked(t *testing.T) {
+	redactor := &redact.Redactor{}
+	var wg sync.WaitGroup
+	for i := range 50 {
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			redactor.LearnOutput("loop", "token", fmt.Sprintf("concurrent-%04d", i))
+		}()
+		go func() {
+			defer wg.Done()
+			_ = redactor.Text("concurrent-0001")
+		}()
+	}
+	wg.Wait()
+	if got := redactor.Text("concurrent-0049"); got != redact.Mask {
+		t.Errorf("every concurrently learned value is masked, got %q", got)
+	}
+}
+
+type requestResult struct {
+	spi.BaseExecutionResult
+
+	StatusCode int    `json:"response_status_code"`
+	Body       []byte `json:"response_body,omitempty"`
+	URL        string `json:"request_url"`
+}
+
+func decodeObject(t *testing.T, value any) map[string]any {
+	t.Helper()
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var decoded map[string]any
+	if decodeErr := json.Unmarshal(encoded, &decoded); decodeErr != nil {
+		t.Fatalf("unmarshal %s: %v", encoded, decodeErr)
+	}
+	return decoded
 }
