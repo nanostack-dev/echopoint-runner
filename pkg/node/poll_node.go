@@ -35,8 +35,9 @@ type PollData struct {
 	// IntervalMs is the wait between attempts, in milliseconds. Defaults to
 	// defaultPollIntervalMs when <= 0.
 	IntervalMs int `json:"interval_ms"`
-	// TimeoutMs, when > 0, caps the overall wall-clock budget for the whole poll
-	// (layered on top of the execution context deadline).
+	// TimeoutMs, when > 0, caps the overall wall-clock budget for the whole poll,
+	// including a body attempt still running at the deadline (layered on top of
+	// the execution context deadline).
 	TimeoutMs int `json:"timeout_ms"`
 }
 
@@ -157,7 +158,11 @@ func (n *PollNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 			FlowID:         n.GetID() + "#poll",
 			FlowDefinition: n.Data.Body,
 			Inputs:         childInputs,
+			Ctx:            pollCtx,
 		})
+		if cancelErr := pollCtx.Err(); cancelErr != nil {
+			return n.cancelledDuringBody(ctx.Inputs, cancelErr, attempt, lastAssertionResults, startTime)
+		}
 		if err != nil {
 			return n.bodyFailure(ctx, err, attempt, lastAssertionResults, startTime)
 		}
@@ -200,6 +205,24 @@ func (n *PollNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 	return n.errorResult(
 		ctx.Inputs, notMetErr, "POLL_CONDITION_NOT_MET", maxAttempts, lastAssertionResults, startTime,
 	), notMetErr
+}
+
+// cancelledDuringBody reports a poll whose timeout or execution context ended
+// while an attempt's body was running. The body's own outcome is discarded: it
+// was cut short.
+func (n *PollNode) cancelledDuringBody(
+	inputs map[string]any,
+	err error,
+	attempt int,
+	assertionResults []spi.AssertionResult,
+	startTime time.Time,
+) (spi.AnyResult, error) {
+	log.Warn().
+		Str("nodeID", n.GetID()).
+		Int("attempt", attempt).
+		Err(err).
+		Msg("Poll node cancelled during attempt")
+	return n.errorResult(inputs, err, "POLL_CANCELLED", attempt, assertionResults, startTime), err
 }
 
 // bodyFailure reports a poll attempt whose body flow failed. The child error's

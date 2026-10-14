@@ -34,6 +34,9 @@ type ModuleExecutionRequest struct {
 	FlowID         string
 	FlowDefinition []byte
 	Inputs         map[string]any
+	// Ctx bounds the nested flow, such as a poll's timeout_ms. When nil, the
+	// calling node's context is used.
+	Ctx context.Context
 }
 
 // ModuleExecutor runs nested flows for module nodes.

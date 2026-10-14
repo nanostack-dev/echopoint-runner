@@ -78,10 +78,14 @@ func (e moduleExecutor) ExecuteModule(request spi.ModuleExecutionRequest) (*spi.
 		return nil, spi.NewUserError("MODULE_FLOW_PARSE_FAILED", "parse module flow", err)
 	}
 
+	ctx := e.ctx
+	if request.Ctx != nil {
+		ctx = request.Ctx
+	}
 	return ExecuteFlowDefinition(*parsedFlow, request.Inputs, &Options{
 		ModuleResolver:  e.resolver,
 		ModuleCallStack: append(append([]string{}, e.callStack...), trimmedFlowID),
-		Ctx:             e.ctx,
+		Ctx:             ctx,
 		// Propagate dynamic vars so module request nodes resolve {{$runId}} etc.
 		DynamicVars: e.dynamicVars,
 	})
