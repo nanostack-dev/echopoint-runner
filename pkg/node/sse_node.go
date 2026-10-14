@@ -97,7 +97,8 @@ func (n *SseNode) GetData() SseData {
 	return n.Data
 }
 
-// InputSchema infers inputs from template variables in URL and Headers.
+// InputSchema infers inputs from template variables in URL, Headers and
+// assertion expected values.
 func (n *SseNode) InputSchema() []string {
 	si := &SchemaInference{}
 	vars := make(map[string]bool)
@@ -108,6 +109,7 @@ func (n *SseNode) InputSchema() []string {
 	}
 	collect(si.ExtractTemplateVariables(n.Data.URL))
 	collect(si.ExtractTemplateVariables(n.Data.Headers))
+	collect(AssertionReferences(n))
 
 	result := make([]string, 0, len(vars))
 	for v := range vars {
@@ -163,6 +165,10 @@ func (n *SseNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 	if err != nil {
 		return n.createErrorResult(ctx.Inputs, sseExchange{Method: method, URL: n.Data.URL}, err, startTime), err
 	}
+	assertions, err := ResolveAssertions(ctx, n.GetAssertions())
+	if err != nil {
+		return n.createErrorResult(ctx.Inputs, sseExchange{Method: method, URL: url}, err, startTime), err
+	}
 
 	timeout := time.Duration(n.timeoutMs()) * time.Millisecond
 	streamCtx, cancel := context.WithTimeout(ctx.Context(), timeout)
@@ -211,7 +217,7 @@ func (n *SseNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 		return n.createErrorResult(ctx.Inputs, sseExchange{Method: method, URL: url}, statusErr, startTime), statusErr
 	}
 
-	events, assertionResults, stopReason, streamErr := n.consume(streamCtx, resp.Body)
+	events, assertionResults, stopReason, streamErr := n.consume(streamCtx, resp.Body, assertions)
 	exchange := sseExchange{
 		Method: method, URL: url, Events: events, AssertionResults: assertionResults, StopReason: stopReason,
 	}
@@ -269,7 +275,9 @@ type sseEvent struct {
 // sseParser holds the cross-line parse state plus the cross-event accumulator
 // for a single SSE consumption.
 type sseParser struct {
-	node             *SseNode
+	node *SseNode
+	// assertions are the node's assertions with their expected values resolved.
+	assertions       []CompositeAssertion
 	dataLines        []string
 	eventName        string
 	haveData         bool
@@ -320,7 +328,7 @@ func (p *sseParser) dispatch() (string, error) {
 	p.events = append(p.events, parsed)
 	eventIndex := len(p.events) - 1
 
-	results, assertErr := p.node.evaluateEventAssertions(parsed, eventIndex)
+	results, assertErr := p.node.evaluateEventAssertions(p.assertions, parsed, eventIndex)
 	p.assertionResults = append(p.assertionResults, results...)
 	if assertErr != nil && p.node.stopOnAssertionFailure() {
 		return sseStopAssertionFailure, assertErr
@@ -355,12 +363,12 @@ func contextDone(ctx context.Context) bool {
 // reason, and a non-nil error only when streaming failed (read error or an
 // assertion failure with stop_on_assertion_failure).
 func (n *SseNode) consume(
-	ctx context.Context, body io.Reader,
+	ctx context.Context, body io.Reader, assertions []CompositeAssertion,
 ) ([]any, []spi.AssertionResult, string, error) {
 	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, 0, sseScannerInitBytes), sseScannerBufferBytes)
 
-	p := &sseParser{node: n, events: make([]any, 0, n.maxEvents())}
+	p := &sseParser{node: n, assertions: assertions, events: make([]any, 0, n.maxEvents())}
 
 	for scanner.Scan() {
 		// Honor cancellation/deadline between lines so a slow producer cannot
@@ -399,8 +407,9 @@ func (n *SseNode) consume(
 // so callers can attribute the assertion to the event that produced it.
 // Evaluation stops at the first failing/erroring assertion (which IS recorded)
 // and the error is returned.
-func (n *SseNode) evaluateEventAssertions(parsed any, eventIndex int) ([]spi.AssertionResult, error) {
-	assertions := n.GetAssertions()
+func (n *SseNode) evaluateEventAssertions(
+	assertions []CompositeAssertion, parsed any, eventIndex int,
+) ([]spi.AssertionResult, error) {
 	if len(assertions) == 0 {
 		return nil, nil
 	}
