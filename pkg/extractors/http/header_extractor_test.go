@@ -112,6 +112,34 @@ func TestHeaderExtractor_Extract_HeaderNotFound(t *testing.T) {
 	assert.Contains(t, err.Error(), "header X-Missing-Header not found")
 }
 
+func TestHeaderExtractor_PresentEmptyHeaderExtractsAsEmptyString(t *testing.T) {
+	extractor := httpextractors.HeaderExtractor{HeaderName: "x-empty"}
+	response := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"X-Empty": {""}},
+	}
+
+	result, err := extractor.Extract(createTestContext(response))
+
+	require.NoError(t, err)
+	require.IsType(t, "", result)
+	assert.Empty(t, result)
+}
+
+func TestHeaderExtractor_PresentEmptyHeaderMatchesANonCanonicalKey(t *testing.T) {
+	extractor := httpextractors.HeaderExtractor{HeaderName: "X-Empty"}
+	response := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"x-empty": {""}},
+	}
+
+	result, err := extractor.Extract(createTestContext(response))
+
+	require.NoError(t, err)
+	require.IsType(t, "", result)
+	assert.Empty(t, result)
+}
+
 func TestHeaderExtractor_Extract_EmptyHeaders(t *testing.T) {
 	extractor := httpextractors.HeaderExtractor{HeaderName: "Content-Type"}
 	response := &http.Response{
