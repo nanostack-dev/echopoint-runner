@@ -2,7 +2,6 @@ package redact
 
 import (
 	"encoding/json"
-	"maps"
 
 	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 )
@@ -55,12 +54,7 @@ func (set *secretSet) outputs(nodeID string, values map[string]any) map[string]a
 // of this seam, reporting the unmasked original is not.
 func (set *secretSet) encodeMasked(result spi.AnyResult, base spi.BaseExecutionResult) json.RawMessage {
 	if tree, err := jsonTree(result); err == nil {
-		identity := identityFields(tree)
-		masked := set.mask(tree)
-		if fields, ok := masked.(map[string]any); ok {
-			maps.Copy(fields, identity)
-		}
-		if encoded, marshalErr := json.Marshal(masked); marshalErr == nil {
+		if encoded, marshalErr := json.Marshal(set.maskResultTree(tree)); marshalErr == nil {
 			return encoded
 		}
 	}
@@ -69,6 +63,27 @@ func (set *secretSet) encodeMasked(result spi.AnyResult, base spi.BaseExecutionR
 		return json.RawMessage(`{}`)
 	}
 	return fallback
+}
+
+// maskResultTree masks a node result's tree, keeping the fields the runner
+// writes itself.
+func (set *secretSet) maskResultTree(tree any) any {
+	identity := identityFields(tree)
+	calls := detachHTTPCalls(tree)
+	masked := set.mask(tree)
+	fields, ok := masked.(map[string]any)
+	if !ok {
+		return masked
+	}
+	for name, value := range identity {
+		if _, kept := fields[name]; kept {
+			fields[name] = value
+		}
+	}
+	if calls != nil {
+		fields["http_calls"] = set.stringsOnly().mask(calls)
+	}
+	return fields
 }
 
 // FlowResult returns a masked copy of the flow result and of every node result
@@ -94,13 +109,17 @@ func (r *Redactor) FlowResult(result *spi.FlowExecutionResult) *spi.FlowExecutio
 
 // identityFields copies the fields the runner writes itself, never a target or
 // a flow. Masking them could only corrupt the report: a short secret such as
-// "1" would rewrite executed_at, and the control plane could no longer decode it.
+// "1" would rewrite executed_at, a duration could equal a numeric secret, and
+// the control plane could no longer decode it.
 func identityFields(tree any) map[string]any {
 	fields, ok := tree.(map[string]any)
 	if !ok {
 		return nil
 	}
-	names := []string{"node_id", "node_type", "run_when", "error_code", "executed_at"}
+	names := []string{
+		"node_id", "node_type", "run_when", "error_code", "executed_at",
+		"duration_ms", "response_status_code", "attempts", "iterations", "event_count", "delay_ms",
+	}
 	identity := make(map[string]any, len(names))
 	for _, name := range names {
 		if value, present := fields[name]; present {
@@ -108,4 +127,23 @@ func identityFields(tree any) map[string]any {
 		}
 	}
 	return identity
+}
+
+// detachHTTPCalls removes a node result's http_calls, whose numbers are
+// durations, offsets, status codes and byte counts the runner writes itself.
+func detachHTTPCalls(tree any) any {
+	fields, ok := tree.(map[string]any)
+	if !ok {
+		return nil
+	}
+	calls := fields["http_calls"]
+	delete(fields, "http_calls")
+	return calls
+}
+
+// stringsOnly is set masking string leaves only, never a number.
+func (set *secretSet) stringsOnly() *secretSet {
+	copied := *set
+	copied.learned = nil
+	return &copied
 }

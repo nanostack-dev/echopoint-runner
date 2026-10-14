@@ -60,6 +60,9 @@ type secretSet struct {
 	// A response body is text the target server produced, so a secret it echoed
 	// back is escaped there and has no literal form.
 	bodyForms []string
+	// learned holds the secret output values masked by value, to match a JSON
+	// number leaf, which has no text to scan, by its whole literal.
+	learned map[string]struct{}
 	// withheld holds the references ("node.output") of secret outputs that are
 	// masked by name, because a value of theirs is too short or past the cap.
 	withheld map[string]struct{}
@@ -103,15 +106,18 @@ func NewFromSources(sources ...Source) *Redactor {
 	if len(secrets) == 0 {
 		return nil
 	}
-	return &Redactor{current: newSecretSet(secrets, nil, nil), known: known}
+	return &Redactor{current: newSecretSet(secrets, nil, nil, nil), known: known}
 }
 
 // newSecretSet orders secrets longest first: a secret that contains a shorter
 // one is masked whole, instead of being left as a recognizable fragment around
 // the shorter mask.
-func newSecretSet(secrets []string, withheld, sealed map[string]struct{}) *secretSet {
+func newSecretSet(secrets []string, learned, withheld, sealed map[string]struct{}) *secretSet {
 	slices.SortFunc(secrets, longestFirst)
-	return &secretSet{secrets: secrets, bodyForms: bodyForms(secrets), withheld: withheld, sealed: sealed}
+	return &secretSet{
+		secrets: secrets, bodyForms: bodyForms(secrets),
+		learned: learned, withheld: withheld, sealed: sealed,
+	}
 }
 
 // LearnOutput makes the value of output name of node nodeID secret. Each leaf
@@ -176,27 +182,32 @@ func (r *Redactor) Withheld(ref string) bool {
 // withhold is set, the output to the withheld ones and its node to the sealed.
 func (set *secretSet) with(fresh []string, withhold bool, nodeID, name string) *secretSet {
 	var secrets []string
-	var withheld, sealed map[string]struct{}
+	var learned, withheld, sealed map[string]struct{}
 	if set != nil {
 		secrets = slices.Clone(set.secrets)
+		learned = maps.Clone(set.learned)
 		withheld = maps.Clone(set.withheld)
 		sealed = maps.Clone(set.sealed)
 	}
 	secrets = append(secrets, fresh...)
+	for _, text := range fresh {
+		learned = addKey(learned, text)
+	}
 	if withhold {
 		withheld = addKey(withheld, outputRef(nodeID, name))
 		sealed = addKey(sealed, nodeID)
 	}
-	return newSecretSet(secrets, withheld, sealed)
+	return newSecretSet(secrets, learned, withheld, sealed)
 }
 
 func (set *secretSet) withWithheld(ref string) *secretSet {
 	if set == nil {
-		return newSecretSet(nil, addKey(nil, ref), nil)
+		return newSecretSet(nil, nil, addKey(nil, ref), nil)
 	}
 	return &secretSet{
 		secrets:   set.secrets,
 		bodyForms: set.bodyForms,
+		learned:   set.learned,
 		withheld:  addKey(maps.Clone(set.withheld), ref),
 		sealed:    set.sealed,
 	}
@@ -227,10 +238,22 @@ func leafTexts(value any, into []string) []string {
 		}
 		return into
 	}
-	if text := fmt.Sprintf("%v", value); text != "" {
+	if text := leafText(value); text != "" {
 		into = append(into, text)
 	}
 	return into
+}
+
+// leafText writes a number or bool as JSON does, the form reports carry it in:
+// fmt writes a float64 of seven or more digits in exponent form.
+func leafText(value any) string {
+	switch value.(type) {
+	case bool, float32, float64, int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, json.Number:
+		if encoded, err := json.Marshal(value); err == nil {
+			return string(encoded)
+		}
+	}
+	return fmt.Sprintf("%v", value)
 }
 
 func (r *Redactor) load() *secretSet {
@@ -354,13 +377,19 @@ func (set *secretSet) maskError(err error) error {
 	return errors.New(masked)
 }
 
-// mask walks a decoded JSON tree in place, masking every string leaf. The tree
+// mask walks a decoded JSON tree in place, masking every string leaf and every
+// number equal to a learned secret output value. The tree
 // is always a fresh copy produced by jsonTree, so mutating it cannot reach the
 // caller's value.
 func (set *secretSet) mask(v any) any {
 	switch value := v.(type) {
 	case string:
 		return set.text(value)
+	case json.Number:
+		if _, learned := set.learned[value.String()]; learned {
+			return Mask
+		}
+		return value
 	case []any:
 		for i, item := range value {
 			value[i] = set.mask(item)
