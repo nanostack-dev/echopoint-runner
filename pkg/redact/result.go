@@ -2,6 +2,7 @@ package redact
 
 import (
 	"encoding/json"
+	"reflect"
 
 	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 )
@@ -23,7 +24,43 @@ func (m *maskedResult) MarshalJSON() ([]byte, error) {
 // Result returns a masked copy of result. The original is left untouched: while
 // a flow runs it is still the engine's live value, feeding downstream nodes.
 func (r *Redactor) Result(result spi.AnyResult) spi.AnyResult {
-	return r.load().result(result)
+	return r.maskResult(r.load(), result)
+}
+
+// maskedEntry is a node result masked against one secret set snapshot.
+type maskedEntry struct {
+	set    *secretSet
+	masked spi.AnyResult
+}
+
+// maskResult masks result against set once: a run reports each node result in
+// its node.finished event, in flow.finished and in the returned flow result,
+// and masking re-encodes the whole result, response body included. A result
+// masked against the same snapshot is reused; a value learned since masks it
+// again.
+func (r *Redactor) maskResult(set *secretSet, result spi.AnyResult) spi.AnyResult {
+	if set == nil || result == nil {
+		return result
+	}
+	cacheable := reflect.ValueOf(result).Kind() == reflect.Pointer
+	if cacheable {
+		r.cacheMu.Lock()
+		entry, found := r.masked[result]
+		r.cacheMu.Unlock()
+		if found && entry.set == set {
+			return entry.masked
+		}
+	}
+	masked := set.result(result)
+	if cacheable {
+		r.cacheMu.Lock()
+		if r.masked == nil {
+			r.masked = make(map[spi.AnyResult]maskedEntry)
+		}
+		r.masked[result] = maskedEntry{set: set, masked: masked}
+		r.cacheMu.Unlock()
+	}
+	return masked
 }
 
 func (set *secretSet) result(result spi.AnyResult) spi.AnyResult {
@@ -96,7 +133,7 @@ func (r *Redactor) FlowResult(result *spi.FlowExecutionResult) *spi.FlowExecutio
 	masked := *result
 	masked.ExecutionResults = make(map[string]spi.AnyResult, len(result.ExecutionResults))
 	for nodeID, nodeResult := range result.ExecutionResults {
-		masked.ExecutionResults[nodeID] = set.result(nodeResult)
+		masked.ExecutionResults[nodeID] = r.maskResult(set, nodeResult)
 	}
 	masked.FinalOutputs = set.mapValues(result.FinalOutputs)
 	masked.Error = set.maskError(result.Error)

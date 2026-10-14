@@ -13,6 +13,7 @@ import (
 	"github.com/nanostack-dev/echopoint-runner/internal/controlplane"
 	"github.com/nanostack-dev/echopoint-runner/pkg/dynamicvars"
 	flowpkg "github.com/nanostack-dev/echopoint-runner/pkg/flow"
+	"github.com/nanostack-dev/echopoint-runner/pkg/node"
 	"github.com/nanostack-dev/echopoint-runner/pkg/runner"
 	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 	"github.com/rs/zerolog"
@@ -25,6 +26,8 @@ type Runtime struct {
 	bootID uuid.UUID
 
 	sem chan struct{}
+	// responseBudget is shared by every Job this runtime runs.
+	responseBudget *node.ResponseBudget
 
 	activeMu   sync.RWMutex
 	active     map[uuid.UUID]*activeJob
@@ -54,12 +57,14 @@ func New(config configpkg.Config) *Runtime {
 
 func newRuntime(config configpkg.Config, client *controlplane.Client) *Runtime {
 	return &Runtime{
-		config:   config,
-		client:   client,
-		bootID:   uuid.Must(uuid.NewV7()),
-		sem:      make(chan struct{}, config.MaxParallelFlows),
-		active:   make(map[uuid.UUID]*activeJob),
-		rejected: make(map[uuid.UUID]struct{}),
+		config: config,
+		client: client,
+		bootID: uuid.Must(uuid.NewV7()),
+		sem:    make(chan struct{}, config.MaxParallelFlows),
+
+		responseBudget: node.NewResponseBudget(config.MaxBufferedResponseBytes),
+		active:         make(map[uuid.UUID]*activeJob),
+		rejected:       make(map[uuid.UUID]struct{}),
 	}
 }
 
@@ -72,6 +77,7 @@ func (r *Runtime) Run(ctx context.Context) error {
 		Str("runner_id", r.config.RunnerID).
 		Str("boot_id", r.bootID.String()).
 		Int("max_parallel_flows", r.config.MaxParallelFlows).
+		Int64("max_buffered_response_bytes", r.config.MaxBufferedResponseBytes).
 		Msg("starting runner runtime")
 
 	heartbeatDone := make(chan error, 1)
@@ -253,6 +259,7 @@ func (r *Runtime) executeClaimedJob(ctx context.Context, active *activeJob) (Out
 		runner.WithContext(spi.WithJobToken(ctx, active.job.JobToken)),
 		runner.WithHTTPCallLimit(active.job.MaxHTTPCallsPerExecution),
 		runner.WithMaxResponseBytes(r.config.MaxResponseBytes),
+		runner.WithResponseBudget(r.responseBudget),
 	)
 	if execErr != nil {
 		errorMsg := execErr.Error()

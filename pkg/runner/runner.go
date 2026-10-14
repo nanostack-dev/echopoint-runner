@@ -31,6 +31,9 @@ type Options struct {
 	HTTPCallLimit   int
 	// MaxResponseBytes bounds each response body a request node reads.
 	MaxResponseBytes int64
+	// ResponseBudget bounds the response bodies held at once across every run
+	// sharing it.
+	ResponseBudget *node.ResponseBudget
 }
 
 // Option mutates Options.
@@ -91,6 +94,12 @@ func WithMaxResponseBytes(limit int64) Option {
 	return func(o *Options) { o.MaxResponseBytes = limit }
 }
 
+// WithResponseBudget makes the run's request nodes reserve their response
+// bodies from budget, which runs sharing it hold together. Nil sets no bound.
+func WithResponseBudget(budget *node.ResponseBudget) Option {
+	return func(o *Options) { o.ResponseBudget = budget }
+}
+
 // Run executes flowDef. It overlays inputs on the flow's declared InitialInputs
 // (inputs win), resolves referenced flows into the module resolver, and runs the
 // engine. The returned result is the single source of truth; callers serialize
@@ -118,6 +127,7 @@ func Run(flowDef flow.Flow, inputs map[string]any, opts ...Option) (*spi.FlowExe
 	}
 	ctx = redact.WithLearner(ctx, redactor)
 	ctx = node.WithMaxResponseBytes(ctx, options.MaxResponseBytes)
+	ctx = node.WithResponseBudget(ctx, options.ResponseBudget)
 
 	result, err := engine.ExecuteFlowDefinition(flowDef, mergedInputs, &engine.Options{
 		Observer:        redactingObserver{inner: options.Observer, redactor: redactor},

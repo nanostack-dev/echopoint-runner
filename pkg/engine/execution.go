@@ -574,8 +574,23 @@ func evalExecutor(n node.AnyNode) NodeExecutor {
 		if execErr != nil || res == nil {
 			return res, execErr
 		}
-		return applyAssertionsAndOutputs(n, res, ec)
+		res, err := applyAssertionsAndOutputs(n, res, ec)
+		releaseResponse(ec.Context(), n, res)
+		return res, err
 	}
+}
+
+// releaseResponse frees the response a node's assertions and outputs evaluated
+// once nothing else reads it: each attempt of a retried node releases its own.
+// Secret outputs are learned first, because a failed node's secret output can
+// only be extracted from that response.
+func releaseResponse(ctx context.Context, n node.AnyNode, res spi.AnyResult) {
+	releaser, ok := res.(node.ResponseReleaser)
+	if !ok {
+		return
+	}
+	learnSecretOutputs(ctx, n, res)
+	releaser.ReleaseResponse()
 }
 
 // applyAssertionsAndOutputs runs the uniform, engine-level assertion + output

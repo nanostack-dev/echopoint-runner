@@ -1,6 +1,6 @@
 # Secret redaction
 
-The runner masks secret values in everything it reports: node results, the flow result, `node.finished` and `flow.finished` progress events, and returned errors. The engine itself keeps working with the real values, so downstream nodes still send them. Masking happens once, at the [`runner.Run`](../../pkg/runner/runner.go) boundary, through [`pkg/redact`](../../pkg/redact/redact.go).
+The runner masks secret values in everything it reports: node results, the flow result, `node.finished` and `flow.finished` progress events, and returned errors. The engine itself keeps working with the real values, so downstream nodes still send them. Masking happens once, at the [`runner.Run`](../../pkg/runner/runner.go) boundary, through [`pkg/redact`](../../pkg/redact/redact.go). A node result is masked once per set of secret values: its `node.finished` event, the `flow.finished` event and the returned result share that masked copy, and a value learned in between masks the result again.
 
 ## What is secret
 
@@ -33,7 +33,7 @@ A secret output's value is learned leaf by leaf, a number or boolean in the text
 
 A body flagged secret therefore masks its long leaves wherever they appear, keeps short text such as `ok` or `true` readable in other nodes, and drops the response that produced it.
 
-The engine adds a secret output's value before it reports the node that extracted it ([`learnSecretOutputs`](../../pkg/engine/execution.go)). The run's redactor travels in the node context, so module, loop and poll bodies add to the same set. A node that fails before reporting a secret output, because another output or an assertion template erred, still has the value extracted from its response and added.
+The engine adds a secret output's value before it reports the node that extracted it ([`learnSecretOutputs`](../../pkg/engine/execution.go)). The run's redactor travels in the node context, so module, loop and poll bodies add to the same set. A node that fails before reporting a secret output, because another output or an assertion template erred, still has the value extracted from its response and added. Every attempt learns its secret outputs before the engine releases its response (see [response memory](http-calls.md#response-memory)).
 
 ## Logs
 

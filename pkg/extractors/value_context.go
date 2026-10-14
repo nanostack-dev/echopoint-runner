@@ -36,7 +36,7 @@ func (rc *valueResponseContext) HasCapability(capability string) bool {
 	switch capability {
 	case "body":
 		return rc.rawBody != nil
-	case "parsed_body":
+	case capabilityParsedBody:
 		return true
 	default:
 		return false

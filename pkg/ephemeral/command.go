@@ -10,6 +10,7 @@ import (
 
 	"github.com/nanostack-dev/echopoint-runner/internal/config"
 	internalLogger "github.com/nanostack-dev/echopoint-runner/internal/logger"
+	"github.com/nanostack-dev/echopoint-runner/pkg/node"
 	"github.com/nanostack-dev/echopoint-runner/pkg/runner"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -62,7 +63,14 @@ Does not require ECHOPOINT_RUNNER_API_KEY.`,
 			if err != nil {
 				return fmt.Errorf("read configuration: %w", err)
 			}
-			result := Run(pkg, runner.WithMaxResponseBytes(maxResponseBytes))
+			maxBufferedResponseBytes, err := config.MaxBufferedResponseBytes()
+			if err != nil {
+				return fmt.Errorf("read configuration: %w", err)
+			}
+			result := Run(pkg,
+				runner.WithMaxResponseBytes(maxResponseBytes),
+				runner.WithResponseBudget(node.NewResponseBudget(maxBufferedResponseBytes)),
+			)
 
 			if writeErr := writeResult(outputPath, result, cmd.OutOrStdout()); writeErr != nil {
 				log.Error().Err(writeErr).Str("output", outputPath).Msg("failed to write ephemeral result")

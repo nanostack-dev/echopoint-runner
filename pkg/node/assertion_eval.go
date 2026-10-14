@@ -17,6 +17,13 @@ type AssertionContextProvider interface {
 	AssertionContext() extractors.ResponseContext
 }
 
+// ResponseReleaser is the optional interface a node RESULT implements when its
+// assertion context holds a response worth freeing once the engine's
+// assertion/output pass and secret-output learning are done with it.
+type ResponseReleaser interface {
+	ReleaseResponse()
+}
+
 // EvaluateAssertions evaluates every assertion against rc, assigning each result
 // its Index. Evaluation stops at the first failing or erroring assertion — that
 // one IS recorded — and the corresponding error is returned. The returned slice

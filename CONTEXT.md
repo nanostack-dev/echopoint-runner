@@ -17,5 +17,6 @@
 | Secret output | A node output declared with `"secret": true`; from the moment the node extracts it, its value is masked like a secret input wherever it appears, including module outputs and downstream inputs that carry it. |
 | HTTP call | One outbound HTTP request a node sent during an execution; each loop iteration, poll attempt and retry is its own call. Control-plane reads such as webhook-wait polling are not HTTP calls. A top-level node's result lists its calls, its bodies' included, in `http_calls`. |
 | HTTP call limit | The most HTTP calls one execution may send (`max_http_calls_per_execution`). The node whose call would pass it fails with `HTTP_CALL_LIMIT_EXCEEDED`. |
+| Response budget | The response body bytes, with their parsed form, that every request node sharing a runner may hold at once (`ECHOPOINT_MAX_BUFFERED_RESPONSE_BYTES`). A node that cannot reserve its body waits within its request timeout. |
 
 The [architecture](docs/technical/architecture.md) identifies current implementation packages. Proposed `pkg/core` types do not replace the live vocabulary until consumers migrate.

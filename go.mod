@@ -11,6 +11,7 @@ require (
 	github.com/stretchr/testify v1.11.1
 	github.com/testcontainers/testcontainers-go v0.43.0
 	github.com/theory/jsonpath v0.12.0
+	golang.org/x/sync v0.23.0
 )
 
 require (

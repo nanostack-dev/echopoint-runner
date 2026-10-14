@@ -49,6 +49,10 @@ type Redactor struct {
 	// de-duplication; learned counts the ones LearnOutput added.
 	known   map[string]struct{}
 	learned int
+
+	// masked caches node results already masked, by original result.
+	cacheMu sync.Mutex
+	masked  map[spi.AnyResult]maskedEntry
 }
 
 // secretSet is an immutable snapshot of the values a Redactor masks. Each

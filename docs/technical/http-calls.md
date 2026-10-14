@@ -52,6 +52,31 @@ A request node reads at most 10 MiB of response body (`node.DefaultMaxResponseBy
 
 Assertions and outputs evaluate against the whole body, but a request result reports at most 1 MiB of it (`node.ReportedResponseBodyBytes`). Past that, `response_body` holds the first 1 MiB, `response_body_parsed` is left out and `response_body_truncated` is `true`, in progress events and the completion alike. The full size remains in the call's `response_bytes`. Secret masking runs on the reported body, so only a secret cut by the 1 MiB boundary can leave its first characters unmasked.
 
+## Response memory
+
+A request node holds only what its assertions and outputs need, and only while they run:
+
+- A node whose assertions and outputs use only `status_code` and `header` extractors keeps the first 1 MiB of the body, the part its result reports, and counts the rest without storing it. The size limit still applies to the whole body.
+- Any other extractor reads the body, so the node keeps all of it. A body above 1 MiB is parsed (JSON tree or text) only when an extractor first asks for it; a smaller one is parsed at once, because its result reports the parsed form.
+- Once the engine has run the node's assertions, outputs and secret-output learning, it releases the response ([`ResponseReleaser`](../../pkg/node/assertion_eval.go)). Each attempt of a retried node releases its own. From then on the result keeps only its reported body, so a finished node holds at most 1 MiB until the flow ends.
+
+### Buffered response budget
+
+A response budget ([`node.ResponseBudget`](../../pkg/node/response_budget.go)) bounds the bodies held at once by every request node of every flow sharing it, so parallel nodes and parallel flows cannot multiply memory without bound. Before reading a body, a node reserves two budget bytes per byte it keeps: one for the bytes, one for the parsed form built from them. It holds the reservation until its response is released. A body with `Content-Length` reserves it at once; one without reserves 64 KiB, then, if it is longer, what the node may keep, and gives back the unused part when the read ends. A body costing more than the whole budget waits for all of it and is read alone.
+
+A node that cannot reserve waits. The wait counts against the node's own request timeout; when the timeout elapses first, the node fails with `REQUEST_TIMEOUT` ("timed out waiting for runner memory to read its response"). The budget counts response bodies only: outputs extracted from a body, reported results and progress events add to it.
+
+| Runner | Budget |
+| --- | --- |
+| Self-hosted (`serve`) | `ECHOPOINT_MAX_BUFFERED_RESPONSE_BYTES` (bytes, default 134217728, 128 MiB), shared by all `ECHOPOINT_MAX_PARALLEL_FLOWS` jobs |
+| Ephemeral mode | `ECHOPOINT_MAX_BUFFERED_RESPONSE_BYTES`, same default, for its one execution |
+| One-shot job runner (`pkg/jobrunner`) | 128 MiB (`config.DefaultMaxBufferedResponseBytes`) |
+| Library callers of `runner.Run` | none unless `runner.WithResponseBudget` passes one |
+
+The default holds six fully read 10 MiB bodies, or 64 responses whose nodes only check status and headers. Go's collector lets the heap grow to about twice its live size, so a runner that only reads large responses peaks near twice the budget plus its own working set. Give a container at least four times the budget, or lower the budget for smaller containers.
+
+`BenchmarkConcurrentLargeResponses` in [`internal/runtime`](../../internal/runtime/response_memory_test.go) measures this end to end (3 flows of 4 parallel 10 MiB GETs through the runtime, redaction and progress reporting), and `TestConcurrentLargeResponsesStayWithinTheMemoryTarget` keeps the peak heap under 300 MiB.
+
 ## Compatibility
 
 Echopoint decodes node results into typed structs with `encoding/json`, so a control plane that does not know `http_calls` ignores it.
