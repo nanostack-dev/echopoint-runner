@@ -37,7 +37,7 @@ The lookup rules are:
 3. The remaining segments walk into that value. A missing field, a non-numeric or out-of-range index, or a scalar with segments left makes the reference unresolved.
 4. The namespace is chosen once. A reference rooted at a step that has published outputs reads only that step's outputs, never a flow input of the same name; otherwise a flow input owns the path, even when a field is missing, so the miss is reported as a missing input rather than blamed on a skipped step.
 
-Walking works on any slice, array or string-keyed map, so Go callers passing `[]string` or a webhook wait's `map[string]string` headers get the same access as decoded JSON. Assertion expected values and webhook expectations resolve references with the same rules.
+Walking works on any slice, array or string-keyed map, so Go callers passing `[]string` or a webhook wait's `map[string]string` headers get the same access as decoded JSON. Assertion expected values, including an sse node's per-event assertions, and webhook expectations resolve references with the same rules; an sse node lists the references in its expected values among its inputs.
 
 A path segment cannot contain a dot, so a field whose own name contains one, such as `pick.account_id` in an element of a loop's `results`, cannot be selected by a path; reference the whole element with `{{{loop.results.0}}}` instead.
 
