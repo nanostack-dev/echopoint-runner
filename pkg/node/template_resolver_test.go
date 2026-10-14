@@ -122,3 +122,27 @@ func TestTemplateResolver_WalksIntoATypedSlice(t *testing.T) {
 	assert.Equal(t, "alice", resolveTemplate(t,
 		map[string]any{"names": []string{"alice"}}, "{{names.0}}"))
 }
+
+func TestTemplateResolver_InterpolatesALargeWholeNumberWithoutExponent(t *testing.T) {
+	variables := map[string]any{"order": map[string]any{"id": float64(1234567)}}
+
+	assert.Equal(t, "/orders/1234567", resolveTemplate(t, variables, "/orders/{{order.id}}"))
+}
+
+func TestTemplateResolver_InterpolatesASmallFractionWithoutExponent(t *testing.T) {
+	variables := map[string]any{"rate": 0.0000001}
+
+	assert.Equal(t, "rate=0.0000001", resolveTemplate(t, variables, "rate={{rate}}"))
+}
+
+func TestTemplateResolver_InterpolatesAnObjectAsJSON(t *testing.T) {
+	variables := map[string]any{"filter": map[string]any{"tags": []any{"a", "b"}}}
+
+	assert.Equal(t, `q={"tags":["a","b"]}`, resolveTemplate(t, variables, "q={{filter}}"))
+}
+
+func TestTemplateResolver_InterpolatesAnArrayAsJSON(t *testing.T) {
+	variables := map[string]any{"ids": []any{float64(1000000), "x"}}
+
+	assert.Equal(t, `ids=[1000000,"x"]`, resolveTemplate(t, variables, "ids={{ids}}"))
+}

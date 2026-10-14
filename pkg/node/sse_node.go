@@ -253,7 +253,7 @@ func (n *SseNode) prepareConnection(inputs map[string]any) (string, map[string]s
 		if s, isString := resolved.(string); isString {
 			headers[key] = s
 		} else {
-			headers[key] = fmt.Sprintf("%v", resolved)
+			headers[key] = FormatTemplateValue(resolved)
 		}
 	}
 

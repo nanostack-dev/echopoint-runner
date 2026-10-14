@@ -46,7 +46,7 @@ func (n *RequestNode) prepareRequest(inputs map[string]any) (requestExchange, er
 		if s, ok := resolved.(string); ok {
 			headers[k] = s
 		} else {
-			headers[k] = fmt.Sprintf("%v", resolved)
+			headers[k] = FormatTemplateValue(resolved)
 		}
 	}
 
@@ -58,7 +58,7 @@ func (n *RequestNode) prepareRequest(inputs map[string]any) (requestExchange, er
 		for k, v := range n.Data.QueryParams {
 			resolvedK := n.resolveTemplates(k, inputs)
 			resolvedV := n.resolveTemplates(v, inputs)
-			queryString = append(queryString, fmt.Sprintf("%v=%v", resolvedK, resolvedV))
+			queryString = append(queryString, FormatTemplateValue(resolvedK)+"="+FormatTemplateValue(resolvedV))
 		}
 		if strings.Contains(url, "?") {
 			url += "&" + strings.Join(queryString, "&")
