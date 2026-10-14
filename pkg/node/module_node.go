@@ -65,16 +65,18 @@ func (n *ModuleNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 		err := errors.New("module flow_id is required")
 		return n.createErrorResult(ctx.Inputs, flowID, err, startTime, nil), err
 	}
-	if ctx.ModuleResolver == nil {
-		err := errors.New("module resolver unavailable")
-		return n.createErrorResult(ctx.Inputs, flowID, err, startTime, nil), err
-	}
 	if ctx.ModuleExecutor == nil {
 		err := errors.New("module executor unavailable")
 		return n.createErrorResult(ctx.Inputs, flowID, err, startTime, nil), err
 	}
 
-	resolvedFlow, ok := ctx.ModuleResolver.ResolveFlow(flowID)
+	// A run without referenced flows has no resolver; its module flow is as
+	// missing as one absent from the referenced flows.
+	var resolvedFlow spi.ResolvedModuleFlow
+	ok := false
+	if ctx.ModuleResolver != nil {
+		resolvedFlow, ok = ctx.ModuleResolver.ResolveFlow(flowID)
+	}
 	if !ok {
 		resolveErr := fmt.Errorf("referenced flow %q not found", flowID)
 		return n.createErrorResult(ctx.Inputs, flowID, resolveErr, startTime, nil), resolveErr

@@ -44,7 +44,9 @@ runner's stdin contract is unchanged:
 ```
 
 `inputs` are the resolved execution inputs/env and may contain secrets. The flow is executed with
-the existing engine; referenced/module flows are resolved from `referenced_flows`.
+the existing engine; referenced/module flows are resolved from `referenced_flows`. It must hold every
+module's flow, including modules inside loop and poll bodies and inside other modules; a module whose
+flow is absent fails with `referenced flow "<flow_id>" not found`.
 `max_http_calls_per_execution` is optional; see [HTTP calls](technical/http-calls.md).
 
 ## Result output
