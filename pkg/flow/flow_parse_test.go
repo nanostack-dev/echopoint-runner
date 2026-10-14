@@ -817,6 +817,37 @@ func TestParseFromJSON_RejectsAnUnknownReferenceInAWebhookExpectation(t *testing
 	assert.Contains(t, err.Error(), "source node 'invite-member' not available")
 }
 
+func TestParseFromJSON_AcceptsAReferenceToAnExpectationWaitsReceivedCount(t *testing.T) {
+	flowJSON := []byte(`{
+		"version": "1.0",
+		"name": "Callbacks",
+		"nodes": [
+			{
+				"id": "w",
+				"type": "webhook_wait",
+				"data": {
+					"timeout_ms": 1000,
+					"expect": [{
+						"name": "anything",
+						"assertions": [{
+							"extractor_type": "json_path",
+							"extractor_data": {"path": "$.kind"},
+							"operator_type": "not_empty",
+							"operator_data": {}
+						}]
+					}]
+				}
+			},
+			{"id": "use", "type": "request",
+				"data": {"method": "GET", "url": "https://api.example.com/count/{{w.received}}"}}
+		],
+		"edges": [{"id": "e1", "source": "w", "target": "use"}]
+	}`)
+
+	_, err := flow.ParseFromJSON(flowJSON)
+	require.NoError(t, err)
+}
+
 func initialInputsFlowJSON(inputs string) []byte {
 	return []byte(`{
 		"version": "1.0",

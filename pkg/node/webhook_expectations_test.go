@@ -383,3 +383,97 @@ func TestWebhookWaitExpect_GroupAssertsOnAQueryParam(t *testing.T) {
 		t.Errorf("request ids=%v", got)
 	}
 }
+
+func kindIs(operator string, value any) map[string]any {
+	assertion := bodyEquals("$.kind", value)
+	assertion["operator_type"] = operator
+	return assertion
+}
+
+func TestWebhookWaitExpect_MaxCountsARequestClaimedByAnotherGroup(t *testing.T) {
+	url := serveBatches(t, []map[string]any{capturedRequest("req-1", `{"kind":"forbidden"}`)})
+	never := expectGroup{Name: "never forbidden", Assertions: []map[string]any{kindIs("equals", "forbidden")}}
+	never.Min, never.Max = new(0), new(0)
+	wait := decodeExpectWait(t, 2000, 0, []expectGroup{
+		{Name: "anything", Assertions: []map[string]any{kindIs("not_empty", nil)}},
+		never,
+	})
+
+	res, err := runExpectWait(t, wait, url, nil)
+	if spi.ErrorCode(err) != "WEBHOOK_WAIT_EXPECTATIONS_FAILED" {
+		t.Fatalf("code=%s err=%v", spi.ErrorCode(err), err)
+	}
+	if !res.Expectations[0].Passed {
+		t.Errorf("the broad group still has its event: %+v", res.Expectations[0])
+	}
+	outcome := res.Expectations[1]
+	if outcome.Passed || outcome.Problem != `1 arrived; req-1 counts against max 0 although "anything" claimed it` {
+		t.Errorf("outcome=%+v", outcome)
+	}
+	if outcome.Closest == nil || outcome.Closest.RequestID != "req-1" || outcome.Closest.ClaimedBy != "anything" {
+		t.Errorf("closest=%+v", outcome.Closest)
+	}
+}
+
+func TestWebhookWaitExpect_TimeoutDuringSettleFails(t *testing.T) {
+	accepted := event("req-1", "organization.invitation.accepted", "oinv_A")
+	url := serveBatches(t, []map[string]any{}, []map[string]any{}, []map[string]any{accepted})
+	group := invitationGroup("Accepted once", "organization.invitation.accepted", "{{invite-a.id}}")
+	group.Max = new(1)
+	wait := decodeExpectWait(t, 700, 500, []expectGroup{group})
+
+	res, err := runExpectWait(t, wait, url, inviteOutputs)
+	if spi.ErrorCode(err) != "WEBHOOK_WAIT_EXPECTATIONS_FAILED" {
+		t.Fatalf("code=%s err=%v", spi.ErrorCode(err), err)
+	}
+	outcome := res.Expectations[0]
+	if outcome.Passed || outcome.Problem != "timed out before the 500ms settle window ended" {
+		t.Errorf("outcome=%+v", outcome)
+	}
+}
+
+func TestWebhookWaitExpect_RejectsASettleWindowNotShorterThanTheTimeout(t *testing.T) {
+	raw, _ := json.Marshal(map[string]any{
+		"id":   "events",
+		"type": "webhook_wait",
+		"data": map[string]any{
+			"timeout_ms": 600, "settle_ms": 2000,
+			"expect": []expectGroup{{Name: "exactly one", Assertions: []map[string]any{kindIs("not_empty", nil)}}},
+		},
+	})
+
+	_, err := node.UnmarshalNode(raw)
+	if err == nil || !strings.Contains(err.Error(), "settle_ms (2000) must be shorter than timeout_ms (600)") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestWebhookWait_DeclaresReceivedOnlyWhenExpecting(t *testing.T) {
+	expecting := decodeExpectWait(t, 2000, 0,
+		[]expectGroup{invitationGroup("A created", "organization.invitation.created", "{{invite-a.id}}")},
+	)
+	if got := strings.Join(expecting.OutputSchema(), ","); got != "received" {
+		t.Errorf("expect-mode outputs=%s", got)
+	}
+	firstMatch := decodeWebhookWait(t, mkWebhookWaitJSON(t, 2000, true))
+	if got := strings.Join(firstMatch.OutputSchema(), ","); got != "id,method,headers,query,body,received_at" {
+		t.Errorf("first-match outputs=%s", got)
+	}
+}
+
+func TestWebhookWaitExpect_NeverGroupsWatchUntilTheTimeout(t *testing.T) {
+	url := serveBatches(t, []map[string]any{}, []map[string]any{}, []map[string]any{
+		capturedRequest("req-1", `{"kind":"bad"}`),
+	})
+	never := expectGroup{Name: "never bad", Assertions: []map[string]any{kindIs("equals", "bad")}}
+	never.Min, never.Max = new(0), new(0)
+	wait := decodeExpectWait(t, 1500, 0, []expectGroup{never})
+
+	res, err := runExpectWait(t, wait, url, nil)
+	if spi.ErrorCode(err) != "WEBHOOK_WAIT_EXPECTATIONS_FAILED" {
+		t.Fatalf("code=%s err=%v", spi.ErrorCode(err), err)
+	}
+	if res.Expectations[0].Problem != "1 arrived" {
+		t.Errorf("problem=%q", res.Expectations[0].Problem)
+	}
+}

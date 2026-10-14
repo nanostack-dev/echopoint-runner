@@ -48,7 +48,8 @@ type ExpectationOutcome struct {
 }
 
 // ClosestEvent is the request that passed the most assertions of a group that
-// found no event, with each assertion's outcome.
+// found no event, or the request another group claimed that still put a group
+// over its max, with each assertion's outcome.
 type ClosestEvent struct {
 	RequestID string             `json:"request_id"`
 	ClaimedBy string             `json:"claimed_by,omitempty"`
@@ -133,6 +134,9 @@ func (n *WebhookWaitNode) executeExpectations(ctx spi.ExecutionContext) (spi.Any
 }
 
 func (n *WebhookWaitNode) validateExpectations() error {
+	if err := n.validateSettle(); err != nil {
+		return err
+	}
 	for i, expectation := range n.Data.Expect {
 		switch {
 		case strings.TrimSpace(expectation.Name) == "":
@@ -148,13 +152,25 @@ func (n *WebhookWaitNode) validateExpectations() error {
 	return nil
 }
 
+// validateSettle rejects a settle window the timeout would always cut short.
+func (n *WebhookWaitNode) validateSettle() error {
+	if len(n.Data.Expect) == 0 || n.Data.SettleMs < n.timeoutMs() {
+		return nil
+	}
+	return expectationConfigError(fmt.Sprintf(
+		"webhook wait settle_ms (%d) must be shorter than timeout_ms (%d)", n.Data.SettleMs, n.timeoutMs(),
+	))
+}
+
 func expectationConfigError(message string) error {
 	return spi.NewUserError("WEBHOOK_WAIT_FAILED", message, nil)
 }
 
 // listenForExpectations polls until every group has its events and the settle
-// window has passed, a group can no longer pass, or the wait times out. A
-// timeout is not an error here: the outcomes say which groups went unmet.
+// window has passed, a group can no longer pass, or the wait times out. When
+// no group needs an event and there is no settle window, it listens until the
+// timeout. A timeout is not an error here: the outcomes say which groups went
+// unmet, and a timeout inside the settle window fails the groups that passed.
 func (n *WebhookWaitNode) listenForExpectations(
 	waitCtx context.Context,
 	requestsURL, token string,
@@ -178,9 +194,9 @@ func (n *WebhookWaitNode) listenForExpectations(
 		if fetchErr != nil && waitCtx.Err() == nil && webhookRequestsFetchFatal(fetchErr) {
 			return listener.finalOutcomes(), fetchErr
 		}
-		_ = sleepCtx(waitCtx, webhookWaitPollInterval)
+		_ = sleepCtx(waitCtx, listener.nextPollIn())
 	}
-	return listener.finalOutcomes(), nil
+	return listener.timedOutOutcomes(), nil
 }
 
 type expectationListener struct {
@@ -214,6 +230,9 @@ func (l *expectationListener) observe(items []capturedRequest) bool {
 	case verdictBroken:
 		return true
 	case verdictMet:
+		if l.settle == 0 && !l.requiresAnEvent() {
+			return false
+		}
 		if l.settledAt.IsZero() {
 			l.settledAt = time.Now().Add(l.settle)
 		}
@@ -222,6 +241,43 @@ func (l *expectationListener) observe(items []capturedRequest) bool {
 		return false
 	}
 	return false
+}
+
+// requiresAnEvent reports whether some group needs an event to pass. When none
+// does, the wait is met on its first poll, so without a settle window it
+// watches until the timeout for an event that must never arrive.
+func (l *expectationListener) requiresAnEvent() bool {
+	for _, group := range l.groups {
+		if group.minimum() > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// nextPollIn polls again when the settle window ends rather than up to one
+// interval later, so a timeout just after the window does not cut it short.
+func (l *expectationListener) nextPollIn() time.Duration {
+	if l.settledAt.IsZero() {
+		return webhookWaitPollInterval
+	}
+	return max(0, min(webhookWaitPollInterval, time.Until(l.settledAt)))
+}
+
+// timedOutOutcomes fails every passing group when the timeout fired inside the
+// settle window: an event it did not wait for could still have broken them.
+func (l *expectationListener) timedOutOutcomes() []ExpectationOutcome {
+	outcomes := l.finalOutcomes()
+	if l.settledAt.IsZero() {
+		return outcomes
+	}
+	for i := range outcomes {
+		if outcomes[i].Passed {
+			outcomes[i].Passed = false
+			outcomes[i].Problem = fmt.Sprintf("timed out before the %dms settle window ended", l.settle.Milliseconds())
+		}
+	}
+	return outcomes
 }
 
 // finalOutcomes covers a wait that ended before its first successful poll.
@@ -251,14 +307,27 @@ func evaluateExpectations(
 	for itemIndex, item := range items {
 		contexts[itemIndex] = item.assertionContext()
 	}
-	claims, claimedBy := assignRequests(groups, contexts)
+	claims, matches, claimedBy := assignRequests(groups, contexts)
 
 	verdict := verdictMet
 	outcomes := make([]ExpectationOutcome, len(groups))
 	for groupIndex, group := range groups {
-		outcome, broken := judgeExpectation(group, claims[groupIndex], items, contexts, everyEvent, firstSeen)
+		events := groupEvents{claimed: claims[groupIndex], matched: matches[groupIndex], foreign: -1}
+		for _, itemIndex := range events.matched {
+			if owner := claimedBy[itemIndex]; owner != groupIndex {
+				events.foreign, events.foreignOwner = itemIndex, groups[owner].Name
+				break
+			}
+		}
+		outcome, broken := judgeExpectation(group, events, items, contexts, everyEvent, firstSeen)
 		evaluated := len(group.unresolved) == 0
-		if evaluated && !outcome.Passed && outcome.Received < group.minimum() {
+		switch {
+		case events.overMax(group) && events.foreign >= 0:
+			checks, _ := checkEach(group.assertions, contexts[events.foreign])
+			outcome.Closest = &ClosestEvent{
+				RequestID: items[events.foreign].ID, ClaimedBy: events.foreignOwner, Checks: checks,
+			}
+		case evaluated && !outcome.Passed && outcome.Received < group.minimum():
 			outcome.Closest = closestEvent(group, items, contexts, claimedBy, groups)
 		}
 		outcomes[groupIndex] = outcome
@@ -271,25 +340,42 @@ func evaluateExpectations(
 	return outcomes, verdict
 }
 
+// groupEvents are the requests one group claimed, which count toward its min,
+// and every request that passes its assertions, which counts against its max.
+// foreign is the first match another group claimed, or -1.
+type groupEvents struct {
+	claimed      []int
+	matched      []int
+	foreign      int
+	foreignOwner string
+}
+
+func (e groupEvents) overMax(group resolvedExpectation) bool {
+	return len(group.unresolved) == 0 && group.Max != nil && len(e.matched) > *group.Max
+}
+
 // assignRequests gives each request, oldest first, to one group: the first
 // group it satisfies that still needs events, else the first group it
-// satisfies, where it counts as an extra.
+// satisfies, where it counts as an extra. It also lists, per group, every
+// request that satisfies it, claimed or not.
 func assignRequests(
 	groups []resolvedExpectation, contexts []extractors.ResponseContext,
-) ([][]int, map[int]int) {
+) ([][]int, [][]int, map[int]int) {
 	claims := make([][]int, len(groups))
+	matches := make([][]int, len(groups))
 	claimedBy := make(map[int]int, len(contexts))
 	for itemIndex, rc := range contexts {
-		chosen := -1
+		chosen, needed := -1, false
 		for groupIndex, group := range groups {
 			if len(group.unresolved) > 0 || !allAssertionsPass(group.assertions, rc) {
 				continue
 			}
-			if len(claims[groupIndex]) < group.minimum() {
-				chosen = groupIndex
-				break
-			}
-			if chosen < 0 {
+			matches[groupIndex] = append(matches[groupIndex], itemIndex)
+			switch {
+			case needed:
+			case len(claims[groupIndex]) < group.minimum():
+				chosen, needed = groupIndex, true
+			case chosen < 0:
 				chosen = groupIndex
 			}
 		}
@@ -298,7 +384,7 @@ func assignRequests(
 			claimedBy[itemIndex] = chosen
 		}
 	}
-	return claims, claimedBy
+	return claims, matches, claimedBy
 }
 
 // judgeExpectation reports the group's outcome, and whether it failed in a way
@@ -306,12 +392,13 @@ func assignRequests(
 // check every event must pass.
 func judgeExpectation(
 	group resolvedExpectation,
-	claimed []int,
+	events groupEvents,
 	items []capturedRequest,
 	contexts []extractors.ResponseContext,
 	everyEvent []CompositeAssertion,
 	firstSeen map[string]time.Duration,
 ) (ExpectationOutcome, bool) {
+	claimed := events.claimed
 	outcome := ExpectationOutcome{Name: group.Name, Received: len(claimed), RequestIDs: []string{}}
 	for _, itemIndex := range claimed {
 		outcome.RequestIDs = append(outcome.RequestIDs, items[itemIndex].ID)
@@ -327,8 +414,12 @@ func judgeExpectation(
 	case len(group.unresolved) > 0:
 		outcome.Problem = "not evaluated: no value for {{" + group.unresolved[0] + "}}"
 		return outcome, false
-	case group.Max != nil && len(claimed) > *group.Max:
-		outcome.Problem = fmt.Sprintf("%d arrived", len(claimed))
+	case events.overMax(group):
+		outcome.Problem = fmt.Sprintf("%d arrived", len(events.matched))
+		if events.foreign >= 0 {
+			outcome.Problem += fmt.Sprintf("; %s counts against max %d although %q claimed it",
+				items[events.foreign].ID, *group.Max, events.foreignOwner)
+		}
 		return outcome, true
 	}
 	for _, itemIndex := range claimed {
