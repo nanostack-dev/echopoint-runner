@@ -13,6 +13,7 @@ import (
 	"github.com/nanostack-dev/echopoint-runner/pkg/engine"
 	"github.com/nanostack-dev/echopoint-runner/pkg/flow"
 	"github.com/nanostack-dev/echopoint-runner/pkg/httpcall"
+	"github.com/nanostack-dev/echopoint-runner/pkg/node"
 	"github.com/nanostack-dev/echopoint-runner/pkg/redact"
 	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 )
@@ -28,6 +29,8 @@ type Options struct {
 	Middleware      []engine.Middleware
 	SecretInputKeys []string
 	HTTPCallLimit   int
+	// MaxResponseBytes bounds each response body a request node reads.
+	MaxResponseBytes int64
 }
 
 // Option mutates Options.
@@ -81,6 +84,13 @@ func WithHTTPCallLimit(limit int) Option {
 	return func(o *Options) { o.HTTPCallLimit = limit }
 }
 
+// WithMaxResponseBytes fails a request node whose response body is larger than
+// limit with node.ResponseTooLargeCode. Zero or less keeps
+// node.DefaultMaxResponseBytes.
+func WithMaxResponseBytes(limit int64) Option {
+	return func(o *Options) { o.MaxResponseBytes = limit }
+}
+
 // Run executes flowDef. It overlays inputs on the flow's declared InitialInputs
 // (inputs win), resolves referenced flows into the module resolver, and runs the
 // engine. The returned result is the single source of truth; callers serialize
@@ -107,6 +117,7 @@ func Run(flowDef flow.Flow, inputs map[string]any, opts ...Option) (*spi.FlowExe
 		ctx = context.Background()
 	}
 	ctx = redact.WithLearner(ctx, redactor)
+	ctx = node.WithMaxResponseBytes(ctx, options.MaxResponseBytes)
 
 	result, err := engine.ExecuteFlowDefinition(flowDef, mergedInputs, &engine.Options{
 		Observer:        redactingObserver{inner: options.Observer, redactor: redactor},

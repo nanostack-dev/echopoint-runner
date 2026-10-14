@@ -23,6 +23,7 @@ const (
 	defaultLogLevel            = "info"
 	defaultLogFormat           = "json"
 	defaultDotEnvPath          = ".env"
+	defaultMaxResponseBytes    = 10 << 20
 )
 
 type Config struct {
@@ -39,6 +40,7 @@ type Config struct {
 	LogLevel            zerolog.Level
 	LogFormat           string
 	FlowAPIKey          string
+	MaxResponseBytes    int64
 }
 
 func Load() (Config, error) {
@@ -84,6 +86,11 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 
+	maxResponseBytes, err := MaxResponseBytes()
+	if err != nil {
+		return Config{}, err
+	}
+
 	config := Config{
 		BaseURL:             strings.TrimRight(getEnvOrDefault("ECHOPOINT_BASE_URL", defaultBaseURL), "/"),
 		OrganizationID:      strings.TrimSpace(os.Getenv("ECHOPOINT_ORGANIZATION_ID")),
@@ -98,6 +105,7 @@ func Load() (Config, error) {
 		LogLevel:            logLevel,
 		LogFormat:           strings.TrimSpace(getEnvOrDefault("ECHOPOINT_LOG_FORMAT", defaultLogFormat)),
 		FlowAPIKey:          strings.TrimSpace(os.Getenv("ECHOPOINT_FLOW_API_KEY")),
+		MaxResponseBytes:    maxResponseBytes,
 	}
 
 	if config.OrganizationID == "" {
@@ -129,6 +137,19 @@ func Load() (Config, error) {
 	}
 
 	return config, nil
+}
+
+// MaxResponseBytes reads ECHOPOINT_MAX_RESPONSE_BYTES, the largest response
+// body a request node reads, defaulting to 10 MiB.
+func MaxResponseBytes() (int64, error) {
+	limit, err := getIntEnv("ECHOPOINT_MAX_RESPONSE_BYTES", defaultMaxResponseBytes)
+	if err != nil {
+		return 0, err
+	}
+	if limit < 1 {
+		return 0, errors.New("ECHOPOINT_MAX_RESPONSE_BYTES must be positive")
+	}
+	return int64(limit), nil
 }
 
 func loadDotEnv(path string) error {
