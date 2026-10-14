@@ -145,3 +145,21 @@ func TestIsTransientForRefusedConnection(t *testing.T) {
 	require.Error(t, err)
 	assert.True(t, controlplane.IsTransient(err))
 }
+
+// The control plane refuses a job whose flow declares a secret output to a
+// runner that does not declare it can mask one, so every claim declares it.
+func TestClaimNextDeclaresTheSecretOutputsCapability(t *testing.T) {
+	var body map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	client := controlplane.NewRunnerClient(controlplane.Config{BaseURL: server.URL})
+	_, err := client.ClaimNext(context.Background(), controlplane.ClaimNextRequest{RunnerID: "runner-1"})
+
+	require.ErrorIs(t, err, controlplane.ErrNoJobAvailable)
+	assert.Equal(t, "runner-1", body["runner_id"])
+	assert.Equal(t, []any{"secret_outputs"}, body["capabilities"])
+}
