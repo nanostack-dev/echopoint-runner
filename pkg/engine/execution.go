@@ -509,7 +509,7 @@ func learnSecretOutputs(ctx context.Context, n node.AnyNode, result spi.AnyResul
 			continue
 		}
 		if value, ok := produced[output.Name]; ok {
-			redact.Learn(ctx, value)
+			redact.LearnOutput(ctx, n.GetID(), output.Name, value)
 			continue
 		}
 		// A node that failed before reporting this output (another extractor or
@@ -518,7 +518,7 @@ func learnSecretOutputs(ctx context.Context, n node.AnyNode, result spi.AnyResul
 			continue
 		}
 		if value, err := output.Extractor.Extract(response); err == nil {
-			redact.Learn(ctx, value)
+			redact.LearnOutput(ctx, n.GetID(), output.Name, value)
 		}
 	}
 }

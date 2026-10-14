@@ -11,9 +11,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 )
@@ -27,12 +29,26 @@ const Mask = "***"
 // search for, so the field is decoded, masked, and re-encoded.
 const responseBodyField = "response_body"
 
+// MinLearnedLength is the fewest characters a secret output value needs to be
+// masked by value. Shorter text, such as true, 1 or a status word, occurs
+// everywhere in a run's reports, so masking it by value would wipe them out
+// while protecting nothing a guess could not recover.
+const MinLearnedLength = 6
+
+// MaxLearnedValues caps the distinct secret output values one run masks by
+// value. Each one is matched against every string the run reports.
+const MaxLearnedValues = 500
+
 // Redactor masks a set of secret values. A nil or zero Redactor is a valid
-// no-op. Learn grows the set while a run executes, so a value a node extracts
-// into a secret output is masked in everything reported after it.
+// no-op. LearnOutput grows the set while a run executes, so a value a node
+// extracts into a secret output is masked in everything reported after it.
 type Redactor struct {
 	mu      sync.RWMutex
 	current *secretSet
+	// known holds every value in current.secrets, for constant-time
+	// de-duplication; learned counts the ones LearnOutput added.
+	known   map[string]struct{}
+	learned int
 }
 
 // secretSet is an immutable snapshot of the values a Redactor masks. Each
@@ -44,6 +60,12 @@ type secretSet struct {
 	// A response body is text the target server produced, so a secret it echoed
 	// back is escaped there and has no literal form.
 	bodyForms []string
+	// withheld holds the references ("node.output") of secret outputs that are
+	// masked by name, because a value of theirs is too short or past the cap.
+	withheld map[string]struct{}
+	// sealed holds the IDs of the nodes that produced a withheld value. Their
+	// reports keep only the fields that cannot carry it.
+	sealed map[string]struct{}
 }
 
 // Source identifies secret-bearing values by key. Callers may provide one
@@ -63,55 +85,132 @@ func New(inputs map[string]any, secretKeys []string) *Redactor {
 // independent input maps. Duplicate values are kept only once.
 func NewFromSources(sources ...Source) *Redactor {
 	var secrets []string
+	known := make(map[string]struct{})
 	for _, source := range sources {
 		for _, key := range source.SecretKeys {
 			value, present := source.Inputs[key]
 			if !present || value == nil {
 				continue
 			}
-			if text := fmt.Sprintf("%v", value); text != "" && !slices.Contains(secrets, text) {
-				secrets = append(secrets, text)
+			text := fmt.Sprintf("%v", value)
+			if _, seen := known[text]; text == "" || seen {
+				continue
 			}
+			known[text] = struct{}{}
+			secrets = append(secrets, text)
 		}
 	}
 	if len(secrets) == 0 {
 		return nil
 	}
-	return &Redactor{current: newSecretSet(secrets)}
+	return &Redactor{current: newSecretSet(secrets, nil, nil), known: known}
 }
 
 // newSecretSet orders secrets longest first: a secret that contains a shorter
 // one is masked whole, instead of being left as a recognizable fragment around
 // the shorter mask.
-func newSecretSet(secrets []string) *secretSet {
+func newSecretSet(secrets []string, withheld, sealed map[string]struct{}) *secretSet {
 	slices.SortFunc(secrets, longestFirst)
-	return &secretSet{secrets: secrets, bodyForms: bodyForms(secrets)}
+	return &secretSet{secrets: secrets, bodyForms: bodyForms(secrets), withheld: withheld, sealed: sealed}
 }
 
-// Learn adds the text of value to the masked set. A map or slice contributes
-// each of its leaves. Empty text is ignored, as is a value already masked.
-func (r *Redactor) Learn(value any) {
-	learned := leafTexts(value, nil)
-	if r == nil || len(learned) == 0 {
+// LearnOutput makes the value of output name of node nodeID secret. Each leaf
+// of a map or slice counts on its own. A leaf of at least MinLearnedLength
+// characters is masked by value from now on, up to MaxLearnedValues per run.
+// Any other leaf withholds the output instead: it is masked by name wherever
+// the run reports it, and its node's report drops the fields that could carry
+// it. Empty text is ignored, as is a value already masked.
+func (r *Redactor) LearnOutput(nodeID, name string, value any) {
+	leaves := leafTexts(value, nil)
+	if r == nil || len(leaves) == 0 {
 		return
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	var secrets []string
-	if r.current != nil {
-		secrets = slices.Clone(r.current.secrets)
+	if r.known == nil {
+		r.known = make(map[string]struct{})
 	}
-	before := len(secrets)
-	for _, text := range learned {
-		if !slices.Contains(secrets, text) {
-			secrets = append(secrets, text)
+	var fresh []string
+	withhold := false
+	for _, text := range leaves {
+		if _, seen := r.known[text]; seen {
+			continue
 		}
+		if utf8.RuneCountInString(text) < MinLearnedLength || r.learned+len(fresh) >= MaxLearnedValues {
+			withhold = true
+			continue
+		}
+		r.known[text] = struct{}{}
+		fresh = append(fresh, text)
 	}
-	if len(secrets) == before {
+	if len(fresh) == 0 && !withhold {
 		return
 	}
-	r.current = newSecretSet(secrets)
+	r.learned += len(fresh)
+	r.current = r.current.with(fresh, withhold, nodeID, name)
 }
+
+// Withhold masks output name of node nodeID by name, without dropping any of
+// the node's report: a module output bound to a withheld child output.
+func (r *Redactor) Withhold(nodeID, name string) {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.current = r.current.withWithheld(outputRef(nodeID, name))
+}
+
+// Withheld reports whether a reference such as "mint.pin" names an output
+// masked by name.
+func (r *Redactor) Withheld(ref string) bool {
+	set := r.load()
+	if set == nil {
+		return false
+	}
+	_, withheld := set.withheld[ref]
+	return withheld
+}
+
+// with returns a new snapshot adding fresh to the masked values and, when
+// withhold is set, the output to the withheld ones and its node to the sealed.
+func (set *secretSet) with(fresh []string, withhold bool, nodeID, name string) *secretSet {
+	var secrets []string
+	var withheld, sealed map[string]struct{}
+	if set != nil {
+		secrets = slices.Clone(set.secrets)
+		withheld = maps.Clone(set.withheld)
+		sealed = maps.Clone(set.sealed)
+	}
+	secrets = append(secrets, fresh...)
+	if withhold {
+		withheld = addKey(withheld, outputRef(nodeID, name))
+		sealed = addKey(sealed, nodeID)
+	}
+	return newSecretSet(secrets, withheld, sealed)
+}
+
+func (set *secretSet) withWithheld(ref string) *secretSet {
+	if set == nil {
+		return newSecretSet(nil, addKey(nil, ref), nil)
+	}
+	return &secretSet{
+		secrets:   set.secrets,
+		bodyForms: set.bodyForms,
+		withheld:  addKey(maps.Clone(set.withheld), ref),
+		sealed:    set.sealed,
+	}
+}
+
+func addKey(set map[string]struct{}, key string) map[string]struct{} {
+	if set == nil {
+		set = make(map[string]struct{})
+	}
+	set[key] = struct{}{}
+	return set
+}
+
+func outputRef(nodeID, name string) string { return nodeID + "." + name }
 
 func leafTexts(value any, into []string) []string {
 	switch typed := value.(type) {
@@ -151,9 +250,11 @@ func longestFirst(a, b string) int { return len(b) - len(a) }
 // them alone, and both escape " and \.
 func bodyForms(secrets []string) []string {
 	forms := make([]string, 0, len(secrets))
+	seen := make(map[string]struct{}, len(secrets))
 	for _, secret := range secrets {
 		for _, form := range []string{secret, jsonEscape(secret, true), jsonEscape(secret, false)} {
-			if !slices.Contains(forms, form) {
+			if _, dup := seen[form]; !dup {
+				seen[form] = struct{}{}
 				forms = append(forms, form)
 			}
 		}
@@ -266,7 +367,12 @@ func (set *secretSet) mask(v any) any {
 		}
 		return value
 	case map[string]any:
+		set.seal(value)
 		for key, item := range value {
+			if set.refersToWithheld(key) {
+				value[key] = Mask
+				continue
+			}
 			encoded, isText := item.(string)
 			if key == responseBodyField && isText {
 				value[key] = set.maskBase64(encoded)
@@ -278,6 +384,92 @@ func (set *secretSet) mask(v any) any {
 	default:
 		return v
 	}
+}
+
+// keptWhenSealed reports whether a node result field stays in the report of a
+// node that produced a withheld value: the runner writes it itself, or it is
+// masked by name.
+func keptWhenSealed(field string) bool {
+	switch field {
+	case "node_id", "display_name", "node_type", "run_when", "inputs", "outputs",
+		"error_code", "error_message", "skip_reason", "missing_inputs", "executed_at",
+		"duration_ms", "response_status_code", "http_calls", "assertion_results":
+		return true
+	}
+	return false
+}
+
+// seal reduces a node result whose node produced a withheld value to the
+// fields that cannot carry it, masks that node's withheld outputs by name and
+// the values its assertions compared. A withheld value cannot be found by
+// value, so this fails closed: the request, response and child detail go.
+func (set *secretSet) seal(fields map[string]any) {
+	nodeID, isText := fields["node_id"].(string)
+	if _, isResult := fields["node_type"]; !isText || !isResult {
+		return
+	}
+	if _, sealed := set.sealed[nodeID]; !sealed {
+		set.maskOutputsByName(nodeID, fields["outputs"])
+		return
+	}
+	for key := range fields {
+		if !keptWhenSealed(key) {
+			delete(fields, key)
+		}
+	}
+	set.maskOutputsByName(nodeID, fields["outputs"])
+	maskComparedValues(fields["assertion_results"])
+}
+
+// maskComparedValues masks the actual and expected values of assertion results.
+func maskComparedValues(results any) {
+	assertions, ok := results.([]any)
+	if !ok {
+		return
+	}
+	for _, assertion := range assertions {
+		compared, isObject := assertion.(map[string]any)
+		if !isObject {
+			continue
+		}
+		for _, key := range []string{"actual", "expected"} {
+			if _, present := compared[key]; present {
+				compared[key] = Mask
+			}
+		}
+	}
+}
+
+// maskOutputsByName masks each withheld output of nodeID in its outputs map.
+func (set *secretSet) maskOutputsByName(nodeID string, outputs any) {
+	values, ok := outputs.(map[string]any)
+	if !ok {
+		return
+	}
+	for name := range values {
+		if _, withheld := set.withheld[outputRef(nodeID, name)]; withheld {
+			values[name] = Mask
+		}
+	}
+}
+
+// refersToWithheld reports whether key is a withheld reference or a path into
+// one, such as "mint.pin" or "mint.pin.0": the key of a consumer's input, a
+// flow's final output or a module's child_final_outputs.
+func (set *secretSet) refersToWithheld(key string) bool {
+	if len(set.withheld) == 0 {
+		return false
+	}
+	for i := range len(key) {
+		if key[i] != '.' {
+			continue
+		}
+		if _, withheld := set.withheld[key[:i]]; withheld {
+			return true
+		}
+	}
+	_, withheld := set.withheld[key]
+	return withheld
 }
 
 // maskBase64 masks the bytes encoded in a response_body. The encoded string is

@@ -1,6 +1,7 @@
 package node
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"maps"
@@ -8,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nanostack-dev/echopoint-runner/pkg/redact"
 	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 	"github.com/rs/zerolog/log"
 )
@@ -107,6 +109,7 @@ func (n *ModuleNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 	if err != nil {
 		return n.createErrorResult(ctx.Inputs, flowID, err, startTime, result), err
 	}
+	n.withholdBoundOutputs(ctx.Context())
 
 	return &ModuleExecutionResult{
 		BaseExecutionResult: spi.BaseExecutionResult{
@@ -159,6 +162,17 @@ func (n *ModuleNode) exportOutputs(result *spi.FlowExecutionResult) (map[string]
 		outputs[trimmedOutputName] = value
 	}
 	return outputs, nil
+}
+
+// withholdBoundOutputs masks by name each module output bound to a child output
+// masked by name. A value masked by value needs nothing: the same value is
+// masked wherever it appears.
+func (n *ModuleNode) withholdBoundOutputs(ctx context.Context) {
+	for outputName, sourceRef := range n.Data.OutputBindings {
+		if redact.Withheld(ctx, strings.TrimSpace(sourceRef)) {
+			redact.Withhold(ctx, n.GetID(), strings.TrimSpace(outputName))
+		}
+	}
 }
 
 func (n *ModuleNode) createErrorResult(

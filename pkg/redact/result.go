@@ -36,11 +36,18 @@ func (set *secretSet) result(result spi.AnyResult) spi.AnyResult {
 		DisplayName: result.GetDisplayName(),
 		NodeType:    result.GetNodeType(),
 		Inputs:      set.mapValues(result.GetInputs()),
-		Outputs:     set.mapValues(result.GetOutputs()),
+		Outputs:     set.outputs(result.GetNodeID(), result.GetOutputs()),
 		Error:       set.maskError(result.GetError()),
 		ExecutedAt:  result.GetExecutedAt(),
 	}
 	return &maskedResult{BaseExecutionResult: base, encoded: set.encodeMasked(result, base)}
+}
+
+// outputs masks a node's outputs by value, then its withheld ones by name.
+func (set *secretSet) outputs(nodeID string, values map[string]any) map[string]any {
+	masked := set.mapValues(values)
+	set.maskOutputsByName(nodeID, masked)
+	return masked
 }
 
 // encodeMasked serializes the masked form of result. Any failure falls back to

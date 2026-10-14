@@ -11,6 +11,7 @@ import (
 	"github.com/nanostack-dev/echopoint-runner/pkg/flow"
 	"github.com/nanostack-dev/echopoint-runner/pkg/redact"
 	"github.com/nanostack-dev/echopoint-runner/pkg/runner"
+	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 )
 
 const mintedToken = "minted-session-token-must-never-be-reported"
@@ -205,5 +206,116 @@ func TestRun_MasksASecretOutputWhenAnotherOutputOfItsNodeFails(t *testing.T) {
 		if encoded := encodeJSON(t, value); strings.Contains(encoded, mintedToken) {
 			t.Errorf("%s leaked the secret output of a failed node: %s", name, encoded)
 		}
+	}
+}
+
+const shortPin = "4821"
+
+// pinServer issues a body holding a long token, a short pin and a short state
+// from /token, and answers every other path with the same short state.
+func pinServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/token" {
+			_, _ = w.Write([]byte(`{"jwt":"` + mintedToken + `","pin":"` + shortPin + `","state":"ok"}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"state":"ok","pin_seen":"` + r.Header.Get("X-Pin") + `"}`))
+	}))
+	t.Cleanup(server.Close)
+	return server
+}
+
+func nodeResult(t *testing.T, result *spi.FlowExecutionResult, nodeID string) map[string]any {
+	t.Helper()
+	var decoded map[string]any
+	if err := json.Unmarshal([]byte(encodeJSON(t, result.ExecutionResults[nodeID])), &decoded); err != nil {
+		t.Fatalf("decode %s: %v", nodeID, err)
+	}
+	return decoded
+}
+
+// A pin is too short to mask by value without masking every "4821" in the run,
+// so it is masked by name, and the response that produced it is dropped.
+func TestRun_MasksASecretOutputTooShortToMaskByValueByName(t *testing.T) {
+	server := pinServer(t)
+	flowDef := parseFlow(t, `{"name":"pin","nodes":[
+		{"id":"mint","type":"request","data":{"method":"POST","url":"{{baseURL}}/token"},
+		 "outputs":[{"name":"pin","secret":true,"extractor":{"type":"json_path","path":"$.pin"}}]},
+		{"id":"me","type":"request","data":{"method":"GET","url":"{{baseURL}}/me",
+		 "headers":{"X-Pin":"{{mint.pin}}"}}}
+	],"edges":[{"id":"e","source":"mint","target":"me","type":"success"}]}`, "baseURL")
+
+	result, err := runner.Run(flowDef, map[string]any{"baseURL": server.URL})
+	if err != nil || !result.Success {
+		t.Fatalf("flow should succeed, err=%v", err)
+	}
+
+	if got := result.FinalOutputs["mint.pin"]; got != redact.Mask {
+		t.Errorf("final_outputs should mask the pin by name, got %v", got)
+	}
+	mint := nodeResult(t, result, "mint")
+	if outputs, _ := mint["outputs"].(map[string]any); outputs["pin"] != redact.Mask {
+		t.Errorf("the minting node should mask the pin by name: %v", mint)
+	}
+	if _, present := mint["response_body"]; present {
+		t.Errorf("the response that produced the pin should be dropped: %v", mint)
+	}
+	if inputs, _ := nodeResult(t, result, "me")["inputs"].(map[string]any); inputs["mint.pin"] != redact.Mask {
+		t.Errorf("the consumer's input should mask the pin by name: %v", inputs)
+	}
+}
+
+// A body flagged secret has leaves like "ok" that other nodes report too. Only
+// its long leaves are masked by value, so those reports stay readable.
+func TestRun_KeepsShortLeavesOfASecretBodyReadableInOtherNodes(t *testing.T) {
+	server := pinServer(t)
+	flowDef := parseFlow(t, `{"name":"body","nodes":[
+		{"id":"mint","type":"request","data":{"method":"POST","url":"{{baseURL}}/token"},
+		 "outputs":[{"name":"payload","secret":true,"extractor":{"type":"body"}}]},
+		{"id":"me","type":"request","data":{"method":"GET","url":"{{baseURL}}/me",
+		 "headers":{"Authorization":"Bearer {{mint.payload.jwt}}"}},
+		 "outputs":[{"name":"state","extractor":{"type":"json_path","path":"$.state"}}]}
+	],"edges":[{"id":"e","source":"mint","target":"me","type":"success"}]}`, "baseURL")
+
+	result, err := runner.Run(flowDef, map[string]any{"baseURL": server.URL})
+	if err != nil || !result.Success {
+		t.Fatalf("flow should succeed, err=%v", err)
+	}
+
+	if encoded := encodeJSON(t, result); strings.Contains(encoded, mintedToken) {
+		t.Errorf("the long leaf of the secret body leaked: %s", encoded)
+	}
+	if got := result.FinalOutputs["me.state"]; got != "ok" {
+		t.Errorf("another node's short value should stay readable, got %v", got)
+	}
+}
+
+// A module output bound to a child output masked by name carries the same
+// short value, so it is masked by name too.
+func TestRun_MasksAModuleOutputBoundToAShortSecretOutputByName(t *testing.T) {
+	server := pinServer(t)
+	parent := parseFlow(t, `{"name":"parent","nodes":[
+		{"id":"tester","type":"module","data":{"flow_id":"pin-module","output_bindings":{"code":"mint.pin"}}}
+	],"edges":[]}`, "baseURL")
+	child := json.RawMessage(`{"name":"pin-module","nodes":[
+		{"id":"mint","type":"request","data":{"method":"POST","url":"{{baseURL}}/token"},
+		 "outputs":[{"name":"pin","secret":true,"extractor":{"type":"json_path","path":"$.pin"}}]}
+	],"edges":[]}`)
+
+	result, err := runner.Run(parent, map[string]any{"baseURL": server.URL},
+		runner.WithReferencedFlows(flow.ReferencedFlowRegistry{"pin-module": {FlowDefinition: child}}),
+	)
+	if err != nil || !result.Success {
+		t.Fatalf("flow should succeed, err=%v", err)
+	}
+
+	if got := result.FinalOutputs["tester.code"]; got != redact.Mask {
+		t.Errorf("the module output should be masked by name, got %v", got)
+	}
+	tester := nodeResult(t, result, "tester")
+	if children, _ := tester["child_final_outputs"].(map[string]any); children["mint.pin"] != redact.Mask {
+		t.Errorf("child_final_outputs should mask the pin by name: %v", tester)
 	}
 }
