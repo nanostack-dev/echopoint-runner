@@ -78,6 +78,8 @@ func (c *Client) Run(ctx context.Context, job Job) (Result, error) {
 		MaxParallelFlows:  1,
 		RequestTimeout:    cfg.Timeout,
 		HeartbeatInterval: cfg.Heartbeat,
+
+		MaxBufferedResponseBytes: config.DefaultMaxBufferedResponseBytes,
 	}, cfg.JobToken, cfg.BootID, &controlplane.ClaimedJob{
 		JobID:           job.JobID,
 		ExecutionID:     job.ExecutionID,

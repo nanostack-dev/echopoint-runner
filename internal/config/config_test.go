@@ -34,3 +34,29 @@ func TestMaxResponseBytesRejectsZero(t *testing.T) {
 
 	require.EqualError(t, err, "ECHOPOINT_MAX_RESPONSE_BYTES must be positive")
 }
+
+func TestMaxBufferedResponseBytesDefaultsTo128Mebibytes(t *testing.T) {
+	t.Setenv("ECHOPOINT_MAX_BUFFERED_RESPONSE_BYTES", "")
+
+	budget, err := config.MaxBufferedResponseBytes()
+
+	require.NoError(t, err)
+	assert.Equal(t, int64(128<<20), budget)
+}
+
+func TestMaxBufferedResponseBytesReadsTheEnvironment(t *testing.T) {
+	t.Setenv("ECHOPOINT_MAX_BUFFERED_RESPONSE_BYTES", "67108864")
+
+	budget, err := config.MaxBufferedResponseBytes()
+
+	require.NoError(t, err)
+	assert.Equal(t, int64(64<<20), budget)
+}
+
+func TestMaxBufferedResponseBytesRejectsZero(t *testing.T) {
+	t.Setenv("ECHOPOINT_MAX_BUFFERED_RESPONSE_BYTES", "0")
+
+	_, err := config.MaxBufferedResponseBytes()
+
+	require.EqualError(t, err, "ECHOPOINT_MAX_BUFFERED_RESPONSE_BYTES must be positive")
+}

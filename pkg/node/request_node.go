@@ -33,12 +33,22 @@ type RequestData struct {
 // requestExchange carries one request and its completed response through the
 // private execution pipeline. It is not a serialized result or public API.
 type requestExchange struct {
-	URL          string
-	Headers      map[string]string
-	Body         any
-	Response     *http.Response
+	URL      string
+	Headers  map[string]string
+	Body     any
+	Response *http.Response
+	// ResponseBody is the response body the node kept: the whole body, or its
+	// first bytes when no assertion or output reads it (see keptResponseBytes).
 	ResponseBody []byte
+	// ResponseSize is the whole body's size; zero means len(ResponseBody).
+	ResponseSize int64
 	ParsedBody   any
+	// bodyHold is the response budget reservation holding ResponseBody.
+	bodyHold *bodyReservation
+}
+
+func (e requestExchange) responseSize() int64 {
+	return max(e.ResponseSize, int64(len(e.ResponseBody)))
 }
 
 // RequestNode is a typed node for HTTP requests.
@@ -124,11 +134,13 @@ func (n *RequestNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 	log.Debug().
 		Str("nodeID", n.GetID()).
 		Int("statusCode", resp.StatusCode).
-		Int("bodySize", len(respBody)).
+		Int64("bodySize", respBody.size).
 		Msg("HTTP response received")
 
 	exchange.Response = resp
-	exchange.ResponseBody = respBody
+	exchange.ResponseBody = respBody.data
+	exchange.ResponseSize = respBody.size
+	exchange.bodyHold = respBody.hold
 	return n.processResponse(ctx.Inputs, exchange, startTime)
 }
 
@@ -143,8 +155,19 @@ func (n *RequestNode) processResponse(
 	exchange requestExchange,
 	startTime time.Time,
 ) (spi.AnyResult, error) {
-	exchange.ParsedBody = n.parseResponseBody(exchange.Response.Header.Get("Content-Type"), exchange.ResponseBody)
-	respCtx := extractors.NewResponseContext(exchange.Response, exchange.ResponseBody, exchange.ParsedBody)
+	contentType := exchange.Response.Header.Get("Content-Type")
+	var respCtx extractors.ResponseContext
+	if exchange.responseSize() > ReportedResponseBodyBytes {
+		// The result reports no parsed form of a large body, so only an assertion
+		// or output that reads it pays for parsing it.
+		body := exchange.ResponseBody
+		respCtx = extractors.NewLazyResponseContext(exchange.Response, body, func() any {
+			return n.parseResponseBody(contentType, body)
+		})
+	} else {
+		exchange.ParsedBody = n.parseResponseBody(contentType, exchange.ResponseBody)
+		respCtx = extractors.NewResponseContext(exchange.Response, exchange.ResponseBody, exchange.ParsedBody)
+	}
 	result := n.createSuccessResult(inputs, exchange, respCtx, startTime)
 
 	log.Info().
@@ -162,7 +185,7 @@ func (n *RequestNode) createSuccessResult(
 	respCtx extractors.ResponseContext,
 	startTime time.Time,
 ) *RequestExecutionResult {
-	body, parsed, truncated := reportedBody(exchange.ResponseBody, exchange.ParsedBody)
+	body, parsed, truncated := reportedBody(exchange.ResponseBody, exchange.responseSize(), exchange.ParsedBody)
 	return &RequestExecutionResult{
 		BaseExecutionResult: spi.BaseExecutionResult{
 			NodeID:      n.GetID(),
@@ -182,6 +205,7 @@ func (n *RequestNode) createSuccessResult(
 		ResponseBodyParsed:    parsed,
 		ResponseBodyTruncated: truncated,
 		assertionCtx:          respCtx,
+		bodyHold:              exchange.bodyHold,
 		DurationMs:            time.Since(startTime).Milliseconds(),
 	}
 }
@@ -231,7 +255,7 @@ func (n *RequestNode) createResponseBackedErrorResult(
 		reqResult.ResponseHeaders = exchange.Response.Header
 	}
 	reqResult.ResponseBody, reqResult.ResponseBodyParsed, reqResult.ResponseBodyTruncated = reportedBody(
-		exchange.ResponseBody, exchange.ParsedBody,
+		exchange.ResponseBody, exchange.responseSize(), exchange.ParsedBody,
 	)
 	reqResult.AssertionResults = assertionResults
 
@@ -265,11 +289,12 @@ func (n *RequestNode) resolveTemplatesWithError(
 	return result, nil
 }
 
-// makeRequestAndReadBody makes an HTTP request and reads the entire response body
-// within the timeout period. The timeout applies to the entire operation (request + body read).
+// makeRequestAndReadBody makes an HTTP request and reads its response body
+// within the timeout period. The timeout applies to the entire operation
+// (request, waiting for response budget and body read).
 func (n *RequestNode) makeRequestAndReadBody(
 	parent context.Context, url, method string, headers map[string]string, body any, timeout int,
-) (*http.Response, []byte, error) {
+) (*http.Response, responseBody, error) {
 	// An unset/zero timeout means "no explicit timeout"; apply a sane default so the
 	// request isn't cancelled with an instant 0ms deadline.
 	if timeout <= 0 {
@@ -285,7 +310,7 @@ func (n *RequestNode) makeRequestAndReadBody(
 
 	req, err := http.NewRequestWithContext(ctx, method, url, nil)
 	if err != nil {
-		return nil, nil, err
+		return nil, responseBody{}, err
 	}
 	contentTypeSet := false
 	for key, value := range headers {
@@ -300,7 +325,7 @@ func (n *RequestNode) makeRequestAndReadBody(
 	if body != nil {
 		payload, serializeErr := serializeRequestBody(body)
 		if serializeErr != nil {
-			return nil, nil, serializeErr
+			return nil, responseBody{}, serializeErr
 		}
 		if !contentTypeSet && json.Valid(payload) {
 			req.Header.Set("Content-Type", "application/json")
@@ -312,23 +337,15 @@ func (n *RequestNode) makeRequestAndReadBody(
 	client := recordingClient(n.GetID(), n.Data.URL, false)
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, nil, err
+		return nil, responseBody{}, err
 	}
 
 	limit := maxResponseBytes(parent)
-	if resp.ContentLength > limit {
-		_ = resp.Body.Close()
-		return nil, nil, responseTooLargeError(url, limit)
-	}
 	// Read the response body while still within the timeout context
-	respBody, readErr := io.ReadAll(io.LimitReader(resp.Body, limit+1))
+	respBody, readErr := readResponseBody(ctx, resp, url, limit, n.keptResponseBytes(limit))
 	if readErr != nil {
 		_ = resp.Body.Close()
-		return nil, nil, readErr
-	}
-	if int64(len(respBody)) > limit {
-		_ = resp.Body.Close()
-		return nil, nil, responseTooLargeError(url, limit)
+		return nil, responseBody{}, readErr
 	}
 
 	return resp, respBody, nil

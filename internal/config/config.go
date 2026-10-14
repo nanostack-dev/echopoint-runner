@@ -26,6 +26,10 @@ const (
 	defaultMaxResponseBytes    = 10 << 20
 )
 
+// DefaultMaxBufferedResponseBytes bounds the response bodies one runner process
+// holds in memory at once when ECHOPOINT_MAX_BUFFERED_RESPONSE_BYTES is unset.
+const DefaultMaxBufferedResponseBytes = 128 << 20
+
 type Config struct {
 	BaseURL             string
 	OrganizationID      string
@@ -41,6 +45,9 @@ type Config struct {
 	LogFormat           string
 	FlowAPIKey          string
 	MaxResponseBytes    int64
+	// MaxBufferedResponseBytes bounds the response bodies every flow of the
+	// runner holds in memory at once; zero sets no bound.
+	MaxBufferedResponseBytes int64
 }
 
 func Load() (Config, error) {
@@ -91,6 +98,11 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 
+	maxBufferedResponseBytes, err := MaxBufferedResponseBytes()
+	if err != nil {
+		return Config{}, err
+	}
+
 	config := Config{
 		BaseURL:             strings.TrimRight(getEnvOrDefault("ECHOPOINT_BASE_URL", defaultBaseURL), "/"),
 		OrganizationID:      strings.TrimSpace(os.Getenv("ECHOPOINT_ORGANIZATION_ID")),
@@ -106,6 +118,8 @@ func Load() (Config, error) {
 		LogFormat:           strings.TrimSpace(getEnvOrDefault("ECHOPOINT_LOG_FORMAT", defaultLogFormat)),
 		FlowAPIKey:          strings.TrimSpace(os.Getenv("ECHOPOINT_FLOW_API_KEY")),
 		MaxResponseBytes:    maxResponseBytes,
+
+		MaxBufferedResponseBytes: maxBufferedResponseBytes,
 	}
 
 	if config.OrganizationID == "" {
@@ -150,6 +164,20 @@ func MaxResponseBytes() (int64, error) {
 		return 0, errors.New("ECHOPOINT_MAX_RESPONSE_BYTES must be positive")
 	}
 	return int64(limit), nil
+}
+
+// MaxBufferedResponseBytes reads ECHOPOINT_MAX_BUFFERED_RESPONSE_BYTES, the
+// response body bytes all request nodes of the process hold at once, defaulting
+// to DefaultMaxBufferedResponseBytes.
+func MaxBufferedResponseBytes() (int64, error) {
+	budget, err := getIntEnv("ECHOPOINT_MAX_BUFFERED_RESPONSE_BYTES", DefaultMaxBufferedResponseBytes)
+	if err != nil {
+		return 0, err
+	}
+	if budget < 1 {
+		return 0, errors.New("ECHOPOINT_MAX_BUFFERED_RESPONSE_BYTES must be positive")
+	}
+	return int64(budget), nil
 }
 
 func loadDotEnv(path string) error {

@@ -51,12 +51,16 @@ func formatBytes(n int64) string {
 	return fmt.Sprintf("%d bytes", n)
 }
 
-// reportedBody is the body a result carries: past ReportedResponseBodyBytes it
-// keeps a copy of the first bytes, so the full body can be released, and drops
-// the parsed tree.
-func reportedBody(body []byte, parsed any) ([]byte, any, bool) {
-	if len(body) <= ReportedResponseBodyBytes {
+// reportedBody is the body a result carries for a body of size bytes whose
+// first bytes are body: past ReportedResponseBodyBytes it keeps the first
+// bytes, copied when body holds more so the full body can be released, and
+// drops the parsed tree.
+func reportedBody(body []byte, size int64, parsed any) ([]byte, any, bool) {
+	if size <= ReportedResponseBodyBytes {
 		return body, parsed, false
 	}
-	return bytes.Clone(body[:ReportedResponseBodyBytes]), nil, true
+	if len(body) > ReportedResponseBodyBytes {
+		return bytes.Clone(body[:ReportedResponseBodyBytes]), nil, true
+	}
+	return body, nil, true
 }

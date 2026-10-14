@@ -1,6 +1,7 @@
 package node
 
 import (
+	"context"
 	"net/http"
 	"time"
 
@@ -73,4 +74,13 @@ func CreateResponseBackedErrorResultForTest(
 // RecordingClientForTest exposes the HTTP call recording client.
 func RecordingClientForTest(nodeID, urlTemplate string) *http.Client {
 	return recordingClient(nodeID, urlTemplate, false)
+}
+
+// HoldResponseBudgetForTest reserves n budget bytes, as a response body being
+// read would, and returns what gives them back.
+func HoldResponseBudgetForTest(budget *ResponseBudget, n int64) func() {
+	if err := budget.acquire(context.Background(), n); err != nil {
+		panic(err)
+	}
+	return func() { budget.release(n) }
 }

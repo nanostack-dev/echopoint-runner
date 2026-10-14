@@ -49,6 +49,8 @@ type RequestExecutionResult struct {
 	// evaluates against. It is built during Execute (on a successful HTTP
 	// exchange) and exposed via AssertionContext(); it is never serialized.
 	assertionCtx extractors.ResponseContext
+	// bodyHold is the response budget reservation for the body assertionCtx holds.
+	bodyHold *bodyReservation
 
 	// Timing
 	DurationMs int64 `json:"duration_ms"`
@@ -56,10 +58,19 @@ type RequestExecutionResult struct {
 
 // AssertionContext exposes the ResponseContext the engine-level assertion/output
 // pass evaluates against. It satisfies AssertionContextProvider; a nil context
-// (e.g. an error result built before the HTTP exchange completed) signals the
-// engine to skip the pass.
+// (e.g. an error result built before the HTTP exchange completed, or one whose
+// response was released) signals the engine to skip the pass.
 func (r *RequestExecutionResult) AssertionContext() extractors.ResponseContext {
 	return r.assertionCtx
+}
+
+// ReleaseResponse drops the response the assertion/output pass evaluated and
+// returns its bytes to the response budget. The result keeps the body it
+// reports; the full body of a large response becomes garbage. It satisfies
+// ResponseReleaser and is safe to call more than once.
+func (r *RequestExecutionResult) ReleaseResponse() {
+	r.assertionCtx = nil
+	r.bodyHold.release()
 }
 
 // DelayExecutionResult stores delay node execution data.
