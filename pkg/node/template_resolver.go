@@ -1,6 +1,7 @@
 package node
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"reflect"
@@ -95,7 +96,7 @@ func (tr *TemplateResolver) resolveString(s string) string {
 				return val
 			}
 			if val, exists := tr.lookup(varName); exists {
-				return fmt.Sprintf("%v", val)
+				return FormatTemplateValue(val)
 			}
 			return match
 		},
@@ -259,4 +260,29 @@ func (tr *TemplateResolver) resolveSlice(s []any) ([]any, error) {
 		Msg("Slice templates resolved")
 
 	return resolved, nil
+}
+
+// FormatTemplateValue renders a value interpolated into text. JSON numbers
+// arrive as float64, which %v prints in exponent form from 1e6
+// (1234567 → 1.234567e+06), corrupting ids and amounts in URLs and bodies.
+// Objects and arrays render as JSON rather than Go's map[k:v] syntax.
+func FormatTemplateValue(val any) string {
+	switch v := val.(type) {
+	case string:
+		return v
+	case float64:
+		return strconv.FormatFloat(v, 'f', -1, 64)
+	case float32:
+		return strconv.FormatFloat(float64(v), 'f', -1, 32)
+	case map[string]any, []any, map[string]string, []string:
+		var buf bytes.Buffer
+		encoder := json.NewEncoder(&buf)
+		encoder.SetEscapeHTML(false)
+		if err := encoder.Encode(v); err != nil {
+			return fmt.Sprintf("%v", v)
+		}
+		return strings.TrimSuffix(buf.String(), "\n")
+	default:
+		return fmt.Sprintf("%v", v)
+	}
 }

@@ -69,8 +69,11 @@ func (si *SchemaInference) InferRequestNodeInputSchema(data RequestData) []strin
 	// Extract from Headers
 	si.extractVariablesRecursive(data.Headers, vars)
 
-	// Extract from QueryParams
+	// Extract from QueryParams; names are resolved too, so they count as inputs.
 	si.extractVariablesRecursive(data.QueryParams, vars)
+	for name := range data.QueryParams {
+		si.extractVariablesFromString(name, vars)
+	}
 
 	// Extract from Body
 	si.extractVariablesRecursive(data.Body, vars)
