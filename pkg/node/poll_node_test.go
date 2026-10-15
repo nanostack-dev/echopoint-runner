@@ -260,3 +260,58 @@ func TestPollNode_BodyIsValidJSON(t *testing.T) {
 		t.Fatalf("poll body should be valid JSON: %v", err)
 	}
 }
+
+func TestPollNode_ExhaustedConditionIsUserError(t *testing.T) {
+	n := decodePollNode(t, mkPollNodeJSON(t, 2, "$.status", "done", true))
+	exec := &fakePollExecutor{outputs: []map[string]any{{"status": "pending"}}}
+
+	_, err := n.Execute(spi.ExecutionContext{ModuleExecutor: exec})
+
+	userErr, ok := spi.AsUserError(err)
+	if !ok {
+		t.Fatalf("expected a UserError, got %v", err)
+	}
+	if userErr.Code != "POLL_CONDITION_NOT_MET" {
+		t.Errorf("expected POLL_CONDITION_NOT_MET, got %q", userErr.Code)
+	}
+}
+
+// slowPollExecutor runs a body that outlives the poll's timeout_ms.
+type slowPollExecutor struct{}
+
+func (slowPollExecutor) ExecuteModule(req spi.ModuleExecutionRequest) (*spi.FlowExecutionResult, error) {
+	<-req.Ctx.Done()
+	return nil, req.Ctx.Err()
+}
+
+func TestPollNode_OwnTimeoutIsUserError(t *testing.T) {
+	n := decodePollNode(t, []byte(`{"id":"poll-1","type":"poll",`+
+		`"assertions":[{"extractor_type":"json_path","extractor_data":{"path":"$.s"},`+
+		`"operator_type":"equals","operator_data":{"value":"done"}}],`+
+		`"data":{"body":{"nodes":[],"edges":[]},"max_attempts":3,"interval_ms":1,"timeout_ms":20}}`))
+
+	res, err := n.Execute(spi.ExecutionContext{ModuleExecutor: slowPollExecutor{}})
+
+	userErr, ok := spi.AsUserError(err)
+	if !ok {
+		t.Fatalf("expected a UserError, got %v", err)
+	}
+	if userErr.Code != "POLL_CANCELLED" || !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("expected POLL_CANCELLED wrapping the deadline, got %q: %v", userErr.Code, err)
+	}
+	if code := spi.MustAs[*node.PollExecutionResult](res).ErrorCode; code == nil || *code != "POLL_CANCELLED" {
+		t.Errorf("expected POLL_CANCELLED result code, got %v", code)
+	}
+}
+
+func TestPollNode_RunCancellationIsNotUserError(t *testing.T) {
+	n := decodePollNode(t, mkPollNodeJSON(t, 5, "$.status", "done", true))
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := n.Execute(spi.ExecutionContext{Ctx: ctx, ModuleExecutor: &fakePollExecutor{}})
+
+	if _, ok := spi.AsUserError(err); ok {
+		t.Fatalf("a cancelled run is not the flow author's outcome: %v", err)
+	}
+}

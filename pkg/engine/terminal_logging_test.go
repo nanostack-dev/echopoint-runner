@@ -96,7 +96,7 @@ func TestEngineOwnsSSETerminalFailureSeverity(t *testing.T) {
 		require.NoError(t, json.Unmarshal([]byte(line), &record))
 		if record["message"] == "Node execution failed" {
 			terminalRecords++
-			require.Equal(t, "error", record["level"])
+			require.Equal(t, "debug", record["level"], "a target refusing the stream is a user outcome")
 			require.Equal(t, "stream", record["nodeID"])
 			require.Equal(t, "logging", record["flowName"])
 		}

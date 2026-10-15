@@ -78,6 +78,8 @@ func (n *ModuleNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 		resolvedFlow, ok = ctx.ModuleResolver.ResolveFlow(flowID)
 	}
 	if !ok {
+		// Not a UserError: the control plane refuses to launch a run whose module
+		// flow does not exist, so a missing one means it sent an incomplete snapshot.
 		resolveErr := fmt.Errorf("referenced flow %q not found", flowID)
 		return n.createErrorResult(ctx.Inputs, flowID, resolveErr, startTime, nil), resolveErr
 	}

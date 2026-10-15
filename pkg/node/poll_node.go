@@ -144,7 +144,7 @@ func (n *PollNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		// Abort before each attempt if the execution context (or the derived
 		// timeout) is already done.
-		if err := pollCtx.Err(); err != nil {
+		if err := n.cancellation(pollCtx, ctx); err != nil {
 			log.Warn().
 				Str("nodeID", n.GetID()).
 				Int("attempt", attempt).
@@ -160,7 +160,7 @@ func (n *PollNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 			Inputs:         childInputs,
 			Ctx:            pollCtx,
 		})
-		if cancelErr := pollCtx.Err(); cancelErr != nil {
+		if cancelErr := n.cancellation(pollCtx, ctx); cancelErr != nil {
 			return n.cancelledDuringBody(ctx.Inputs, cancelErr, attempt, lastAssertionResults, startTime)
 		}
 		if err != nil {
@@ -183,7 +183,8 @@ func (n *PollNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 
 		// Wait interval_ms before retrying, unless this was the final attempt.
 		if attempt < maxAttempts {
-			if waitErr := sleepCtx(pollCtx, interval); waitErr != nil {
+			if sleepCtx(pollCtx, interval) != nil {
+				waitErr := n.cancellation(pollCtx, ctx)
 				log.Warn().
 					Str("nodeID", n.GetID()).
 					Int("attempt", attempt).
@@ -196,15 +197,39 @@ func (n *PollNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 		}
 	}
 
-	notMetErr := fmt.Errorf("poll condition not met after %d attempts", maxAttempts)
-	log.Error().
+	return n.conditionNotMet(ctx.Inputs, maxAttempts, lastAssertionResults, startTime)
+}
+
+// conditionNotMet reports a poll whose exit condition never held: the flow
+// author's outcome, logged at info and returned as a UserError.
+func (n *PollNode) conditionNotMet(
+	inputs map[string]any,
+	attempts int,
+	assertionResults []spi.AssertionResult,
+	startTime time.Time,
+) (spi.AnyResult, error) {
+	notMetErr := spi.NewUserError(
+		"POLL_CONDITION_NOT_MET", fmt.Sprintf("poll condition not met after %d attempts", attempts), nil,
+	)
+	log.Info().
 		Str("nodeID", n.GetID()).
-		Int("attempts", maxAttempts).
+		Int("attempts", attempts).
 		Err(notMetErr).
 		Msg("Poll node exhausted attempts without meeting exit condition")
 	return n.errorResult(
-		ctx.Inputs, notMetErr, "POLL_CONDITION_NOT_MET", maxAttempts, lastAssertionResults, startTime,
+		inputs, notMetErr, "POLL_CONDITION_NOT_MET", attempts, assertionResults, startTime,
 	), notMetErr
+}
+
+// cancellation returns the error that ended the poll, or nil while it may go on.
+// The poll's own timeout_ms elapsing is the author's configured stop, so it is a
+// UserError; the run's context ending (job cancelled, runner stopping) is not.
+func (n *PollNode) cancellation(pollCtx context.Context, ctx spi.ExecutionContext) error {
+	err := pollCtx.Err()
+	if err == nil || ctx.Context().Err() != nil || n.Data.TimeoutMs <= 0 {
+		return err
+	}
+	return spi.NewUserError("POLL_CANCELLED", fmt.Sprintf("poll timed out after %d ms", n.Data.TimeoutMs), err)
 }
 
 // cancelledDuringBody reports a poll whose timeout or execution context ended
@@ -236,7 +261,11 @@ func (n *PollNode) bodyFailure(
 	startTime time.Time,
 ) (spi.AnyResult, error) {
 	pollErr := fmt.Errorf("poll body failed on attempt %d: %w", attempt, err)
-	log.Error().
+	event := log.Error()
+	if _, ok := spi.AsUserError(err); ok {
+		event = log.Debug()
+	}
+	event.
 		Str("nodeID", n.GetID()).
 		Int("attempt", attempt).
 		Str("errorCode", spi.ErrorCode(err)).
