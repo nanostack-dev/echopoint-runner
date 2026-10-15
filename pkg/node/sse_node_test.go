@@ -381,27 +381,39 @@ func TestSseNode_AssertionFailureStaysUserError(t *testing.T) {
 	assert.NotContains(t, out, `"level":"error"`, "a stopping assertion failure is not a runner fault")
 }
 
-// The classification must not swallow real faults: a non-2xx response is a
-// failure returned to the engine for error-level terminal logging.
-func TestSseNode_GenuineFaultReturnedForEngine(t *testing.T) {
-	logs := captureLogs(t)
-
+// A non-2xx from the target is the user's endpoint refusing the stream: a
+// UserError the engine logs at debug, with the stable SSE_FAILED code.
+func TestSseNode_NonOKStatusIsUserError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	t.Cleanup(srv.Close)
 
-	n := sseNode(t, srv.URL, node.SseData{TimeoutMs: 2000})
+	_, err := sseNode(t, srv.URL, node.SseData{TimeoutMs: 2000}).Execute(spi.ExecutionContext{Inputs: map[string]any{}})
 
-	_, err := n.Execute(spi.ExecutionContext{Inputs: map[string]any{}})
-	require.Error(t, err)
+	userErr, isUser := spi.AsUserError(err)
+	require.True(t, isUser, "got %v", err)
+	assert.Equal(t, "SSE_FAILED", userErr.Code)
+	assert.Equal(t, "SSE endpoint returned non-2xx status: 500", userErr.Message)
+}
 
-	_, isUser := spi.AsUserError(err)
-	require.False(t, isUser, "a 500 from the target is not a user assertion outcome")
-	assert.NotContains(
+func TestSseNode_StreamCutByTargetIsUserError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Content-Length", "1000")
+		w.WriteHeader(http.StatusOK)
+		_, _ = fmt.Fprint(w, "data: {}\n")
+	}))
+	t.Cleanup(srv.Close)
+
+	res, err := sseNode(
 		t,
-		logs.String(),
-		`"level":"error"`,
-		"direct node calls return the fault for their caller to handle",
-	)
+		srv.URL,
+		node.SseData{TimeoutMs: 2000},
+	).Execute(spi.ExecutionContext{Inputs: map[string]any{}})
+
+	userErr, isUser := spi.AsUserError(err)
+	require.True(t, isUser, "got %v", err)
+	assert.Equal(t, "SSE stream read error", userErr.Message)
+	assert.Equal(t, "SSE_FAILED", *spi.MustAs[*node.SseExecutionResult](res).ErrorCode)
 }

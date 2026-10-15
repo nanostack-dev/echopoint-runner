@@ -213,7 +213,9 @@ func (n *SseNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		statusErr := fmt.Errorf("SSE endpoint returned non-2xx status: %d", resp.StatusCode)
+		statusErr := spi.NewUserError(
+			"SSE_FAILED", fmt.Sprintf("SSE endpoint returned non-2xx status: %d", resp.StatusCode), nil,
+		)
 		return n.createErrorResult(ctx.Inputs, sseExchange{Method: method, URL: url}, statusErr, startTime), statusErr
 	}
 
@@ -395,7 +397,8 @@ func (n *SseNode) consume(
 		return p.events, p.assertionResults, sseStopTimeout, nil
 	}
 	if err := scanner.Err(); err != nil {
-		readErr := fmt.Errorf("SSE stream read error: %w", err)
+		// The target closed or reset the stream; the cause stays off the log line.
+		readErr := spi.NewUserError("SSE_FAILED", "SSE stream read error", err)
 		return p.events, p.assertionResults, sseStopEOF, readErr
 	}
 	return p.events, p.assertionResults, sseStopEOF, nil

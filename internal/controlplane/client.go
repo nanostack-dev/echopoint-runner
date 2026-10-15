@@ -367,15 +367,17 @@ func readAPIError(statusCode int, body []byte) error {
 }
 
 // IsTransient reports whether err is a control-plane failure expected to clear on
-// retry: a 5xx or 429 status, a network error, or a request deadline. A control
-// plane redeploy produces these for a few seconds.
+// retry: a 5xx, 429 or 404 status, a network error, or a request deadline. A
+// control plane redeploy produces these for a few seconds; the 404 is the edge
+// answering while it reroutes. Callers escalate one that persists.
 func IsTransient(err error) bool {
 	if errors.Is(err, context.Canceled) {
 		return false
 	}
 	if statusErr, ok := errors.AsType[*StatusError](err); ok {
 		return statusErr.StatusCode >= http.StatusInternalServerError ||
-			statusErr.StatusCode == http.StatusTooManyRequests
+			statusErr.StatusCode == http.StatusTooManyRequests ||
+			statusErr.StatusCode == http.StatusNotFound
 	}
 	if _, ok := errors.AsType[net.Error](err); ok {
 		return true

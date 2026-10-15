@@ -122,6 +122,15 @@ func TestClaimLoopResetsFailureCountAfterAnAnsweredPoll(t *testing.T) {
 		levelsOf(t, logs, "failed to claim runner job"))
 }
 
+func TestClaimLoopLogsEdgeNotFoundAtWarnUntilItPersists(t *testing.T) {
+	statuses := repeatStatus(http.StatusNotFound, claimFailureEscalationThreshold)
+
+	logs := runClaimLoopAgainst(t, statuses)
+
+	expected := append(repeatLevel("warn", claimFailureEscalationThreshold-1), "error")
+	assert.Equal(t, expected, levelsOf(t, logs, "failed to claim runner job"))
+}
+
 func TestClaimLoopLogsRejectedRunnerKeyAtErrorImmediately(t *testing.T) {
 	logs := runClaimLoopAgainst(t, []int{http.StatusUnauthorized})
 
@@ -299,4 +308,38 @@ func TestClaimedJobFailsAResponsePastTheConfiguredMaxResponseBytes(t *testing.T)
 	assert.Equal(t, jobStatusFailed, outcome.Status)
 	require.NotNil(t, completion.ErrorMessage)
 	assert.Contains(t, *completion.ErrorMessage, "larger than the 1024 bytes limit")
+}
+
+func TestJobFailedByTargetStreamRefusalLogsAtWarn(t *testing.T) {
+	logs := captureLogs(t)
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer target.Close()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/complete") {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer server.Close()
+
+	r := newRuntime(testConfig(server.URL), controlplane.NewRunnerClient(controlplane.Config{BaseURL: server.URL}))
+	job := &controlplane.ClaimedJob{
+		JobID:       uuid.New(),
+		ExecutionID: uuid.New(),
+		FlowDefinition: json.RawMessage(`{
+			"name": "Stream", "version": "1.0", "edges": [],
+			"nodes": [{"id": "stream", "type": "sse", "data": {"url": "` + target.URL + `", "timeout_ms": 2000}}]
+		}`),
+		Inputs: map[string]any{},
+	}
+
+	outcome, err := r.executeClaimedJob(context.Background(), &activeJob{job: job, startedAt: time.Now()})
+
+	require.NoError(t, err)
+	assert.Equal(t, jobStatusFailed, outcome.Status)
+	assert.Equal(t, []string{"warn"}, levelsOf(t, logs, "runner job failed"))
+	assert.NotContains(t, levelsOf(t, logs, "Node execution failed"), "error")
 }

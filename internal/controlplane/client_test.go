@@ -130,6 +130,10 @@ func TestIsTransientForRateLimit(t *testing.T) {
 	assert.True(t, controlplane.IsTransient(claimErrorForStatus(t, http.StatusTooManyRequests)))
 }
 
+func TestIsTransientForEdgeNotFoundWhileRoutesChurn(t *testing.T) {
+	assert.True(t, controlplane.IsTransient(claimErrorForStatus(t, http.StatusNotFound)))
+}
+
 func TestIsNotTransientForRejectedRunnerKey(t *testing.T) {
 	assert.False(t, controlplane.IsTransient(claimErrorForStatus(t, http.StatusUnauthorized)))
 	assert.False(t, controlplane.IsTransient(claimErrorForStatus(t, http.StatusForbidden)))

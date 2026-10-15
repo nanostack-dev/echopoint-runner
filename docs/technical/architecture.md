@@ -30,7 +30,12 @@ error code and message (including request `UserError` handling, SSE's `SSE_FAILE
 code, and poll-specific codes and assertion outcomes).
 
 The engine owns terminal failure logging and chooses severity from `spi.UserError`
-with `SafeErrorMessage`, node identity and flow identity. Extractors and SSE result
+with `SafeErrorMessage`, node identity and flow identity. A failure from the
+user's target or a condition they configured is a `UserError` where it is created:
+an SSE stream refused (non-2xx) or cut by the target, a poll whose exit condition
+never holds or whose `timeout_ms` elapses. A module flow missing from the
+referenced flows stays a runner fault, because the control plane refuses to launch
+a run whose module flow does not exist. Extractors and SSE result
 constructors return failures without repeating that record. Best-effort output
 extraction after an assertion failure logs unavailable output names at Debug.
 Recovery/fallback, continued-loop, per-event SSE and cancellation diagnostics keep
