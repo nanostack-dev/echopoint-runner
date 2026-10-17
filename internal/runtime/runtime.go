@@ -13,6 +13,7 @@ import (
 	"github.com/nanostack-dev/echopoint-runner/internal/controlplane"
 	"github.com/nanostack-dev/echopoint-runner/pkg/dynamicvars"
 	flowpkg "github.com/nanostack-dev/echopoint-runner/pkg/flow"
+	"github.com/nanostack-dev/echopoint-runner/pkg/httpcall"
 	"github.com/nanostack-dev/echopoint-runner/pkg/node"
 	"github.com/nanostack-dev/echopoint-runner/pkg/runner"
 	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
@@ -28,6 +29,7 @@ type Runtime struct {
 	sem chan struct{}
 	// responseBudget is shared by every Job this runtime runs.
 	responseBudget *node.ResponseBudget
+	requestPacer   *httpcall.Pacer
 
 	activeMu   sync.RWMutex
 	active     map[uuid.UUID]*activeJob
@@ -63,6 +65,7 @@ func newRuntime(config configpkg.Config, client *controlplane.Client) *Runtime {
 		sem:    make(chan struct{}, config.MaxParallelFlows),
 
 		responseBudget: node.NewResponseBudget(config.MaxBufferedResponseBytes),
+		requestPacer:   httpcall.NewPacer(time.Duration(config.MsBetweenRequests) * time.Millisecond),
 		active:         make(map[uuid.UUID]*activeJob),
 		rejected:       make(map[uuid.UUID]struct{}),
 	}
@@ -77,6 +80,7 @@ func (r *Runtime) Run(ctx context.Context) error {
 		Str("runner_id", r.config.RunnerID).
 		Str("boot_id", r.bootID.String()).
 		Int("max_parallel_flows", r.config.MaxParallelFlows).
+		Int("ms_between_requests", r.config.MsBetweenRequests).
 		Int64("max_buffered_response_bytes", r.config.MaxBufferedResponseBytes).
 		Msg("starting runner runtime")
 
@@ -256,7 +260,7 @@ func (r *Runtime) executeClaimedJob(ctx context.Context, active *activeJob) (Out
 		runner.WithReferencedFlows(active.job.ReferencedFlows),
 		runner.WithDynamicVars(dynamicvars.New(active.job.ExecutionID.String())),
 		runner.WithSecretInputKeys(active.job.SecretInputKeys),
-		runner.WithContext(spi.WithJobToken(ctx, active.job.JobToken)),
+		runner.WithContext(httpcall.WithPacer(spi.WithJobToken(ctx, active.job.JobToken), r.requestPacer)),
 		runner.WithHTTPCallLimit(active.job.MaxHTTPCallsPerExecution),
 		runner.WithMaxResponseBytes(r.config.MaxResponseBytes),
 		runner.WithResponseBudget(r.responseBudget),

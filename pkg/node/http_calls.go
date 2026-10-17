@@ -26,6 +26,9 @@ func recordingClient(nodeID, urlTemplate string, stream bool) *http.Client {
 }
 
 func (t callTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if err := httpcall.Wait(req.Context()); err != nil {
+		return nil, err
+	}
 	call, err := httpcall.Start(req.Context(), httpcall.Target{
 		NodeID: t.nodeID, Method: req.Method, URL: req.URL.String(), URLTemplate: t.urlTemplate,
 	})
