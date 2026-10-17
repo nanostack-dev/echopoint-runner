@@ -36,6 +36,7 @@ type Config struct {
 	RunnerAPIKey        string
 	RunnerID            string
 	MaxParallelFlows    int
+	MsBetweenRequests   int
 	HeartbeatInterval   time.Duration
 	RequestTimeout      time.Duration
 	IdleBackoff         time.Duration
@@ -61,6 +62,11 @@ func Load() (Config, error) {
 	}
 
 	maxParallelFlows, err := getIntEnv("ECHOPOINT_MAX_PARALLEL_FLOWS", defaultMaxParallelFlows)
+	if err != nil {
+		return Config{}, err
+	}
+
+	msBetweenRequests, err := getMsBetweenRequests()
 	if err != nil {
 		return Config{}, err
 	}
@@ -109,6 +115,7 @@ func Load() (Config, error) {
 		RunnerAPIKey:        strings.TrimSpace(os.Getenv("ECHOPOINT_RUNNER_API_KEY")),
 		RunnerID:            strings.TrimSpace(os.Getenv("ECHOPOINT_RUNNER_ID")),
 		MaxParallelFlows:    maxParallelFlows,
+		MsBetweenRequests:   msBetweenRequests,
 		HeartbeatInterval:   heartbeatInterval,
 		RequestTimeout:      requestTimeout,
 		IdleBackoff:         idleBackoff,
@@ -122,35 +129,42 @@ func Load() (Config, error) {
 		MaxBufferedResponseBytes: maxBufferedResponseBytes,
 	}
 
+	if validationErr := validate(config); validationErr != nil {
+		return Config{}, validationErr
+	}
+	return config, nil
+}
+
+func validate(config Config) error {
 	if config.OrganizationID == "" {
-		return Config{}, errors.New("ECHOPOINT_ORGANIZATION_ID is required")
+		return errors.New("ECHOPOINT_ORGANIZATION_ID is required")
 	}
 	if config.RunnerAPIKey == "" {
-		return Config{}, errors.New("ECHOPOINT_RUNNER_API_KEY is required")
+		return errors.New("ECHOPOINT_RUNNER_API_KEY is required")
 	}
 	if config.RunnerID == "" {
-		return Config{}, errors.New("ECHOPOINT_RUNNER_ID is required")
+		return errors.New("ECHOPOINT_RUNNER_ID is required")
 	}
 	if config.MaxParallelFlows < 1 {
-		return Config{}, errors.New("ECHOPOINT_MAX_PARALLEL_FLOWS must be at least 1")
+		return errors.New("ECHOPOINT_MAX_PARALLEL_FLOWS must be at least 1")
 	}
 	if config.HeartbeatInterval <= 0 {
-		return Config{}, errors.New("ECHOPOINT_HEARTBEAT_INTERVAL must be positive")
+		return errors.New("ECHOPOINT_HEARTBEAT_INTERVAL must be positive")
 	}
 	if config.RequestTimeout <= 0 {
-		return Config{}, errors.New("ECHOPOINT_REQUEST_TIMEOUT must be positive")
+		return errors.New("ECHOPOINT_REQUEST_TIMEOUT must be positive")
 	}
 	if config.IdleBackoff <= 0 {
-		return Config{}, errors.New("ECHOPOINT_IDLE_BACKOFF must be positive")
+		return errors.New("ECHOPOINT_IDLE_BACKOFF must be positive")
 	}
 	if config.ErrorBackoff <= 0 {
-		return Config{}, errors.New("ECHOPOINT_ERROR_BACKOFF must be positive")
+		return errors.New("ECHOPOINT_ERROR_BACKOFF must be positive")
 	}
 	if config.ShutdownGracePeriod <= 0 {
-		return Config{}, errors.New("ECHOPOINT_SHUTDOWN_GRACE_PERIOD must be positive")
+		return errors.New("ECHOPOINT_SHUTDOWN_GRACE_PERIOD must be positive")
 	}
 
-	return config, nil
+	return nil
 }
 
 // MaxResponseBytes reads ECHOPOINT_MAX_RESPONSE_BYTES, the largest response
@@ -178,6 +192,17 @@ func MaxBufferedResponseBytes() (int64, error) {
 		return 0, errors.New("ECHOPOINT_MAX_BUFFERED_RESPONSE_BYTES must be positive")
 	}
 	return int64(budget), nil
+}
+
+func getMsBetweenRequests() (int, error) {
+	value, err := getIntEnv("ECHOPOINT_MS_BETWEEN_REQUESTS", 0)
+	if err != nil {
+		return 0, err
+	}
+	if value < 0 || int64(value) > int64((1<<63-1)/time.Millisecond) {
+		return 0, errors.New("ECHOPOINT_MS_BETWEEN_REQUESTS must be non-negative and fit a time.Duration")
+	}
+	return value, nil
 }
 
 func loadDotEnv(path string) error {

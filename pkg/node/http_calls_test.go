@@ -5,7 +5,9 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -35,4 +37,28 @@ func TestRecordingClient_FinishesTheCallAtEndOfBody(t *testing.T) {
 
 	require.NoError(t, resp.Body.Close())
 	assert.Equal(t, 1, collector.Groups()[0].Count(), "closing after EOF does not record it twice")
+}
+
+func TestPacingCancelledBeforeSendDoesNotRecordACall(t *testing.T) {
+	var hits atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+	collector := httpcall.NewCollector()
+	ctx := httpcall.WithPacer(context.Background(), httpcall.NewPacer(time.Hour))
+	require.NoError(t, httpcall.Wait(ctx))
+	ctx = httpcall.WithCollector(ctx, collector)
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Millisecond)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, server.URL, nil)
+	require.NoError(t, err)
+	resp, err := node.RecordingClientForTest("get", server.URL).Do(req)
+	if resp != nil {
+		require.NoError(t, resp.Body.Close())
+	}
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	assert.Zero(t, hits.Load())
+	assert.Empty(t, collector.Groups())
 }

@@ -80,3 +80,18 @@ The default holds six fully read 10 MiB bodies, or 64 responses whose nodes only
 ## Compatibility
 
 Echopoint decodes node results into typed structs with `encoding/json`, so a control plane that does not know `http_calls` ignores it.
+
+## Self-hosted request pacing
+
+Set `ECHOPOINT_MS_BETWEEN_REQUESTS` to a non-negative integer in milliseconds
+(for example, `100`) to space outbound flow request starts in a self-hosted
+runner. Unset or `0` disables pacing. One pacer is shared by every concurrent
+job in the process, including request/SSE nodes, redirects, retries and nested
+flows. Separate runner replicas have independent pacers. The first request is
+immediate; an idle runner does not accumulate burst capacity.
+
+Waiting honors the request's cancellation and deadline. Calls are recorded only
+after pacing, so queue time is included in node duration but not HTTP call
+duration. Control-plane polling, heartbeats, progress, completion and webhook
+reads are unaffected. This setting applies to the self-hosted runtime; embedded
+library consumers keep their existing behavior.

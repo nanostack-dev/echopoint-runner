@@ -343,3 +343,59 @@ func TestJobFailedByTargetStreamRefusalLogsAtWarn(t *testing.T) {
 	assert.Equal(t, []string{"warn"}, levelsOf(t, logs, "runner job failed"))
 	assert.NotContains(t, levelsOf(t, logs, "Node execution failed"), "error")
 }
+
+func TestConcurrentJobsShareRequestPacingIncludingRedirectsAndSSE(t *testing.T) {
+	var mu sync.Mutex
+	var starts []time.Time
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		starts = append(starts, time.Now())
+		mu.Unlock()
+		if r.URL.Path == "/redirect" {
+			http.Redirect(w, r, "/final", http.StatusFound)
+			return
+		}
+		if r.URL.Path == "/stream" {
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = w.Write([]byte("data: {}\n\n"))
+			return
+		}
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer target.Close()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+	cfg := testConfig(server.URL)
+	cfg.MsBetweenRequests = 100
+	r := newRuntime(cfg, controlplane.NewRunnerClient(controlplane.Config{BaseURL: server.URL}))
+	var workers sync.WaitGroup
+	for range 2 {
+		job := &controlplane.ClaimedJob{
+			JobID: uuid.New(), ExecutionID: uuid.New(), Inputs: map[string]any{},
+			FlowDefinition: json.RawMessage(`{
+    "name":"Paced requests", "version":"1.0", "edges":[], "nodes":[
+     {"id":"redirect","type":"request","data":{"method":"GET","url":"` + target.URL + `/redirect"}},
+     {"id":"stream","type":"sse","data":{"url":"` + target.URL + `/stream","max_events":1,"timeout_ms":2000}}
+    ]
+   }`),
+		}
+		workers.Go(func() {
+			outcome, err := r.executeClaimedJob(context.Background(), &activeJob{job: job, startedAt: time.Now()})
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			assert.Equal(t, jobStatusCompleted, outcome.Status)
+		})
+	}
+	workers.Wait()
+	mu.Lock()
+	defer mu.Unlock()
+	require.Len(t, starts, 6)
+	for i := 1; i < len(starts); i++ {
+		// Server arrival includes network scheduling; allow 10ms of jitter.
+		assert.GreaterOrEqual(t, starts[i].Sub(starts[i-1]), 90*time.Millisecond)
+	}
+}
