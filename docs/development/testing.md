@@ -7,6 +7,9 @@ go test ./...
 golangci-lint run --path-mode=abs
 ```
 
+Use golangci-lint v2.14.0, matching the pinned CI version. A floating linter
+release can reject the configuration before linting any code.
+
 The [CI workflow](../../.github/workflows/go.yml) runs lint, then `gotestsum -- ./...`. The `it` package starts WireMock through Testcontainers and needs a working Docker daemon; [its setup](../../it/shared/test_setup.go) owns container configuration. A container startup failure means integration coverage is unavailable, not that engine assertions passed.
 
 For a focused engine change, run the relevant `pkg/engine`, node, result or execution-event tests first, then the complete suite. Contract work must also verify the Echopoint progress/SSE consumer and CLI flow-run result fixtures. Preserve the initial-input, skip-reason, assertion, module and output regressions already in the suite.
