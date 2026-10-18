@@ -14,3 +14,8 @@ go mod tidy
 ```
 
 Upgrade Echopoint's main module, its `cloudworker` module and the CLI module. Run their affected execution/contract suites. The CLI and Action embed the runner, so CI callers receive the change only after a CLI release and selection of that release. Record the runner version and companion consumer PRs in rollout evidence.
+
+Security rebuilds pin a patched Go compiler in both go.mod and Docker, and
+refresh Alpine runtime packages during the image build. Scan the published image
+and verify the runner startup version after rollout. Compiler-only changes do
+not require consumers to upgrade the embedded execution library.

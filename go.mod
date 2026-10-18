@@ -1,6 +1,6 @@
 module github.com/nanostack-dev/echopoint-runner
 
-go 1.26.5
+go 1.26.9
 
 require (
 	github.com/brianvoe/gofakeit/v7 v7.15.0
