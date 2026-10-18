@@ -1,4 +1,4 @@
-FROM golang:1.26.5-alpine AS builder
+FROM golang:1.26.9-alpine AS builder
 
 ARG TARGETOS=linux
 ARG TARGETARCH
@@ -13,7 +13,7 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -o /out/echopoint-r
 
 FROM alpine:3.22
 
-RUN adduser -D -u 10001 runner
+RUN apk upgrade --no-cache && adduser -D -u 10001 runner
 
 WORKDIR /app
 
