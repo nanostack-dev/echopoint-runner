@@ -1,6 +1,6 @@
 # Local setup
 
-Use the Go version in [go.mod](../../go.mod), currently 1.26.5. Docker is required for the WireMock integration suite; tests and builds do not need sibling repositories. Install `golangci-lint` for linting; CI's tool setup is in [go.yml](../../.github/workflows/go.yml).
+Use the Go version in [go.mod](../../go.mod), currently 1.26.10. Docker is required for the WireMock integration suite; tests and builds do not need sibling repositories. Install `golangci-lint` for linting; CI's tool setup is in [go.yml](../../.github/workflows/go.yml).
 
 From this repository root:
 
