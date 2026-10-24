@@ -260,7 +260,7 @@ func (r *Runtime) executeClaimedJob(ctx context.Context, active *activeJob) (Out
 		runner.WithReferencedFlows(active.job.ReferencedFlows),
 		runner.WithDynamicVars(dynamicvars.New(active.job.ExecutionID.String())),
 		runner.WithSecretInputKeys(active.job.SecretInputKeys),
-		runner.WithContext(httpcall.WithPacer(spi.WithJobToken(ctx, active.job.JobToken), r.requestPacer)),
+		runner.WithContext(httpcall.WithPacer(jobContext(ctx, active.job), r.requestPacer)),
 		runner.WithHTTPCallLimit(active.job.MaxHTTPCallsPerExecution),
 		runner.WithMaxResponseBytes(r.config.MaxResponseBytes),
 		runner.WithResponseBudget(r.responseBudget),
@@ -304,7 +304,7 @@ func (r *Runtime) executeClaimedJob(ctx context.Context, active *activeJob) (Out
 	}
 
 	completedAt := time.Now().UTC()
-	if completeErr := r.completeJob(active.job.JobID, controlplane.CompleteJobRequest{
+	if completeErr := r.completeJob(active.job, controlplane.CompleteJobRequest{
 		RunnerID:          r.config.RunnerID,
 		BootID:            r.bootID,
 		Status:            jobStatusCompleted,
@@ -324,6 +324,12 @@ func (r *Runtime) executeClaimedJob(ctx context.Context, active *activeJob) (Out
 		Int64("duration_ms", completedAt.Sub(active.startedAt).Milliseconds()).
 		Msg("runner job completed")
 	return Outcome{Status: jobStatusCompleted, Result: result}, nil
+}
+
+// jobContext carries the job token and trace context to nodes that call the
+// control plane for this job. Nodes that call target URLs never read them.
+func jobContext(ctx context.Context, job *controlplane.ClaimedJob) context.Context {
+	return spi.WithTraceContext(spi.WithJobToken(ctx, job.JobToken), job.TraceContext)
 }
 
 func sortedInputKeys(inputs map[string]any) []string {
@@ -350,7 +356,7 @@ func (r *Runtime) completeWithFailure(
 	}
 
 	completedAt := time.Now().UTC()
-	err := r.completeJob(active.job.JobID, controlplane.CompleteJobRequest{
+	err := r.completeJob(active.job, controlplane.CompleteJobRequest{
 		RunnerID:          r.config.RunnerID,
 		BootID:            r.bootID,
 		Status:            jobStatusFailed,
@@ -426,11 +432,12 @@ func (r *Runtime) runHeartbeatLoop(ctx context.Context) error {
 	}
 }
 
-func (r *Runtime) completeJob(jobID uuid.UUID, request controlplane.CompleteJobRequest) error {
-	ctx, cancel := context.WithTimeout(context.Background(), r.config.RequestTimeout)
+func (r *Runtime) completeJob(job *controlplane.ClaimedJob, request controlplane.CompleteJobRequest) error {
+	traced := spi.WithTraceContext(context.Background(), job.TraceContext)
+	ctx, cancel := context.WithTimeout(traced, r.config.RequestTimeout)
 	defer cancel()
 
-	return r.client.Complete(ctx, jobID, request)
+	return r.client.Complete(ctx, job.JobID, request)
 }
 
 func (r *Runtime) acquireSlot(ctx context.Context) error {

@@ -100,3 +100,67 @@ func (s *reportState) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 	}
 }
+
+// The CLI copies the ephemeral claim's trace_context into Job.TraceContext. The
+// Job's events and complete calls carry it; the heartbeat covers no single trace.
+func TestRunSendsTheJobTraceContextOnItsCallbacks(t *testing.T) {
+	const traceparent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+	jobID := uuid.New()
+	var mu sync.Mutex
+	traceparents := map[string][]string{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		kind := r.URL.Path[strings.LastIndex(r.URL.Path, "/")+1:]
+		mu.Lock()
+		traceparents[kind] = append(traceparents[kind], r.Header.Get("Traceparent")+"|"+r.Header.Get("Tracestate"))
+		mu.Unlock()
+		switch kind {
+		case "complete":
+			w.WriteHeader(http.StatusNoContent)
+		case "heartbeat":
+			_ = json.NewEncoder(w).Encode([]map[string]any{{"job_id": jobID, "status": "renewed"}})
+		default:
+			_, _ = w.Write([]byte(`{"last_accepted_sequence":100}`))
+		}
+	}))
+	defer server.Close()
+
+	var job jobrunner.Job
+	if err := json.Unmarshal([]byte(`{"trace_context":{"traceparent":"`+traceparent+
+		`","tracestate":"echopoint=1"}}`), &job); err != nil {
+		t.Fatal(err)
+	}
+	job.JobID = jobID
+	job.ExecutionID = uuid.New()
+	job.FlowDefinition = json.RawMessage(
+		`{"version":"1.0","name":"t","nodes":[{"id":"wait","type":"delay","data":{"duration":40}}],"edges":[]}`,
+	)
+	client, err := jobrunner.NewClient(jobrunner.Config{
+		BaseURL: server.URL, JobToken: "one-job-token", RunnerID: "ephemeral-test",
+		BootID: uuid.New(), Heartbeat: 5 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = client.Run(context.Background(), job); err != nil {
+		t.Fatalf("run one Job: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	want := traceparent + "|echopoint=1"
+	for _, kind := range []string{"events", "complete"} {
+		if len(traceparents[kind]) == 0 {
+			t.Fatalf("no %s call", kind)
+		}
+		for _, got := range traceparents[kind] {
+			if got != want {
+				t.Errorf("%s trace headers = %q, want %q", kind, got, want)
+			}
+		}
+	}
+	for _, got := range traceparents["heartbeat"] {
+		if got != "|" {
+			t.Errorf("heartbeat carried trace headers %q", got)
+		}
+	}
+}
