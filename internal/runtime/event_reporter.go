@@ -29,6 +29,7 @@ type jobEventReporter struct {
 	runnerID       string
 	bootID         uuid.UUID
 	requestTimeout time.Duration
+	traceContext   spi.TraceContext
 
 	mu           sync.Mutex
 	nextSequence int64
@@ -54,6 +55,7 @@ func newJobEventReporter(
 		runnerID:       runnerID,
 		bootID:         bootID,
 		requestTimeout: requestTimeout,
+		traceContext:   job.TraceContext,
 		stopCh:         make(chan struct{}),
 		doneCh:         make(chan struct{}),
 	}
@@ -205,7 +207,8 @@ func (r *jobEventReporter) flushBatch(ctx context.Context) (bool, error) {
 		return false, nil
 	}
 
-	response, err := r.client.SendJobEvents(ctx, r.jobID, controlplane.SendJobEventsRequest{
+	traced := spi.WithTraceContext(ctx, r.traceContext)
+	response, err := r.client.SendJobEvents(traced, r.jobID, controlplane.SendJobEventsRequest{
 		RunnerID: r.runnerID,
 		BootID:   r.bootID,
 		Events:   batch,

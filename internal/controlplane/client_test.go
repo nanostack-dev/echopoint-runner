@@ -5,9 +5,14 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync"
 	"testing"
+	"time"
 
+	"github.com/google/uuid"
 	"github.com/nanostack-dev/echopoint-runner/internal/controlplane"
+	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -166,4 +171,61 @@ func TestClaimNextDeclaresTheSecretOutputsCapability(t *testing.T) {
 	require.ErrorIs(t, err, controlplane.ErrNoJobAvailable)
 	assert.Equal(t, "runner-1", body["runner_id"])
 	assert.Equal(t, []any{"secret_outputs"}, body["capabilities"])
+}
+
+const testTraceparent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+
+func TestClaimedJobDecodesTheTraceContext(t *testing.T) {
+	var job controlplane.ClaimedJob
+	require.NoError(t, json.Unmarshal([]byte(`{"trace_context":{"traceparent":"`+testTraceparent+
+		`","tracestate":"echopoint=1"}}`), &job))
+	assert.Equal(t, spi.TraceContext{Traceparent: testTraceparent, Tracestate: "echopoint=1"}, job.TraceContext)
+}
+
+func TestClaimedJobFromAnOldServerHasNoTraceContext(t *testing.T) {
+	var job controlplane.ClaimedJob
+	require.NoError(t, json.Unmarshal([]byte(`{"inputs":{}}`), &job))
+	assert.Equal(t, spi.TraceContext{}, job.TraceContext)
+}
+
+func TestClaimedJobDropsAnInvalidTraceparent(t *testing.T) {
+	var job controlplane.ClaimedJob
+	require.NoError(t, json.Unmarshal([]byte(
+		`{"trace_context":{"traceparent":"not-a-trace","tracestate":"echopoint=1"}}`), &job))
+	assert.Equal(t, spi.TraceContext{}, job.TraceContext)
+}
+
+func TestJobCallsSendTheTraceContextAndHeartbeatDoesNot(t *testing.T) {
+	headers := map[string]http.Header{}
+	var mu sync.Mutex
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		headers[r.URL.Path] = r.Header.Clone()
+		mu.Unlock()
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/complete"):
+			w.WriteHeader(http.StatusNoContent)
+		case strings.HasSuffix(r.URL.Path, "/heartbeat"):
+			_, _ = w.Write([]byte(`[]`))
+		default:
+			_, _ = w.Write([]byte(`{"last_accepted_sequence":0}`))
+		}
+	}))
+	defer server.Close()
+	client := controlplane.NewJobClient(server.URL, "job-token", 5*time.Second)
+	jobID := uuid.New()
+	traced := spi.WithTraceContext(context.Background(),
+		spi.TraceContext{Traceparent: testTraceparent, Tracestate: "echopoint=1"})
+
+	_, err := client.SendJobEvents(traced, jobID, controlplane.SendJobEventsRequest{})
+	require.NoError(t, err)
+	require.NoError(t, client.Complete(traced, jobID, controlplane.CompleteJobRequest{}))
+	_, err = client.Heartbeat(context.Background(), controlplane.HeartbeatRequest{})
+	require.NoError(t, err)
+
+	for _, path := range []string{"/runner/jobs/" + jobID.String() + "/events", "/runner/jobs/" + jobID.String() + "/complete"} {
+		assert.Equal(t, testTraceparent, headers[path].Get("Traceparent"), path)
+		assert.Equal(t, "echopoint=1", headers[path].Get("Tracestate"), path)
+	}
+	assert.Empty(t, headers["/runner/jobs/heartbeat"].Get("Traceparent"))
 }

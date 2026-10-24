@@ -76,6 +76,9 @@ type ClaimedJob struct {
 	// MaxHTTPCallsPerExecution is the organization's HTTP call limit. Zero, from a
 	// control plane that does not send it, records calls without a limit.
 	MaxHTTPCallsPerExecution int `json:"max_http_calls_per_execution,omitempty"`
+	// TraceContext is the claim's W3C trace context; old control planes omit it.
+	// The runner sends it on events, complete and webhook-requests calls for this job.
+	TraceContext spi.TraceContext `json:"trace_context"`
 }
 
 func (j *ClaimedJob) UnmarshalJSON(data []byte) error {
@@ -91,6 +94,7 @@ func (j *ClaimedJob) UnmarshalJSON(data []byte) error {
 		ReferencedFlows flowpkg.ReferencedFlowRegistry `json:"referenced_flows,omitempty"`
 		JobToken        string                         `json:"job_token,omitempty"`
 		MaxHTTPCalls    int                            `json:"max_http_calls_per_execution,omitempty"`
+		TraceContext    *spi.TraceContext              `json:"trace_context,omitempty"`
 	}
 
 	var raw claimedJobAlias
@@ -116,6 +120,10 @@ func (j *ClaimedJob) UnmarshalJSON(data []byte) error {
 	j.JobToken = raw.JobToken
 	j.ReferencedFlows = raw.ReferencedFlows
 	j.MaxHTTPCallsPerExecution = raw.MaxHTTPCalls
+	j.TraceContext = spi.TraceContext{}
+	if raw.TraceContext != nil {
+		j.TraceContext = raw.TraceContext.Sanitized()
+	}
 	return nil
 }
 
@@ -331,6 +339,7 @@ func (c *Client) postJSON(ctx context.Context, path string, payload any) (int, [
 
 	req.Header = c.headers.Clone()
 	req.Header.Set("Content-Type", "application/json")
+	spi.TraceContextFromContext(ctx).SetHeaders(req.Header)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
