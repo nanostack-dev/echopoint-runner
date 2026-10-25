@@ -210,6 +210,7 @@ func (n *WebhookWaitNode) fetchWebhookRequests(
 	}
 	req.Header.Set("X-Job-Token", token)
 	req.Header.Set("Accept", "application/json")
+	spi.TraceContextFromContext(ctx).SetHeaders(req.Header)
 
 	resp, err := client.Do(req)
 	if err != nil {

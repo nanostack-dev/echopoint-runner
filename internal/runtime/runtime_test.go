@@ -399,3 +399,71 @@ func TestConcurrentJobsShareRequestPacingIncludingRedirectsAndSSE(t *testing.T) 
 		assert.GreaterOrEqual(t, starts[i].Sub(starts[i-1]), 90*time.Millisecond)
 	}
 }
+
+// The claim's trace context joins the runner's job callbacks to the claim's trace.
+// A request node calls a customer target, which must never receive it.
+func TestJobCallbacksCarryTheTraceContextAndTargetRequestsDoNot(t *testing.T) {
+	const traceparent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+	var mu sync.Mutex
+	var targetHeaders http.Header
+	callbackHeaders := map[string]http.Header{}
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		targetHeaders = r.Header.Clone()
+		mu.Unlock()
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer target.Close()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		kind := r.URL.Path[strings.LastIndex(r.URL.Path, "/")+1:]
+		mu.Lock()
+		callbackHeaders[kind] = r.Header.Clone()
+		mu.Unlock()
+		switch kind {
+		case "complete":
+			w.WriteHeader(http.StatusNoContent)
+		case "webhook-requests":
+			_, _ = w.Write([]byte(`{"items":[{"id":"1","method":"POST","body":"{\"event\":\"done\"}",` +
+				`"received_at":"2026-10-24T12:00:00Z"}]}`))
+		default:
+			_, _ = w.Write([]byte(`{"last_accepted_sequence":100}`))
+		}
+	}))
+	defer server.Close()
+
+	claim := `{
+		"job_id": "` + uuid.NewString() + `",
+		"execution_id": "` + uuid.NewString() + `",
+		"job_token": "job-token",
+		"trace_context": {"traceparent": "` + traceparent + `", "tracestate": "echopoint=1"},
+		"inputs": {"webhook.requests_url": "` + server.URL + `/webhook-requests"},
+		"flow_definition": {
+			"name": "Traced", "version": "1.0",
+			"nodes": [
+				{"id": "call", "type": "request", "data": {"method": "GET", "url": "` + target.URL + `/a"}},
+				{"id": "wait", "type": "webhook_wait", "data": {"timeout_ms": 2000}, "assertions": [
+					{"extractor_type": "json_path", "extractor_data": {"path": "$.event"},
+					 "operator_type": "equals", "operator_data": {"value": "done"}}]}
+			],
+			"edges": [{"id": "e", "source": "call", "target": "wait"}]
+		}
+	}`
+	var job controlplane.ClaimedJob
+	require.NoError(t, json.Unmarshal([]byte(claim), &job))
+	r := newRuntime(testConfig(server.URL), controlplane.NewRunnerClient(controlplane.Config{BaseURL: server.URL}))
+
+	outcome, err := r.executeClaimedJob(context.Background(), &activeJob{job: &job, startedAt: time.Now()})
+
+	require.NoError(t, err)
+	require.Equal(t, jobStatusCompleted, outcome.Status, outcome.ErrorMessage)
+	mu.Lock()
+	defer mu.Unlock()
+	for _, kind := range []string{"events", "complete", "webhook-requests"} {
+		require.Contains(t, callbackHeaders, kind)
+		assert.Equal(t, traceparent, callbackHeaders[kind].Get("Traceparent"), kind)
+		assert.Equal(t, "echopoint=1", callbackHeaders[kind].Get("Tracestate"), kind)
+	}
+	require.NotNil(t, targetHeaders)
+	assert.Empty(t, targetHeaders.Get("Traceparent"))
+	assert.Empty(t, targetHeaders.Get("Tracestate"))
+}

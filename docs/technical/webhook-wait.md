@@ -1,6 +1,6 @@
 # Webhook wait
 
-A `webhook_wait` node polls the webhook requests captured for its execution with the job token, every 250 ms, until `timeout_ms` (default 30000). It runs in one of two modes.
+A `webhook_wait` node polls the webhook requests captured for its execution with the job token (and the Job's trace context, see [control-plane calls](architecture.md#control-plane-calls)), every 250 ms, until `timeout_ms` (default 30000). It runs in one of two modes.
 
 ## First match
 

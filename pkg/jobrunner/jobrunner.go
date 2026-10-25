@@ -27,6 +27,8 @@ type Job struct {
 	ReferencedFlows flow.ReferencedFlowRegistry `json:"referenced_flows,omitempty"`
 	// MaxHTTPCallsPerExecution is the HTTP call limit; zero records without one.
 	MaxHTTPCallsPerExecution int `json:"max_http_calls_per_execution,omitempty"`
+	// TraceContext is the claim's W3C trace context, sent on the Job's control-plane calls.
+	TraceContext spi.TraceContext `json:"trace_context"`
 }
 
 type Config struct {
@@ -91,6 +93,7 @@ func (c *Client) Run(ctx context.Context, job Job) (Result, error) {
 		ReferencedFlows: job.ReferencedFlows,
 
 		MaxHTTPCallsPerExecution: job.MaxHTTPCallsPerExecution,
+		TraceContext:             job.TraceContext.Sanitized(),
 	})
 	return Result{Status: outcome.Status, Execution: outcome.Result, ErrorMessage: outcome.ErrorMessage}, err
 }

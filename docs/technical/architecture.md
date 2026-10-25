@@ -40,3 +40,17 @@ constructors return failures without repeating that record. Best-effort output
 extraction after an assertion failure logs unavailable output names at Debug.
 Recovery/fallback, continued-loop, per-event SSE and cancellation diagnostics keep
 their own existing policies because those branches handle the outcome locally.
+
+## Control-plane calls
+
+[`internal/controlplane`](../../internal/controlplane/client.go) makes these calls. A self-hosted runner authenticates with `X-Api-Key` and `X-Organization-Id`; a one-shot Job ([`pkg/jobrunner`](../../pkg/jobrunner/jobrunner.go)) uses `X-Job-Token`.
+
+| Call | Purpose | Trace headers |
+| --- | --- | --- |
+| `POST /runner/jobs/next` | Claim a Job (self-hosted only) | none |
+| `POST /runner/jobs/heartbeat` | Renew the leases of every active Job | none: it covers several Jobs |
+| `POST /runner/jobs/{id}/events` | Send progress events | the Job's |
+| `POST /runner/jobs/{id}/complete` | Report the final status and result | the Job's |
+| `GET {webhook.requests_url}` | Webhook wait reads captured requests with `X-Job-Token` | the Job's |
+
+A claim may carry `trace_context`: `{"traceparent": "...", "tracestate": "..."}` (W3C Trace Context). Old control planes omit it. The runner keeps it on the claimed Job (`ClaimedJob.TraceContext`, or `jobrunner.Job.TraceContext` for a caller that claims itself) and sends `traceparent`, plus `tracestate` when non-empty, on that Job's calls above. A `traceparent` that does not match `^[0-9a-f]{2}-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$` is dropped with its `tracestate`; a `tracestate` longer than 512 bytes or with non-printable bytes is dropped. The runner has no OpenTelemetry SDK or exporter: it runs on customer machines that cannot reach the collector, so it only copies headers. Requests that nodes send to flow target URLs never carry these headers.
