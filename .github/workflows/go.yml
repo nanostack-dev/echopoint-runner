@@ -52,6 +52,15 @@ jobs:
           skip-cache: true
           skip-save-cache: true
 
+      # go test ./... and the root linter skip a nested module.
+      - uses: golangci/golangci-lint-action@v9.3.0
+        with:
+          version: v2.14.0
+          working-directory: pkg/flowdsl
+          args: --timeout 5m --path-mode=abs
+          skip-cache: true
+          skip-save-cache: true
+
   tests-runner:
     name: Test echopoint-runner
     runs-on: ubuntu-latest
@@ -72,6 +81,10 @@ jobs:
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
       - name: Run tests
+        run: gotestsum --format github-actions -- ./...
+
+      - name: Test flow file compiler
+        working-directory: pkg/flowdsl
         run: gotestsum --format github-actions -- ./...
 
   docker-push:
