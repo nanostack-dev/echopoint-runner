@@ -1,0 +1,64 @@
+pub description = "Go tests for the runner and pkg/flowdsl, with a Docker daemon for the integration tests' WireMock"
+
+"""
+The runner's tests. The integration tests (it/) start WireMock with
+testcontainers and bind-mount its stubs by path, so the Docker daemon holds
+the source at the same path as the tests.
+"""
+type Runner {
+  """
+  Go toolchain image. Keep it equal to the go line in go.mod.
+  """
+  pub goImage: String!
+
+  new(goImage: String! = "golang:1.26.10-bookworm") {
+    self.goImage = goImage
+    self
+  }
+
+  let source(ws: Workspace!): Directory! {
+    ws.directory("/", exclude: [".git", ".dagger", "dagger.toml", "dagger.lock", "dist"])
+  }
+
+  """
+  A Docker daemon for testcontainers, one per run, with the source at /src
+  so bind mounts resolve.
+  """
+  pub docker(ws: Workspace!): Service! {
+    container
+      .from("docker:29-dind")
+      .withMountedCache("/var/lib/docker", cacheVolume("runner-dind"), sharing: CacheSharingMode.PRIVATE)
+      .withDirectory("/src", source(ws))
+      .withEnvVariable("DOCKER_TLS_CERTDIR", "")
+      .withExposedPort(2375)
+      .asService(args: ["--host=tcp://0.0.0.0:2375", "--tls=false"], useEntrypoint: true, insecureRootCapabilities: true)
+  }
+
+  let goBase(ws: Workspace!): Container! {
+    container
+      .from(goImage)
+      .withMountedCache("/go/pkg/mod", cacheVolume("go-mod"))
+      .withMountedCache("/root/.cache/go-build", cacheVolume("go-build"))
+      .withExec(["go", "install", "gotest.tools/gotestsum@v1.13.0"])
+      .withServiceBinding("docker", docker(ws))
+      .withEnvVariable("DOCKER_HOST", "tcp://docker:2375")
+      .withEnvVariable("TESTCONTAINERS_RYUK_DISABLED", "true")
+      .withDirectory("/src", source(ws))
+  }
+
+  """
+  Every test of the runner module, integration tests included.
+  """
+  test(ws: Workspace!): Void @check {
+    goBase(ws).withWorkdir("/src").withExec(["gotestsum", "--format", "pkgname-and-test-fails", "--", "./..."]).sync
+    null
+  }
+
+  """
+  Every test of the pkg/flowdsl module.
+  """
+  flowdslTest(ws: Workspace!): Void @check {
+    goBase(ws).withWorkdir("/src/pkg/flowdsl").withExec(["gotestsum", "--format", "pkgname-and-test-fails", "--", "./..."]).sync
+    null
+  }
+}

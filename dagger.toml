@@ -1,0 +1,15 @@
+# The runner's CI as Dagger checks (.github/workflows/go.yml). `dagger check`
+# runs them the same way on a laptop and in CI.
+
+[modules.runner]
+source = ".dagger/modules/runner"
+
+[modules.runner.settings]
+goImage = "golang:1.26.10-bookworm"
+
+[modules.golangci-lint]
+source = "dagger.io/go/golangci-lint"
+
+[modules.golangci-lint.settings]
+# Same release the workflow pinned.
+version = "2.14.0"
