@@ -49,9 +49,13 @@ type ClaimNextRequest struct {
 // The control plane refuses a job whose flow declares one to a claim without it.
 const CapabilitySecretOutputs = "secret_outputs"
 
+// CapabilityFormBody declares that request nodes send `body_encoding: form`
+// bodies form-encoded. An older runner would send them as JSON.
+const CapabilityFormBody = "form_body"
+
 // Capabilities lists what this runner build supports, declared on every claim.
 func Capabilities() []string {
-	return []string{CapabilitySecretOutputs}
+	return []string{CapabilitySecretOutputs, CapabilityFormBody}
 }
 
 // claimNextBody is the wire form of a claim: the request plus the capabilities
