@@ -30,6 +30,8 @@ func (g *graph) parseKind(node *dslNode, key string, body *yaml.Node) {
 		g.parseWebhook(node, body)
 	case kindSSE:
 		g.parseSSE(node, body)
+	case kindIntegration:
+		g.parseIntegration(node, body)
 	default:
 		g.add(Error, lineOf(body), "node %q: unknown kind %q", node.id, key)
 	}
@@ -407,7 +409,7 @@ func countTrue(flags ...bool) int {
 
 func outputsAllowed(kind string) bool {
 	switch kind {
-	case kindRequest, kindModule, kindAssert, kindWebhook, kindSSE:
+	case kindRequest, kindModule, kindAssert, kindWebhook, kindSSE, kindIntegration:
 		return true
 	default:
 		return false

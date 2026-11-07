@@ -470,6 +470,12 @@ func normalizeNode(value any) {
 	if data == nil {
 		return
 	}
+	if _, filled := data["integration"]; filled && node["type"] == "request" {
+		// Launch fills an integration operation's method and url; the file
+		// leaves them out.
+		delete(data, "method")
+		delete(data, "url")
+	}
 	dropEmpty(data, "headers")
 	dropEmpty(data, "query_params")
 	dropEmpty(data, "input_bindings")

@@ -140,6 +140,8 @@ func lowerNode(n *dslNode) (wire.FlowNode, error) {
 		return lowerWebhook(n)
 	case kindSSE:
 		return lowerSSE(n)
+	case kindIntegration:
+		return lowerIntegration(n)
 	default:
 		return wire.FlowNode{}, fmt.Errorf("node %q has no kind", n.id)
 	}

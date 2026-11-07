@@ -175,6 +175,7 @@ func (g *graph) parseNode(id string, m ymap) *dslNode {
 			g.add(Error, exp.Line, "node %q: %s", id, err.Error())
 		}
 		node.expects = checks
+		g.checkIntegrationExpects(node, exp.Line)
 	}
 	if node.kind == kindAssert && !hadExpect {
 		g.add(Error, node.line, "node %q assert needs an expect", id)

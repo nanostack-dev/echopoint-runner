@@ -225,6 +225,9 @@ func addRequest(body *mapBuilder, node wire.FlowNode) error {
 	if err != nil {
 		return err
 	}
+	if spec.Data.Integration != nil {
+		return addIntegrationRequest(body, spec.Data)
+	}
 	req := newMap()
 	req.str("method", string(spec.Data.Method))
 	req.str("url", spec.Data.Url)
@@ -427,6 +430,9 @@ func addWebhook(body *mapBuilder, node wire.FlowNode) error {
 	spec, err := node.AsWebhookWaitFlowNode()
 	if err != nil {
 		return err
+	}
+	if spec.Data.Integration != nil {
+		return addIntegrationWait(body, spec.Data)
 	}
 	hook := newMap()
 	addInt(hook, "timeout_ms", spec.Data.TimeoutMs)
