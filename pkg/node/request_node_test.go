@@ -2,8 +2,10 @@ package node_test
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 
 	"github.com/nanostack-dev/echopoint-runner/pkg/extractors"
@@ -253,4 +255,53 @@ func TestRequestNode_ParsesAJSONResponseThatStartsWithAUTF8BOM(t *testing.T) {
 	result, ok := spi.As[*node.RequestExecutionResult](res)
 	require.True(t, ok)
 	assert.Equal(t, []any{map[string]any{"id": "a1"}}, result.ResponseBodyParsed)
+}
+
+func sendFormRequest(t *testing.T, body string) (string, http.Header) {
+	t.Helper()
+	var received string
+	var headers http.Header
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		received, headers = string(raw), r.Header.Clone()
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	parsed, err := node.UnmarshalNode([]byte(`{"id":"customer","type":"request","data":{` +
+		`"method":"POST","url":"` + srv.URL + `/v1/customers","body_encoding":"form","body":` + body +
+		`,"timeout":1000}}`))
+	require.NoError(t, err)
+
+	_, err = parsed.Execute(spi.ExecutionContext{
+		Ctx:    context.Background(),
+		Inputs: map[string]any{"signup.email": "garbage+form@nanostack.dev"},
+	})
+	require.NoError(t, err)
+	return received, headers
+}
+
+func TestRequestNode_FormEncodesABodyAfterTemplatesResolve(t *testing.T) {
+	received, headers := sendFormRequest(t, `{"email":"{{signup.email}}","limit":1}`)
+
+	assert.Equal(t, "email=garbage%2Bform%40nanostack.dev&limit=1", received)
+	assert.Equal(t, []string{"application/x-www-form-urlencoded"}, headers.Values("Content-Type"))
+}
+
+func TestRequestNode_FormEncodesNestedObjectsAndListsWithBrackets(t *testing.T) {
+	received, _ := sendFormRequest(t, `{"metadata":{"plan":"pro"},"items":[{"price":"price_1"}],"paid":true}`)
+
+	values, err := url.ParseQuery(received)
+	require.NoError(t, err)
+	assert.Equal(t, url.Values{
+		"metadata[plan]":  {"pro"},
+		"items[0][price]": {"price_1"},
+		"paid":            {"true"},
+	}, values)
+}
+
+func TestRequestNode_SendsAnEncodedFormStringAsIs(t *testing.T) {
+	received, _ := sendFormRequest(t, `"name=Ada&plan=pro"`)
+
+	assert.Equal(t, "name=Ada&plan=pro", received)
 }

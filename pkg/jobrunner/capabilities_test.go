@@ -11,4 +11,5 @@ import (
 // what the runner it embeds supports.
 func TestCapabilitiesIncludeSecretOutputs(t *testing.T) {
 	assert.Contains(t, jobrunner.Capabilities(), "secret_outputs")
+	assert.Contains(t, jobrunner.Capabilities(), "form_body")
 }

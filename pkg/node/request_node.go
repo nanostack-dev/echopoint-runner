@@ -27,7 +27,9 @@ type RequestData struct {
 	Headers     map[string]string `json:"headers"`
 	QueryParams map[string]any    `json:"query_params"`
 	Body        any               `json:"body"`
-	Timeout     int               `json:"timeout"`
+	// BodyEncoding is empty for a JSON or raw string body, or "form".
+	BodyEncoding string `json:"body_encoding,omitempty"`
+	Timeout      int    `json:"timeout"`
 }
 
 // requestExchange carries one request and its completed response through the
@@ -323,12 +325,12 @@ func (n *RequestNode) makeRequestAndReadBody(
 		req.Header.Set(key, value)
 	}
 	if body != nil {
-		payload, serializeErr := serializeRequestBody(body)
+		payload, contentType, serializeErr := n.serializeRequestBody(body)
 		if serializeErr != nil {
 			return nil, responseBody{}, serializeErr
 		}
-		if !contentTypeSet && json.Valid(payload) {
-			req.Header.Set("Content-Type", "application/json")
+		if !contentTypeSet && contentType != "" {
+			req.Header.Set("Content-Type", contentType)
 		}
 		req.Body = io.NopCloser(bytes.NewReader(payload))
 		req.ContentLength = int64(len(payload))
@@ -351,11 +353,25 @@ func (n *RequestNode) makeRequestAndReadBody(
 	return resp, respBody, nil
 }
 
-// serializeRequestBody sends a string body as-is: it is already a serialized
-// payload, and marshalling it would double-encode it into a quoted string.
-func serializeRequestBody(body any) ([]byte, error) {
-	if s, ok := body.(string); ok {
-		return []byte(s), nil
+// serializeRequestBody returns the payload and the content type to send when
+// the node sets none. A string body is sent as-is: it is already serialized,
+// and marshalling it would double-encode it into a quoted string.
+func (n *RequestNode) serializeRequestBody(body any) ([]byte, string, error) {
+	if n.Data.BodyEncoding == BodyEncodingForm {
+		payload, err := encodeFormBody(body)
+		return payload, formContentType, err
 	}
-	return json.Marshal(body)
+	payload, isString := body.(string)
+	encoded := []byte(payload)
+	if !isString {
+		marshalled, err := json.Marshal(body)
+		if err != nil {
+			return nil, "", err
+		}
+		encoded = marshalled
+	}
+	if json.Valid(encoded) {
+		return encoded, "application/json", nil
+	}
+	return encoded, "", nil
 }
