@@ -67,6 +67,7 @@ func (r *resolver) finish(g *graph) {
 	g.lintEdges()
 	g.lintRefs()
 	g.lintFailure()
+	g.lintCorrelation()
 	g.fillExports()
 }
 

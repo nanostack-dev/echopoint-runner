@@ -336,3 +336,61 @@ func mustJSON(t *testing.T, value any) []byte {
 	}
 	return raw
 }
+
+func TestAnIntegrationEventWithoutARunCheckWarns(t *testing.T) {
+	cases := map[string]struct {
+		node string
+		warn bool
+	}{
+		"no check": {node: `
+  paid:
+    integration: {id: stripe, event: customer.created}`, warn: true},
+		"literal check": {node: `
+  paid:
+    integration: {id: stripe, event: customer.created}
+    expect: '$.data.object.email equals garbage+stripe@nanostack.dev'`, warn: true},
+		"node expect on a created value": {node: `
+  paid:
+    integration: {id: stripe, event: customer.created}
+    expect: '$.data.object.id equals {{customer.id}}'`},
+		"group check on a created value": {node: `
+  paid:
+    integration:
+      id: stripe
+      event: customer.created
+      expect:
+        - name: created
+          checks: ['$.data.object.id equals {{customer.id}}']`},
+		"flow input": {node: `
+  paid:
+    integration: {id: stripe, event: customer.created}
+    expect: '$.data.object.id equals {{customerId}}'`},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			src := `
+name: correlate
+inputs: [customerId]
+nodes:
+  customer:
+    integration:
+      id: stripe
+      operation: customer.create
+      inputs: {email: garbage+stripe@nanostack.dev}
+    next: paid` + tc.node + "\n"
+			out := flowdsl.CompileSource("correlate", []byte(src))
+			if len(out.Errors()) > 0 {
+				t.Fatal(joinDiags(out.Errors()))
+			}
+			warned := false
+			for _, d := range out.Warnings() {
+				if strings.Contains(d.Message, "no check tied to this run") {
+					warned = true
+				}
+			}
+			if warned != tc.warn {
+				t.Fatalf("warned=%v, want %v: %v", warned, tc.warn, out.Warnings())
+			}
+		})
+	}
+}
