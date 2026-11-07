@@ -105,12 +105,16 @@ const (
 	kindLoop    = "loop"
 	kindWebhook = "webhook_wait"
 	kindSSE     = "sse"
+
+	// kindIntegration is a request or webhook_wait node that an integration fills at launch.
+	kindIntegration = "integration"
 )
 
 // kindKey is the YAML key an author writes. set is the file's spelling of a
 // set_variable node.
 var kindKeys = []string{
 	"request", kindModule, "delay", "set", "assert", "branch", "poll", "loop", "webhook_wait", "sse",
+	kindIntegration,
 }
 
 func canonicalKind(key string) string {
@@ -199,6 +203,7 @@ type dslNode struct {
 	loop    *loopSpec
 	hook    *hookSpec
 	sse     *sseSpec
+	integ   *integSpec
 }
 
 type outDecl struct {
@@ -225,6 +230,19 @@ type reqSpec struct {
 	hasBody bool
 	timeout *int
 }
+
+// integSpec is an integration node: an operation call or an event wait.
+type integSpec struct {
+	id        string
+	operation string
+	event     string
+	inputs    []pair
+	timeout   *int
+	settle    *int
+	groups    []hookGroup
+}
+
+func (s *integSpec) isEvent() bool { return s.event != "" }
 
 type modSpec struct {
 	ref      string

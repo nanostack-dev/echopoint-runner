@@ -718,6 +718,10 @@ type RequestNodeData struct {
 	// Examples: {"Authorization":"Bearer {{auth.token}}","Content-Type":"application/json"}
 	Headers *map[string]string `json:"headers,omitempty"`
 
+	// Integration Makes the node an integration node. Launch fills method, url, headers, query
+	// and body from the operation.
+	Integration *IntegrationNodeRef `json:"integration,omitempty"`
+
 	// Method HTTP method
 	//
 	// Examples: POST
@@ -739,6 +743,24 @@ type RequestNodeData struct {
 	//
 	// Examples: {{apiUrl}}/users/{{create-user.userId}}
 	Url string `json:"url"`
+}
+
+// IntegrationNodeRef makes a node an integration node (ADR-0024). Launch fills the node from
+// the integration: a request node gets the operation's method, URL, inputs, authentication,
+// API version and outputs; a webhook_wait node reads the connection's capture webhook and
+// expects the event type.
+type IntegrationNodeRef struct {
+	// Id The integration, such as `stripe`.
+	Id string `json:"id"`
+
+	// Operation The operation key, such as `customer.list`. For a request node.
+	Operation *string `json:"operation,omitempty"`
+
+	// Event The event type, such as `invoice.paid`. For a webhook_wait node.
+	Event *string `json:"event,omitempty"`
+
+	// Inputs The operation's inputs by param name. Values support template variables.
+	Inputs *map[string]interface{} `json:"inputs,omitempty"`
 }
 
 // SetVariableFlowNode defines model for SetVariableFlowNode.
@@ -904,6 +926,10 @@ type WebhookWaitNodeData struct {
 	// the node's assertions pick the first request that passes them. The node result reports each
 	// group in `expectations`, and for a group that found nothing, the closest request check by check.
 	Expect *[]WebhookExpectation `json:"expect,omitempty"`
+
+	// Integration Makes the wait an integration event wait. Launch reads the connection's capture
+	// webhook and expects the event type.
+	Integration *IntegrationNodeRef `json:"integration,omitempty"`
 
 	// SettleMs How long the wait keeps listening once every expectation has its events, so an
 	// expectation with a `max` sees an extra event that arrives late. Only used with `expect`.

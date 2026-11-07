@@ -311,7 +311,7 @@ func (g *graph) lintText(
 			g.missingRef(n, source, output)
 			continue
 		}
-		if !declaresOutput(declared[source], output) {
+		if names := declared[source]; names != nil && !declaresOutput(names, output) {
 			g.add(
 				Error,
 				n.line,
@@ -374,14 +374,27 @@ func declaredOutputs(n *dslNode) map[string]bool {
 		out["last"] = true
 		addDeclared(out, n.outputs)
 	case kindWebhook:
-		for _, name := range []string{"id", "method", "headers", "query", "body", "received_at"} {
-			out[name] = true
+		addWebhookOutputs(out)
+		addDeclared(out, n.outputs)
+	case kindIntegration:
+		if n.integ == nil || !n.integ.isEvent() {
+			// Launch generates an operation's outputs from the integration, so
+			// any output name may exist. nil leaves the reference unchecked.
+			return nil
 		}
+		addWebhookOutputs(out)
 		addDeclared(out, n.outputs)
 	default:
 		addDeclared(out, n.outputs)
 	}
 	return out
+}
+
+// addWebhookOutputs adds what a webhook_wait node always publishes.
+func addWebhookOutputs(out map[string]bool) {
+	for _, name := range []string{"id", "method", "headers", "query", "body", "received_at"} {
+		out[name] = true
+	}
 }
 
 func addDeclared(out map[string]bool, decls []outDecl) {
@@ -460,7 +473,7 @@ func (g *graph) publicName(name string) bool {
 func nodeExports(n *dslNode) map[string]string {
 	out := map[string]string{}
 	switch n.kind {
-	case kindRequest, kindSSE, kindAssert, kindWebhook, kindModule:
+	case kindRequest, kindSSE, kindAssert, kindWebhook, kindModule, kindIntegration:
 		for _, item := range n.outputs {
 			if item.name != "" {
 				out[item.name] = n.id + "." + item.name
@@ -487,6 +500,15 @@ func nodeTexts(n *dslNode) []string {
 	}
 	if n.module != nil {
 		add(pairValues(n.module.inputs))
+	}
+	if n.integ != nil {
+		add(pairValues(n.integ.inputs))
+		for _, group := range n.integ.groups {
+			for _, item := range group.checks {
+				add(item.OperatorData)
+				add(item.ExtractorData)
+			}
+		}
 	}
 	add(pairValues(n.vars))
 	if n.assert != nil && n.assert.set {
