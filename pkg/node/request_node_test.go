@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/nanostack-dev/echopoint-runner/pkg/extractors"
@@ -304,4 +305,36 @@ func TestRequestNode_SendsAnEncodedFormStringAsIs(t *testing.T) {
 	received, _ := sendFormRequest(t, `"name=Ada&plan=pro"`)
 
 	assert.Equal(t, "name=Ada&plan=pro", received)
+}
+
+func TestRequestNode_PercentEncodesResolvedQueryParams(t *testing.T) {
+	var received url.Values
+	var rawQuery string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rawQuery = r.URL.RawQuery
+		received = r.URL.Query()
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	parsed, err := node.UnmarshalNode([]byte(`{"id":"search","type":"request","data":{` +
+		`"method":"GET","url":"` + srv.URL + `/users?fixed=a%2Bb","query_params":{` +
+		`"email_address":"{{seed.email}}","q":"{{seed.q}}","{{seed.key}}":"café ☕"},"timeout":1000}}`))
+	require.NoError(t, err)
+
+	_, err = parsed.Execute(spi.ExecutionContext{Ctx: context.Background(), Inputs: map[string]any{
+		"seed.email": "garbage+clerk_test@nanostack.dev",
+		"seed.q":     "a&b=c #d",
+		"seed.key":   "naïve key",
+	}})
+	require.NoError(t, err)
+
+	assert.Equal(t, url.Values{
+		"fixed":         {"a+b"},
+		"email_address": {"garbage+clerk_test@nanostack.dev"},
+		"q":             {"a&b=c #d"},
+		"naïve key":     {"café ☕"},
+	}, received)
+	assert.True(t, strings.HasPrefix(rawQuery, "fixed=a%2Bb&"),
+		"the query already in the URL is kept as is: %s", rawQuery)
 }

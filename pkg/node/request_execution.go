@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	neturl "net/url"
 	"strings"
 
 	"github.com/rs/zerolog/log"
@@ -53,18 +54,20 @@ func (n *RequestNode) prepareRequest(inputs map[string]any) (requestExchange, er
 
 	body := n.resolveTemplates(n.Data.Body, inputs)
 
-	// Resolve query parameters and append to URL
+	// Resolve query parameters and append them to the URL. Names and values are
+	// percent-encoded so that a resolved "+", "&", "#", "=" or space reaches the
+	// server as data. A query string already written in the URL is kept as is.
 	if len(n.Data.QueryParams) > 0 {
-		var queryString []string
+		query := neturl.Values{}
 		for k, v := range n.Data.QueryParams {
 			resolvedK := n.resolveTemplates(k, inputs)
 			resolvedV := n.resolveTemplates(v, inputs)
-			queryString = append(queryString, FormatTemplateValue(resolvedK)+"="+FormatTemplateValue(resolvedV))
+			query.Add(FormatTemplateValue(resolvedK), FormatTemplateValue(resolvedV))
 		}
 		if strings.Contains(url, "?") {
-			url += "&" + strings.Join(queryString, "&")
+			url += "&" + query.Encode()
 		} else {
-			url += "?" + strings.Join(queryString, "&")
+			url += "?" + query.Encode()
 		}
 	}
 
