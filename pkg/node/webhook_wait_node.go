@@ -55,9 +55,9 @@ func (n *WebhookWaitNode) InputSchema() []string {
 
 func (n *WebhookWaitNode) OutputSchema() []string {
 	if len(n.Data.Expect) > 0 {
-		return []string{"received"}
+		return []string{outputReceived}
 	}
-	return []string{"id", "method", "headers", "query", "body", "received_at"}
+	return []string{"id", "method", "headers", "query", capabilityBody, outputReceivedAt}
 }
 
 func (n *WebhookWaitNode) timeoutMs() int {

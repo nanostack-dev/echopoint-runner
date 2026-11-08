@@ -87,8 +87,8 @@ func (n *WebhookWaitNode) executeExpectations(ctx spi.ExecutionContext) (spi.Any
 
 	client := nodeHTTPClient()
 	fetch := func(ctx context.Context) ([]waitEvent, error) {
-		items, err := n.fetchWebhookRequests(ctx, client, requestsURL, token)
-		return webhookEvents(items), err
+		items, fetchErr := n.fetchWebhookRequests(ctx, client, requestsURL, token)
+		return webhookEvents(items), fetchErr
 	}
 	settle := time.Duration(n.Data.SettleMs) * time.Millisecond
 	outcomes, fetchErr := listenForExpectations(waitCtx, fetch, groups, everyEvent, settle, startTime)
@@ -110,7 +110,7 @@ func (n *WebhookWaitNode) executeExpectations(ctx spi.ExecutionContext) (spi.Any
 			DisplayName: n.GetDisplayName(),
 			NodeType:    spi.KindWebhookWait,
 			Inputs:      ctx.Inputs,
-			Outputs:     map[string]any{"received": countReceived(outcomes)},
+			Outputs:     map[string]any{outputReceived: countReceived(outcomes)},
 			ExecutedAt:  time.Now(),
 		},
 		DurationMs:   time.Since(startTime).Milliseconds(),

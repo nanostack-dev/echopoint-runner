@@ -15,11 +15,28 @@ import (
 	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 )
 
-const emailRecentMessagesKept = 5
+const (
+	emailRecentMessagesKept = 5
+
+	outputReceived   = "received"
+	outputReceivedAt = "received_at"
+	outputFrom       = "from"
+	outputSubject    = "subject"
+	outputEnvelopeTo = "envelope_to"
+	capabilityBody   = "body"
+)
 
 // textURLPattern finds the URLs of a text part. It stops at space, quotes and
 // angle brackets; trailing punctuation is trimmed after the match.
-var textURLPattern = regexp.MustCompile(`(?i)https?://[^\s<>"'` + "`" + `]+`) //nolint:gochecknoglobals // compiled once
+var textURLPattern = regexp.MustCompile(`(?i)https?://[^\s<>"'` + "`" + `]+`)
+
+// emailOutputNames are the outputs of a matched message, in report order.
+func emailOutputNames() []string {
+	return []string{
+		"id", "message_id", outputFrom, "to", "envelope_from", outputEnvelopeTo, outputSubject,
+		"text", "html", "links", "first_link", "code", outputReceivedAt,
+	}
+}
 
 // inboxMessage is one email of the run inbox as the runner read endpoint
 // returns it.
@@ -121,19 +138,19 @@ func (m readEmail) outputs() map[string]any {
 		firstLink = m.links[0]
 	}
 	return map[string]any{
-		"id":            m.ID,
-		"message_id":    m.MessageID,
-		"from":          m.From,
-		"to":            m.To,
-		"envelope_from": m.EnvelopeFrom,
-		"envelope_to":   m.EnvelopeTo,
-		"subject":       m.Subject,
-		"text":          m.text,
-		"html":          m.html,
-		"links":         links,
-		"first_link":    firstLink,
-		"code":          m.code,
-		"received_at":   formatReceivedAt(m.ReceivedAt),
+		"id":             m.ID,
+		"message_id":     m.MessageID,
+		outputFrom:       m.From,
+		"to":             m.To,
+		"envelope_from":  m.EnvelopeFrom,
+		outputEnvelopeTo: m.EnvelopeTo,
+		outputSubject:    m.Subject,
+		"text":           m.text,
+		"html":           m.html,
+		"links":          links,
+		"first_link":     firstLink,
+		"code":           m.code,
+		outputReceivedAt: formatReceivedAt(m.ReceivedAt),
 	}
 }
 
@@ -141,12 +158,12 @@ func (m readEmail) outputs() map[string]any {
 // to whom, and its subject, never its body.
 func (m readEmail) summary() map[string]any {
 	return map[string]any{
-		"id":          m.ID,
-		"from":        m.From,
-		"to":          m.To,
-		"envelope_to": m.EnvelopeTo,
-		"subject":     m.Subject,
-		"received_at": formatReceivedAt(m.ReceivedAt),
+		"id":             m.ID,
+		outputFrom:       m.From,
+		"to":             m.To,
+		outputEnvelopeTo: m.EnvelopeTo,
+		outputSubject:    m.Subject,
+		outputReceivedAt: formatReceivedAt(m.ReceivedAt),
 	}
 }
 
@@ -178,7 +195,7 @@ type emailContext struct {
 
 func (c emailContext) HasCapability(capability string) bool {
 	switch capability {
-	case headersCapability, "body", "parsed_body":
+	case headersCapability, capabilityBody, "parsed_body":
 		return true
 	default:
 		return false

@@ -92,7 +92,14 @@ const defaultFlowVersion = "1.0"
 
 // statusWord is the YAML spelling of a status_code extractor, both as an
 // expect target (`status between 200 299`) and as an output (`status: status`).
-const statusWord = "status"
+const (
+	statusWord = "status"
+	htmlWord   = "html"
+	regexWord  = "regex"
+
+	// maxEmailWaitTimeoutMs is the lifetime of a run inbox address.
+	maxEmailWaitTimeoutMs = 120 * 60 * 1000
+)
 
 const (
 	kindRequest = "request"
@@ -104,6 +111,7 @@ const (
 	kindPoll    = "poll"
 	kindLoop    = "loop"
 	kindWebhook = "webhook_wait"
+	kindEmail   = "email_wait"
 	kindSSE     = "sse"
 
 	// kindIntegration is a request or webhook_wait node that an integration fills at launch.
@@ -113,8 +121,8 @@ const (
 // kindKey is the YAML key an author writes. set is the file's spelling of a
 // set_variable node.
 var kindKeys = []string{
-	"request", kindModule, "delay", "set", "assert", "branch", "poll", "loop", "webhook_wait", "sse",
-	kindIntegration,
+	"request", kindModule, "delay", "set", "assert", "branch", "poll", "loop", "webhook_wait", kindEmail,
+	"sse", kindIntegration,
 }
 
 func canonicalKind(key string) string {
@@ -202,6 +210,7 @@ type dslNode struct {
 	poll    *pollSpec
 	loop    *loopSpec
 	hook    *hookSpec
+	mail    *mailSpec
 	sse     *sseSpec
 	integ   *integSpec
 }
@@ -212,6 +221,11 @@ type outDecl struct {
 	extractor string
 	path      string
 	header    string
+	selector  string
+	attribute string
+	all       bool
+	pattern   string
+	group     *int
 	secret    bool
 	line      int
 }
@@ -298,6 +312,15 @@ type hookSpec struct {
 	timeout *int
 	settle  *int
 	groups  []hookGroup
+}
+
+// mailSpec is an email wait: a webhook wait's timing and expected events,
+// plus the patterns that pick its links and its code.
+type mailSpec struct {
+	hookSpec
+
+	linkPattern string
+	codePattern string
 }
 
 type sseSpec struct {

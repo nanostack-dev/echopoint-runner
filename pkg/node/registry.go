@@ -51,6 +51,7 @@ func applyRunWhenDefault(base *BaseNode) {
 func init() {
 	registerCoreNodeKinds()
 	registerFlowNodeKinds()
+	registerWaitNodeKinds()
 }
 
 // registerCoreNodeKinds registers the original primitive node kinds.
@@ -176,6 +177,11 @@ func registerFlowNodeKinds() {
 			return &SseExecutionResult{BaseExecutionResult: base}
 		},
 	)
+}
+
+// registerWaitNodeKinds registers the nodes that wait for something to reach
+// the run from outside: an HTTP request or an email.
+func registerWaitNodeKinds() {
 	RegisterNodeKind(spi.KindWebhookWait,
 		func(data []byte) (AnyNode, error) {
 			var n WebhookWaitNode

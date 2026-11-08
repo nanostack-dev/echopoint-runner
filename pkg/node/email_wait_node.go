@@ -69,12 +69,9 @@ func (n *EmailWaitNode) InputSchema() []string {
 // with extractors over the matched message.
 func (n *EmailWaitNode) OutputSchema() []string {
 	if len(n.Data.Expect) > 0 {
-		return []string{"received"}
+		return []string{outputReceived}
 	}
-	schema := []string{
-		"id", "message_id", "from", "to", "envelope_from", "envelope_to", "subject",
-		"text", "html", "links", "first_link", "code", "received_at",
-	}
+	schema := emailOutputNames()
 	for _, output := range n.GetOutputs() {
 		if !slices.Contains(schema, output.Name) {
 			schema = append(schema, output.Name)
@@ -159,7 +156,7 @@ func (n *EmailWaitNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error)
 		return read, fetchErr
 	}
 	if len(n.Data.Expect) > 0 {
-		return n.executeExpectations(ctx, waitCtx, fetch, startTime)
+		return n.executeExpectations(waitCtx, ctx, fetch, startTime)
 	}
 
 	assertions, unresolved := resolveAssertionTemplates(ctx, n.GetAssertions())
@@ -265,8 +262,8 @@ func recentMessageSummaries(seen []readEmail) []map[string]any {
 }
 
 func (n *EmailWaitNode) executeExpectations(
-	ctx spi.ExecutionContext,
 	waitCtx context.Context,
+	ctx spi.ExecutionContext,
 	fetch func(context.Context) ([]readEmail, error),
 	startTime time.Time,
 ) (spi.AnyResult, error) {
@@ -295,7 +292,7 @@ func (n *EmailWaitNode) executeExpectations(
 			DisplayName: n.GetDisplayName(),
 			NodeType:    spi.KindEmailWait,
 			Inputs:      ctx.Inputs,
-			Outputs:     map[string]any{"received": countReceived(outcomes)},
+			Outputs:     map[string]any{outputReceived: countReceived(outcomes)},
 			ExecutedAt:  time.Now(),
 		},
 		DurationMs:   time.Since(startTime).Milliseconds(),

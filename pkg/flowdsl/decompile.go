@@ -189,6 +189,8 @@ func addKind(body *mapBuilder, shell nodeShell, node wire.FlowNode) error {
 		return addLoop(body, node)
 	case kindWebhook:
 		return addWebhook(body, node)
+	case kindEmail:
+		return addEmail(body, node)
 	case kindSSE:
 		return addSSE(body, node)
 	default:
@@ -448,6 +450,31 @@ func addWebhook(body *mapBuilder, node wire.FlowNode) error {
 	return nil
 }
 
+func addEmail(body *mapBuilder, node wire.FlowNode) error {
+	spec, err := node.AsEmailWaitFlowNode()
+	if err != nil {
+		return err
+	}
+	mail := newMap()
+	addInt(mail, "timeout_ms", spec.Data.TimeoutMs)
+	addInt(mail, "settle_ms", spec.Data.SettleMs)
+	if spec.Data.LinkPattern != nil {
+		mail.str("link_pattern", *spec.Data.LinkPattern)
+	}
+	if spec.Data.CodePattern != nil {
+		mail.str("code_pattern", *spec.Data.CodePattern)
+	}
+	if spec.Data.Expect != nil {
+		groups, err := hookExpect(*spec.Data.Expect)
+		if err != nil {
+			return err
+		}
+		mail.raw("expect", groups)
+	}
+	body.raw(kindEmail, mail.node)
+	return nil
+}
+
 func addSSE(body *mapBuilder, node wire.FlowNode) error {
 	spec, err := node.AsSseFlowNode()
 	if err != nil {
@@ -597,6 +624,21 @@ func checkTarget(check wire.CompositeAssertion) (string, error) {
 		return "query:" + name, nil
 	case wire.ExtractorTypeBody:
 		return string(wire.ExtractorTypeBody), nil
+	case wire.ExtractorTypeHtml:
+		selector, _ := check.ExtractorData["selector"].(string)
+		attribute, _ := check.ExtractorData["attribute"].(string)
+		all, _ := check.ExtractorData["all"].(bool)
+		target := htmlTarget(selector, attribute)
+		if selector == "" || all || target == "" {
+			return "", fmt.Errorf("html check has no selector a check line can hold")
+		}
+		return target, nil
+	case wire.ExtractorTypeRegex:
+		pattern, _ := check.ExtractorData["pattern"].(string)
+		if _, hasGroup := check.ExtractorData["group"]; pattern == "" || hasGroup {
+			return "", fmt.Errorf("regex check has no pattern a check line can hold")
+		}
+		return regexWord + ":" + pattern, nil
 	default:
 		return "", fmt.Errorf("extractor %q", check.ExtractorType)
 	}
@@ -682,9 +724,70 @@ func oneOutput(output wire.Output) (*yaml.Node, error) {
 			return nil, fmt.Errorf("output %q body cannot be secret", output.Name)
 		}
 		return strNode(string(wire.ExtractorTypeBody)), nil
+	case wire.ExtractorTypeHtml:
+		return htmlOutput(output, secret)
+	case wire.ExtractorTypeRegex:
+		return regexOutput(output, secret)
 	default:
 		return nil, fmt.Errorf("output %q extractor %q", output.Name, output.Extractor.Type)
 	}
+}
+
+func htmlOutput(output wire.Output, secret bool) (*yaml.Node, error) {
+	extractor := output.Extractor
+	if extractor.Selector == nil || *extractor.Selector == "" {
+		return nil, fmt.Errorf("output %q has no selector", output.Name)
+	}
+	all := extractor.All != nil && *extractor.All
+	attribute := ""
+	if extractor.Attribute != nil {
+		attribute = *extractor.Attribute
+	}
+	if short := htmlTarget(*extractor.Selector, attribute); !secret && !all && short != "" {
+		return strNode(short), nil
+	}
+	out := newMap()
+	out.str(htmlWord, *extractor.Selector)
+	if attribute != "" {
+		out.str("attribute", attribute)
+	}
+	if all {
+		out.bool("all", true)
+	}
+	if secret {
+		out.bool("secret", true)
+	}
+	return out.node, nil
+}
+
+// htmlTarget writes html:<selector>[@attribute], or "" when reading it back
+// would split it differently.
+func htmlTarget(selector, attribute string) string {
+	text := selector
+	if attribute != "" {
+		text += "@" + attribute
+	}
+	if gotSelector, gotAttribute := splitHTMLTarget(text); gotSelector != selector || gotAttribute != attribute {
+		return ""
+	}
+	return htmlWord + ":" + text
+}
+
+func regexOutput(output wire.Output, secret bool) (*yaml.Node, error) {
+	extractor := output.Extractor
+	if extractor.Pattern == nil || *extractor.Pattern == "" {
+		return nil, fmt.Errorf("output %q has no pattern", output.Name)
+	}
+	if !secret && extractor.Group == nil {
+		return strNode(regexWord + ":" + *extractor.Pattern), nil
+	}
+	out := newMap()
+	out.str(regexWord, *extractor.Pattern)
+	addInt(out, "group", extractor.Group)
+	if secret {
+		out.bool("secret", true)
+	}
+	return out.node, nil
 }
 
 func pathOutput(name string, path *string, secret bool) (*yaml.Node, error) {

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -62,17 +63,7 @@ func inboxJSON(items ...emailFixture) []byte {
 }
 
 func emailWaitJSON(data string, assertions ...string) []byte {
-	list := "[]"
-	if len(assertions) > 0 {
-		list = "["
-		for i, assertion := range assertions {
-			if i > 0 {
-				list += ","
-			}
-			list += assertion
-		}
-		list += "]"
-	}
+	list := "[" + strings.Join(assertions, ",") + "]"
 	return []byte(`{"id":"verify","display_name":"Verification email","type":"email_wait",` +
 		`"assertions":` + list + `,"data":` + data + `}`)
 }
@@ -177,7 +168,8 @@ func TestEmailWaitNode_MatchesAndPublishesTheMessage(t *testing.T) {
 
 func TestEmailWaitNode_HTMLOnlyMessageFallsBackToItsText(t *testing.T) {
 	url, _ := serveInbox(t, []emailFixture{email("msg-1", "Your code").with("html", codeHTML)})
-	res, err := runEmailWait(t, emailWaitJSON(`{"timeout_ms":2000}`,
+	res, err := runEmailWait(t, emailWaitJSON(
+		`{"timeout_ms":2000}`,
 		`{"extractor_type":"body","extractor_data":{},"operator_type":"contains","operator_data":{"value":"Your code is 482913"}}`,
 	), url)
 	require.NoError(t, err)
@@ -193,8 +185,8 @@ func TestEmailWaitNode_TextOnlyMessageReadsLinksFromItsText(t *testing.T) {
 	res, err := runEmailWait(t, emailWaitJSON(`{"timeout_ms":2000,"link_pattern":"/reset"}`), url)
 	require.NoError(t, err)
 	assert.Equal(t, []any{"https://acme.example/reset?token=x1"}, res.Outputs["links"])
-	assert.Equal(t, "", res.Outputs["code"], "no six digits: code is empty, never missing")
-	assert.Equal(t, "", res.Outputs["html"])
+	assert.Empty(t, res.Outputs["code"], "no six digits: code is empty, never missing")
+	assert.Empty(t, res.Outputs["html"])
 }
 
 func TestEmailWaitNode_CodePatternUsesItsFirstGroup(t *testing.T) {

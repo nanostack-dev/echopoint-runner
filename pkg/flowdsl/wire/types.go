@@ -29,6 +29,12 @@ const (
 	ExtractorTypeQueryParam ExtractorType = "query_param"
 	ExtractorTypeStatusCode ExtractorType = "status_code"
 	ExtractorTypeXmlPath    ExtractorType = "xml_path"
+	ExtractorTypeHtml       ExtractorType = "html"
+	ExtractorTypeRegex      ExtractorType = "regex"
+)
+
+const (
+	EmailWaitFlowNodeTypeEmailWait EmailWaitFlowNodeType = "email_wait"
 )
 
 const (
@@ -364,6 +370,21 @@ type Output struct {
 		//
 		// Examples: $.user.id
 		Path *string `json:"path,omitempty"`
+
+		// Selector CSS selector of the html extractor. Examples: a.verify
+		Selector *string `json:"selector,omitempty"`
+
+		// Attribute Attribute the html extractor reads; without it, the element text.
+		Attribute *string `json:"attribute,omitempty"`
+
+		// All Makes the html extractor return a list over every matching element.
+		All *bool `json:"all,omitempty"`
+
+		// Pattern Regular expression of the regex extractor.
+		Pattern *string `json:"pattern,omitempty"`
+
+		// Group Capture group of the regex extractor. Defaults to 1 when the pattern has a group, else 0.
+		Group *int `json:"group,omitempty"`
 
 		// Type Type of extractor to use for data extraction.
 		// `body` gives the parsed body. When the body is a JSON object or array, the text operators
@@ -883,6 +904,50 @@ type WebhookExpectation struct {
 	Name string `json:"name"`
 }
 
+// EmailWaitFlowNode defines model for EmailWaitFlowNode.
+type EmailWaitFlowNode struct {
+	// Assertions Match criteria, evaluated against each message of the run inbox.
+	Assertions *[]CompositeAssertion `json:"assertions,omitempty"`
+
+	// Data Polls the run inbox until a message passes the node's assertions.
+	Data EmailWaitNodeData `json:"data"`
+
+	// DisplayName Human-readable name for the node
+	DisplayName string `json:"display_name"`
+
+	// Id Unique identifier for the node
+	Id string `json:"id"`
+
+	// Outputs Named outputs extracted from the matched message
+	Outputs *[]Output `json:"outputs,omitempty"`
+
+	// RunWhen Controls whether a node runs only in the normal success path or also after the main flow has already failed.
+	RunWhen *FlowNodeRunWhen      `json:"run_when,omitempty"`
+	Type    EmailWaitFlowNodeType `json:"type"`
+}
+
+// EmailWaitFlowNodeType defines model for EmailWaitFlowNode.Type.
+type EmailWaitFlowNodeType string
+
+// EmailWaitNodeData Polls the run inbox, whose address launch injects as `inbox.address`, until a
+// message passes the node's assertions. Default timeout is 60 seconds, at most 120 minutes.
+type EmailWaitNodeData struct {
+	// CodePattern Regular expression that finds the code in the text. Defaults to six digits.
+	CodePattern *string `json:"code_pattern,omitempty"`
+
+	// Expect The events this wait expects, as for a webhook wait.
+	Expect *[]WebhookExpectation `json:"expect,omitempty"`
+
+	// LinkPattern Regular expression that keeps the links it matches.
+	LinkPattern *string `json:"link_pattern,omitempty"`
+
+	// SettleMs How long the wait keeps listening once every expectation has its events.
+	SettleMs *int `json:"settle_ms,omitempty"`
+
+	// TimeoutMs Wait budget in milliseconds. Defaults to 60000.
+	TimeoutMs *int `json:"timeout_ms,omitempty"`
+}
+
 // WebhookWaitFlowNode defines model for WebhookWaitFlowNode.
 type WebhookWaitFlowNode struct {
 	// Assertions Validation assertions for the node
@@ -1131,6 +1196,25 @@ func (t *FlowNode) FromWebhookWaitFlowNode(v WebhookWaitFlowNode) error {
 
 func (t FlowNode) AsWebhookWaitFlowNode() (WebhookWaitFlowNode, error) {
 	var body WebhookWaitFlowNode
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+func (t *FlowNode) FromEmailWaitFlowNode(v EmailWaitFlowNode) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = jsonMerge(b, []byte(`{"type":"email_wait"}`))
+	if err != nil {
+		return err
+	}
+	t.union = b
+	return nil
+}
+
+func (t FlowNode) AsEmailWaitFlowNode() (EmailWaitFlowNode, error) {
+	var body EmailWaitFlowNode
 	err := json.Unmarshal(t.union, &body)
 	return body, err
 }
