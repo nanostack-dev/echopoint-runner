@@ -52,6 +52,10 @@ func WebhookWaitTimeoutMsForTest(n *WebhookWaitNode) int {
 	return n.timeoutMs()
 }
 
+func EmailWaitTimeoutMsForTest(n *EmailWaitNode) int {
+	return n.timeoutMs()
+}
+
 func CreateResponseBackedErrorResultForTest(
 	n *RequestNode,
 	inputs map[string]any,

@@ -26,6 +26,20 @@ func init() {
 		}
 		return extractor, nil
 	})
+	RegisterExtractor(spi.ExtractorTypeHTML, func(data []byte) (AnyExtractor, error) {
+		var extractor HTMLExtractor
+		if err := json.Unmarshal(data, &extractor); err != nil {
+			return nil, err
+		}
+		return extractor, nil
+	})
+	RegisterExtractor(spi.ExtractorTypeRegex, func(data []byte) (AnyExtractor, error) {
+		var extractor RegexExtractor
+		if err := json.Unmarshal(data, &extractor); err != nil {
+			return nil, err
+		}
+		return extractor, nil
+	})
 	RegisterExtractor(spi.ExtractorTypeBody, func(data []byte) (AnyExtractor, error) {
 		var extractor BodyExtractor
 		if err := json.Unmarshal(data, &extractor); err != nil {

@@ -1,0 +1,54 @@
+{
+  "name": "Sign up and verify by email",
+  "description": "Signs up with the run inbox address, waits for the verification email and follows its link",
+  "version": "1.0",
+  "initialInputs": {
+    "apiUrl": "http://localhost:8080",
+    "inbox.address": "aanuyjabcdefghijklmsjd6s2g@in.echopoint.dev",
+    "inbox.messages_url": "http://localhost:8080/runner/jobs/job-email/inbox-messages"
+  },
+  "nodes": [
+    {
+      "id": "signup",
+      "type": "request",
+      "assertions": [
+        {"extractor_type": "status_code", "extractor_data": {}, "operator_type": "equals", "operator_data": {"value": "202"}}
+      ],
+      "outputs": [],
+      "data": {
+        "method": "POST",
+        "url": "{{apiUrl}}/signup",
+        "headers": {"Content-Type": "application/json"},
+        "body": {"email": "{{inbox.address}}"}
+      }
+    },
+    {
+      "id": "verify",
+      "type": "email_wait",
+      "assertions": [
+        {"extractor_type": "json_path", "extractor_data": {"path": "$.subject"}, "operator_type": "contains", "operator_data": {"value": "Verify"}},
+        {"extractor_type": "html", "extractor_data": {"selector": "a.verify", "attribute": "href"}, "operator_type": "contains", "operator_data": {"value": "token=abc123"}}
+      ],
+      "outputs": [
+        {"name": "code", "secret": true, "extractor": {"type": "regex", "pattern": "code is (\\d{6})"}},
+        {"name": "button", "extractor": {"type": "html", "selector": "a.verify", "attribute": "href"}}
+      ],
+      "data": {"timeout_ms": 5000, "link_pattern": "/verify"}
+    },
+    {
+      "id": "confirm",
+      "type": "request",
+      "assertions": [
+        {"extractor_type": "status_code", "extractor_data": {}, "operator_type": "equals", "operator_data": {"value": "200"}}
+      ],
+      "outputs": [
+        {"name": "verified", "extractor": {"type": "json_path", "path": "$.verified"}}
+      ],
+      "data": {"method": "GET", "url": "{{verify.first_link}}"}
+    }
+  ],
+  "edges": [
+    {"id": "e1", "source": "signup", "target": "verify", "type": "success"},
+    {"id": "e2", "source": "verify", "target": "confirm", "type": "success"}
+  ]
+}

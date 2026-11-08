@@ -192,4 +192,20 @@ func registerFlowNodeKinds() {
 			return &WebhookWaitExecutionResult{BaseExecutionResult: base}
 		},
 	)
+	RegisterNodeKind(spi.KindEmailWait,
+		func(data []byte) (AnyNode, error) {
+			var n EmailWaitNode
+			if err := json.Unmarshal(data, &n); err != nil {
+				return nil, err
+			}
+			if err := n.Validate(); err != nil {
+				return nil, err
+			}
+			applyRunWhenDefault(&n.BaseNode)
+			return &n, nil
+		},
+		func(base spi.BaseExecutionResult) spi.AnyResult {
+			return &EmailWaitExecutionResult{BaseExecutionResult: base}
+		},
+	)
 }

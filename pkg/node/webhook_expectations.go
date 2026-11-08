@@ -80,39 +80,25 @@ func (n *WebhookWaitNode) executeExpectations(ctx spi.ExecutionContext) (spi.Any
 		return n.errorResult(ctx.Inputs, err, startTime, nil), err
 	}
 
-	everyEvent, everyEventUnresolved := resolveAssertionTemplates(ctx, n.GetAssertions())
-	groups := make([]resolvedExpectation, len(n.Data.Expect))
-	for i, expectation := range n.Data.Expect {
-		assertions, missing := resolveAssertionTemplates(ctx, expectation.Assertions)
-		groups[i] = resolvedExpectation{
-			WebhookExpectation: expectation,
-			assertions:         assertions,
-			unresolved:         append(missing, everyEventUnresolved...),
-		}
-	}
+	everyEvent, groups := resolveExpectations(ctx, n.GetAssertions(), n.Data.Expect)
 
 	waitCtx, cancel := context.WithTimeout(ctx.Context(), time.Duration(n.timeoutMs())*time.Millisecond)
 	defer cancel()
 
-	outcomes, fetchErr := n.listenForExpectations(waitCtx, requestsURL, token, groups, everyEvent, startTime)
+	client := nodeHTTPClient()
+	fetch := func(ctx context.Context) ([]waitEvent, error) {
+		items, err := n.fetchWebhookRequests(ctx, client, requestsURL, token)
+		return webhookEvents(items), err
+	}
+	settle := time.Duration(n.Data.SettleMs) * time.Millisecond
+	outcomes, fetchErr := listenForExpectations(waitCtx, fetch, groups, everyEvent, settle, startTime)
 	if fetchErr != nil {
 		failed := n.errorResult(ctx.Inputs, fetchErr, startTime, nil)
 		failed.Expectations = outcomes
 		return failed, fetchErr
 	}
 
-	failedCount := 0
-	for _, outcome := range outcomes {
-		if !outcome.Passed {
-			failedCount++
-		}
-	}
-	if failedCount > 0 {
-		failure := spi.NewUserError(
-			expectationsFailedCode,
-			fmt.Sprintf("%d of %d expected events failed", failedCount, len(outcomes)),
-			nil,
-		)
+	if failure := expectationsFailure(expectationsFailedCode, outcomes); failure != nil {
 		failed := n.errorResult(ctx.Inputs, failure, startTime, nil)
 		failed.Expectations = outcomes
 		return failed, failure
@@ -133,23 +119,68 @@ func (n *WebhookWaitNode) executeExpectations(ctx spi.ExecutionContext) (spi.Any
 	return result, nil
 }
 
+// resolveExpectations resolves the {{refs}} of the every-event checks and of
+// each group. A group keeps the refs that had no value, its own and those of
+// the every-event checks, so it reports itself as not evaluated.
+func resolveExpectations(
+	ctx spi.ExecutionContext, everyEventChecks []CompositeAssertion, expect []WebhookExpectation,
+) ([]CompositeAssertion, []resolvedExpectation) {
+	everyEvent, everyEventUnresolved := resolveAssertionTemplates(ctx, everyEventChecks)
+	groups := make([]resolvedExpectation, len(expect))
+	for i, expectation := range expect {
+		assertions, missing := resolveAssertionTemplates(ctx, expectation.Assertions)
+		groups[i] = resolvedExpectation{
+			WebhookExpectation: expectation,
+			assertions:         assertions,
+			unresolved:         append(missing, everyEventUnresolved...),
+		}
+	}
+	return everyEvent, groups
+}
+
+// expectationsFailure is the error of a wait whose groups did not all pass, or
+// nil when they did.
+func expectationsFailure(code string, outcomes []ExpectationOutcome) error {
+	failedCount := 0
+	for _, outcome := range outcomes {
+		if !outcome.Passed {
+			failedCount++
+		}
+	}
+	if failedCount == 0 {
+		return nil
+	}
+	return spi.NewUserError(
+		code, fmt.Sprintf("%d of %d expected events failed", failedCount, len(outcomes)), nil,
+	)
+}
+
 func (n *WebhookWaitNode) validateExpectations() error {
 	if err := n.validateSettle(); err != nil {
 		return err
 	}
-	for i, expectation := range n.Data.Expect {
-		switch {
-		case strings.TrimSpace(expectation.Name) == "":
-			return expectationConfigError(fmt.Sprintf("expected event %d has no name", i+1))
-		case len(expectation.Assertions) == 0:
-			return expectationConfigError(fmt.Sprintf("expected event %q has no assertion", expectation.Name))
-		case expectation.minimum() < 0:
-			return expectationConfigError(fmt.Sprintf("expected event %q has a negative min", expectation.Name))
-		case expectation.Max != nil && *expectation.Max < expectation.minimum():
-			return expectationConfigError(fmt.Sprintf("expected event %q has max below min", expectation.Name))
-		}
+	if problem := expectationProblem(n.Data.Expect); problem != "" {
+		return expectationConfigError(problem)
 	}
 	return nil
+}
+
+// expectationProblem describes the first expected-event group a wait cannot
+// judge, or returns "" when every group is well formed.
+func expectationProblem(expect []WebhookExpectation) string {
+	for i, expectation := range expect {
+		switch {
+		case strings.TrimSpace(expectation.Name) == "":
+			return fmt.Sprintf("expected event %d has no name", i+1)
+		case len(expectation.Assertions) == 0:
+			return fmt.Sprintf("expected event %q has no assertion", expectation.Name)
+		case expectation.minimum() < 0:
+			return fmt.Sprintf("expected event %q has a negative min", expectation.Name)
+		case expectation.Max != nil && *expectation.Max < expectation.minimum():
+			return fmt.Sprintf("expected event %q has max below min", expectation.Name)
+		}
+	}
+	return ""
 }
 
 // validateSettle rejects a settle window the timeout would always cut short.
@@ -171,23 +202,23 @@ func expectationConfigError(message string) error {
 // no group needs an event and there is no settle window, it listens until the
 // timeout. A timeout is not an error here: the outcomes say which groups went
 // unmet, and a timeout inside the settle window fails the groups that passed.
-func (n *WebhookWaitNode) listenForExpectations(
+func listenForExpectations(
 	waitCtx context.Context,
-	requestsURL, token string,
+	fetch func(context.Context) ([]waitEvent, error),
 	groups []resolvedExpectation,
 	everyEvent []CompositeAssertion,
+	settle time.Duration,
 	startTime time.Time,
 ) ([]ExpectationOutcome, error) {
-	client := nodeHTTPClient()
 	listener := &expectationListener{
 		groups:     groups,
 		everyEvent: everyEvent,
-		settle:     time.Duration(n.Data.SettleMs) * time.Millisecond,
+		settle:     settle,
 		startTime:  startTime,
 		firstSeen:  map[string]time.Duration{},
 	}
 	for waitCtx.Err() == nil {
-		items, fetchErr := n.fetchWebhookRequests(waitCtx, client, requestsURL, token)
+		items, fetchErr := fetch(waitCtx)
 		if fetchErr == nil && listener.observe(items) {
 			return listener.outcomes, nil
 		}
@@ -211,15 +242,15 @@ type expectationListener struct {
 }
 
 // observe judges one poll and reports whether the wait is over.
-func (l *expectationListener) observe(items []capturedRequest) bool {
+func (l *expectationListener) observe(items []waitEvent) bool {
 	elapsed := time.Since(l.startTime)
 	for _, item := range items {
-		if _, known := l.firstSeen[item.ID]; known {
+		if _, known := l.firstSeen[item.eventID()]; known {
 			continue
 		}
-		l.firstSeen[item.ID] = 0
+		l.firstSeen[item.eventID()] = 0
 		if l.polledOnce {
-			l.firstSeen[item.ID] = elapsed
+			l.firstSeen[item.eventID()] = elapsed
 		}
 	}
 	l.polledOnce = true
@@ -296,11 +327,25 @@ const (
 	verdictBroken
 )
 
-// evaluateExpectations judges every group against the requests received so far.
+// waitEvent is one thing a wait received: a webhook request or an email.
+type waitEvent interface {
+	eventID() string
+	assertionContext() extractors.ResponseContext
+}
+
+func webhookEvents(items []capturedRequest) []waitEvent {
+	events := make([]waitEvent, len(items))
+	for i, item := range items {
+		events[i] = item
+	}
+	return events
+}
+
+// evaluateExpectations judges every group against the events received so far.
 func evaluateExpectations(
 	groups []resolvedExpectation,
 	everyEvent []CompositeAssertion,
-	items []capturedRequest,
+	items []waitEvent,
 	firstSeen map[string]time.Duration,
 ) ([]ExpectationOutcome, expectationVerdict) {
 	contexts := make([]extractors.ResponseContext, len(items))
@@ -325,7 +370,7 @@ func evaluateExpectations(
 		case events.overMax(group) && events.foreign >= 0:
 			checks, _ := checkEach(group.assertions, contexts[events.foreign])
 			outcome.Closest = &ClosestEvent{
-				RequestID: items[events.foreign].ID, ClaimedBy: events.foreignOwner, Checks: checks,
+				RequestID: items[events.foreign].eventID(), ClaimedBy: events.foreignOwner, Checks: checks,
 			}
 		case evaluated && !outcome.Passed && outcome.Received < group.minimum():
 			outcome.Closest = closestEvent(group, items, contexts, claimedBy, groups)
@@ -393,7 +438,7 @@ func assignRequests(
 func judgeExpectation(
 	group resolvedExpectation,
 	events groupEvents,
-	items []capturedRequest,
+	items []waitEvent,
 	contexts []extractors.ResponseContext,
 	everyEvent []CompositeAssertion,
 	firstSeen map[string]time.Duration,
@@ -401,10 +446,10 @@ func judgeExpectation(
 	claimed := events.claimed
 	outcome := ExpectationOutcome{Name: group.Name, Received: len(claimed), RequestIDs: []string{}}
 	for _, itemIndex := range claimed {
-		outcome.RequestIDs = append(outcome.RequestIDs, items[itemIndex].ID)
+		outcome.RequestIDs = append(outcome.RequestIDs, items[itemIndex].eventID())
 	}
 	if len(claimed) > 0 {
-		if arrived := firstSeen[items[claimed[0]].ID]; arrived > 0 {
+		if arrived := firstSeen[items[claimed[0]].eventID()]; arrived > 0 {
 			ms := arrived.Milliseconds()
 			outcome.ArrivedAfterMs = &ms
 		}
@@ -418,13 +463,13 @@ func judgeExpectation(
 		outcome.Problem = fmt.Sprintf("%d arrived", len(events.matched))
 		if events.foreign >= 0 {
 			outcome.Problem += fmt.Sprintf("; %s counts against max %d although %q claimed it",
-				items[events.foreign].ID, *group.Max, events.foreignOwner)
+				items[events.foreign].eventID(), *group.Max, events.foreignOwner)
 		}
 		return outcome, true
 	}
 	for _, itemIndex := range claimed {
 		if failed := firstFailingAssertion(everyEvent, contexts[itemIndex]); failed != nil {
-			outcome.Problem = describeAssertion(*failed) + " failed on " + items[itemIndex].ID
+			outcome.Problem = describeAssertion(*failed) + " failed on " + items[itemIndex].eventID()
 			return outcome, true
 		}
 	}
@@ -441,7 +486,7 @@ func judgeExpectation(
 
 func closestEvent(
 	group resolvedExpectation,
-	items []capturedRequest,
+	items []waitEvent,
 	contexts []extractors.ResponseContext,
 	claimedBy map[int]int,
 	groups []resolvedExpectation,
@@ -457,7 +502,7 @@ func closestEvent(
 	if bestIndex < 0 {
 		return nil
 	}
-	closest := &ClosestEvent{RequestID: items[bestIndex].ID, Checks: bestChecks}
+	closest := &ClosestEvent{RequestID: items[bestIndex].eventID(), Checks: bestChecks}
 	if owner, claimed := claimedBy[bestIndex]; claimed {
 		closest.ClaimedBy = groups[owner].Name
 	}

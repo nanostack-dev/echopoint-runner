@@ -325,6 +325,10 @@ type capturedRequest struct {
 	ReceivedAt  time.Time         `json:"received_at"`
 }
 
+func (item capturedRequest) eventID() string {
+	return item.ID
+}
+
 func (item capturedRequest) assertionValue() any {
 	if item.Body == nil || *item.Body == "" {
 		return map[string]any{}

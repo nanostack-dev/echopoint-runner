@@ -1,0 +1,12 @@
+{
+  "request": {
+    "method": "POST",
+    "urlPath": "/signup",
+    "bodyPatterns": [{"matchesJsonPath": "$[?(@.email =~ /.+@in\\.echopoint\\.dev/)]"}]
+  },
+  "response": {
+    "status": 202,
+    "headers": {"Content-Type": "application/json"},
+    "jsonBody": {"status": "verification_sent"}
+  }
+}

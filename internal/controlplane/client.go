@@ -53,9 +53,13 @@ const CapabilitySecretOutputs = "secret_outputs"
 // bodies form-encoded. An older runner would send them as JSON.
 const CapabilityFormBody = "form_body"
 
+// CapabilityEmailWait declares that this runner runs `email_wait` nodes: it
+// reads the run inbox and derives the text, links and code of a message.
+const CapabilityEmailWait = "email_wait"
+
 // Capabilities lists what this runner build supports, declared on every claim.
 func Capabilities() []string {
-	return []string{CapabilitySecretOutputs, CapabilityFormBody}
+	return []string{CapabilitySecretOutputs, CapabilityFormBody, CapabilityEmailWait}
 }
 
 // claimNextBody is the wire form of a claim: the request plus the capabilities

@@ -131,7 +131,8 @@ func readsBody(extractor interface{ GetType() spi.ExtractorType }) bool {
 	switch extractor.GetType() {
 	case spi.ExtractorTypeStatusCode, spi.ExtractorTypeHeader:
 		return false
-	case spi.ExtractorTypeJSONPath, spi.ExtractorTypeXMLPath, spi.ExtractorTypeBody, spi.ExtractorTypeQueryParam:
+	case spi.ExtractorTypeJSONPath, spi.ExtractorTypeXMLPath, spi.ExtractorTypeBody, spi.ExtractorTypeQueryParam,
+		spi.ExtractorTypeHTML, spi.ExtractorTypeRegex:
 		return true
 	default:
 		return true
