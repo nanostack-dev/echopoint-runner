@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -241,9 +242,15 @@ func TestEmailWaitNode_TimeoutReportsTheClosestMessage(t *testing.T) {
 	require.Len(t, res.Closest.Checks, 2)
 	assert.True(t, res.Closest.Checks[0].Passed)
 	assert.False(t, res.Closest.Checks[1].Passed)
+	assert.Equal(t, "Your code is 12345", res.Closest.Text)
 	require.Len(t, res.RecentMessages, 2)
 	assert.Equal(t, "Newsletter", res.RecentMessages[0]["subject"])
 	assert.NotContains(t, res.RecentMessages[0], "text", "a failure never reports bodies")
+	checks, ok := res.RecentMessages[0]["checks"].([]node.ExpectationCheck)
+	require.True(t, ok, "each recent message carries its checks")
+	require.Len(t, checks, 2)
+	assert.False(t, checks[0].Passed)
+	assert.Equal(t, "Newsletter", checks[0].Actual)
 	assert.Nil(t, res.AssertionContext())
 }
 
@@ -309,4 +316,44 @@ func TestEmailWaitExpect_FailsOnADuplicate(t *testing.T) {
 	require.Error(t, err)
 	assert.Equal(t, "EMAIL_WAIT_EXPECTATIONS_FAILED", spi.ErrorCode(err))
 	assert.Equal(t, "2 arrived", res.Expectations[0].Problem)
+}
+
+func TestEmailWaitNode_SuccessReportsTheMessagesBeforeTheMatch(t *testing.T) {
+	url, _ := serveInbox(t, []emailFixture{
+		email("msg-1", "Welcome").with("text", "hi"),
+		email("msg-2", "Verify").with("text", "code 123456"),
+		email("msg-3", "Later").with("text", "bye"),
+	})
+	res, err := runEmailWait(t, emailWaitJSON(`{"timeout_ms":2000}`,
+		jsonPathCheck("$.subject", "contains", "Verify")), url)
+	require.NoError(t, err)
+	require.Len(t, res.RecentMessages, 1, "only what arrived before the match")
+	assert.Equal(t, "msg-1", res.RecentMessages[0]["id"])
+	checks, ok := res.RecentMessages[0]["checks"].([]node.ExpectationCheck)
+	require.True(t, ok)
+	assert.False(t, checks[0].Passed)
+	assert.Nil(t, res.Closest)
+}
+
+func TestEmailWaitNode_ClosestTextAndActualsAreCapped(t *testing.T) {
+	long := strings.Repeat("é", 3000) // 6000 bytes
+	url, _ := serveInbox(t, []emailFixture{email("msg-1", "Hello").with("text", long)})
+	res, err := runEmailWait(t, emailWaitJSON(`{"timeout_ms":400}`,
+		`{"extractor_type":"body","extractor_data":{},"operator_type":"contains","operator_data":{"value":"Verify"}}`,
+	), url)
+	require.Error(t, err)
+	require.NotNil(t, res.Closest)
+	assert.LessOrEqual(t, len(res.Closest.Text), 4096+len("…"))
+	assert.True(t, strings.HasSuffix(res.Closest.Text, "…"))
+	assert.True(t, utf8.ValidString(res.Closest.Text))
+	actual, _ := res.Closest.Checks[0].Actual.(string)
+	assert.LessOrEqual(t, len(actual), 4096+len("…"))
+}
+
+func TestEmailWaitNode_WithoutAssertionReportsNoChecks(t *testing.T) {
+	url, _ := serveInbox(t, nil)
+	res, err := runEmailWait(t, emailWaitJSON(`{"timeout_ms":300}`), url)
+	require.Error(t, err)
+	assert.Nil(t, res.Closest)
+	assert.Empty(t, res.RecentMessages)
 }

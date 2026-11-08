@@ -22,7 +22,7 @@ Without `expect`, the wait completes on the first message that passes the assert
 
 Declared outputs extract from the matched message with any extractor, and a declared output marked `secret` is masked like any secret output: `outputs: [{name: code, secret: true, extractor: {type: json_path, path: $.code}}]`.
 
-A timeout fails the node with `EMAIL_WAIT_TIMEOUT`. The result keeps `closest`, the message that passed the most assertions with each check, and `recent_messages`, the five newest messages without their bodies. A rejected token or an ended run (401, 403, 404) fails it at once with `EMAIL_WAIT_FAILED`.
+A timeout fails the node with `EMAIL_WAIT_TIMEOUT`. The result keeps `closest`, the message that passed the most assertions with each check and the first 4 KiB of its `text` (the run sweep deletes the inbox). `recent_messages` lists the five newest messages the wait saw, on a match those before the matched one, without their bodies but each with the `checks` it passed and failed. A check's `actual` text is cut at 4 KiB. A rejected token or an ended run (401, 403, 404) fails it at once with `EMAIL_WAIT_FAILED`.
 
 ## Expected events
 

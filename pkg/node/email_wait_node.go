@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"slices"
 	"time"
+	"unicode/utf8"
 
 	"github.com/rs/zerolog/log"
 
@@ -19,6 +20,7 @@ const (
 	// wait would outlive the address that receives its mail.
 	maxEmailWaitTimeoutMs          = 120 * 60 * 1000
 	emailWaitPollInterval          = 250 * time.Millisecond
+	emailReportedTextBytes         = 4 << 10
 	inboxMessagesURLInputKey       = "inbox.messages_url"
 	defaultEmailCodePattern        = `\b\d{6}\b`
 	emailWaitFailedCode            = "EMAIL_WAIT_FAILED"
@@ -168,11 +170,13 @@ func (n *EmailWaitNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error)
 	if waitErr != nil {
 		failed := n.errorResult(ctx.Inputs, waitErr, startTime)
 		failed.AssertionResults = results
-		failed.RecentMessages = recentMessageSummaries(seen)
+		failed.RecentMessages = recentMessageSummaries(assertions, seen)
 		failed.Closest = closestMessage(assertions, seen)
 		return failed, waitErr
 	}
-	return n.successResult(ctx.Inputs, message, results, startTime), nil
+	matched := n.successResult(ctx.Inputs, message, results, startTime)
+	matched.RecentMessages = recentMessageSummaries(assertions, seen)
+	return matched, nil
 }
 
 func (n *EmailWaitNode) waitInputs(ctx spi.ExecutionContext) (string, string, error) {
@@ -191,7 +195,8 @@ func (n *EmailWaitNode) waitInputs(ctx spi.ExecutionContext) (string, string, er
 	return messagesURL, token, nil
 }
 
-// pollInbox polls until a message passes every assertion, oldest first.
+// pollInbox polls until a message passes every assertion, oldest first. It
+// returns the messages it saw: on a match, those before the matched one.
 func pollInbox(
 	waitCtx context.Context,
 	fetch func(context.Context) ([]readEmail, error),
@@ -211,11 +216,11 @@ func pollInbox(
 			return readEmail{}, last, seen, fetchErr
 		case fetchErr == nil:
 			seen = messages
-			for _, message := range messages {
+			for i, message := range messages {
 				results, assertErr := EvaluateAssertions(assertions, message.assertionContext())
 				last = results
 				if assertErr == nil {
-					return message, results, nil, nil
+					return message, results, messages[:i], nil
 				}
 			}
 		}
@@ -238,7 +243,7 @@ func closestMessage(assertions []CompositeAssertion, seen []readEmail) *ClosestE
 	bestIndex, bestPassed := -1, -1
 	var bestChecks []ExpectationCheck
 	for i, message := range seen {
-		checks, passed := checkEach(assertions, message.assertionContext())
+		checks, passed := emailChecks(assertions, message)
 		if passed > bestPassed {
 			bestIndex, bestPassed, bestChecks = i, passed, checks
 		}
@@ -246,19 +251,54 @@ func closestMessage(assertions []CompositeAssertion, seen []readEmail) *ClosestE
 	if bestIndex < 0 {
 		return nil
 	}
-	return &ClosestEvent{RequestID: seen[bestIndex].ID, Checks: bestChecks}
+	return &ClosestEvent{
+		RequestID: seen[bestIndex].ID,
+		Checks:    bestChecks,
+		Text:      truncateReported(seen[bestIndex].text),
+	}
 }
 
-func recentMessageSummaries(seen []readEmail) []map[string]any {
+// recentMessageSummaries reports the newest messages a wait saw, each with
+// the outcome of every assertion, so the report says why it was skipped.
+func recentMessageSummaries(assertions []CompositeAssertion, seen []readEmail) []map[string]any {
 	if len(seen) == 0 {
 		return nil
 	}
 	newest := seen[max(0, len(seen)-emailRecentMessagesKept):]
 	summaries := make([]map[string]any, 0, len(newest))
 	for _, message := range newest {
-		summaries = append(summaries, message.summary())
+		summary := message.summary()
+		if len(assertions) > 0 {
+			summary["checks"], _ = emailChecks(assertions, message)
+		}
+		summaries = append(summaries, summary)
 	}
 	return summaries
+}
+
+// emailChecks evaluates each assertion on a message. A failed check's actual
+// value is cut to 4 KiB: a check on the text or the HTML reports the body.
+func emailChecks(assertions []CompositeAssertion, message readEmail) ([]ExpectationCheck, int) {
+	checks, passed := checkEach(assertions, message.assertionContext())
+	for i := range checks {
+		if text, isText := checks[i].Actual.(string); isText {
+			checks[i].Actual = truncateReported(text)
+		}
+	}
+	return checks, passed
+}
+
+// truncateReported cuts text a result reports to emailReportedTextBytes,
+// on a rune boundary, and marks the cut.
+func truncateReported(text string) string {
+	if len(text) <= emailReportedTextBytes {
+		return text
+	}
+	cut := emailReportedTextBytes
+	for cut > 0 && !utf8.RuneStart(text[cut]) {
+		cut--
+	}
+	return text[:cut] + "…"
 }
 
 func (n *EmailWaitNode) executeExpectations(
@@ -358,8 +398,8 @@ type EmailWaitExecutionResult struct {
 	// Closest is the message that passed the most assertions of a wait that
 	// timed out. Its request_id holds the message id.
 	Closest *ClosestEvent `json:"closest,omitempty"`
-	// RecentMessages holds the newest messages a failed wait saw, at most five,
-	// without their bodies.
+	// RecentMessages holds the newest messages the wait saw before it matched
+	// or failed, at most five, without their bodies, each with its checks.
 	RecentMessages []map[string]any `json:"recent_messages,omitempty"`
 	// Expectations is the verdict per expected event, in declaration order.
 	Expectations []ExpectationOutcome `json:"expectations,omitempty"`

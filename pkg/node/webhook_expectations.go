@@ -54,6 +54,9 @@ type ClosestEvent struct {
 	RequestID string             `json:"request_id"`
 	ClaimedBy string             `json:"claimed_by,omitempty"`
 	Checks    []ExpectationCheck `json:"checks"`
+	// Text is the start of an email wait's closest message text, at most
+	// 4 KiB: the run sweep deletes the inbox, so the result keeps what it said.
+	Text string `json:"text,omitempty"`
 }
 
 type ExpectationCheck struct {
