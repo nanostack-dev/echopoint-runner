@@ -11,6 +11,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/nanostack-dev/echopoint-runner/pkg/extractors"
+	"github.com/nanostack-dev/echopoint-runner/pkg/redact"
 	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 )
 
@@ -149,14 +150,27 @@ func (n *EmailWaitNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error)
 	waitCtx, cancel := context.WithTimeout(ctx.Context(), time.Duration(n.timeoutMs())*time.Millisecond)
 	defer cancel()
 	client := nodeHTTPClient()
+	// A stored message never changes, so each is parsed once, not every poll.
+	parsed := map[string]readEmail{}
+	var everSeen []readEmail
 	fetch := func(fetchCtx context.Context) ([]readEmail, error) {
 		messages, fetchErr := fetchInboxMessages(fetchCtx, client, messagesURL, token)
 		read := make([]readEmail, len(messages))
 		for i, message := range messages {
-			read[i] = readMessage(message, *n.patterns)
+			known, isKnown := parsed[message.ID]
+			if !isKnown {
+				known = readMessage(message, *n.patterns)
+				parsed[message.ID] = known
+				everSeen = append(everSeen, known)
+			}
+			read[i] = known
 		}
 		return read, fetchErr
 	}
+	// A wait reports checks and text of messages that did not match, so the
+	// secret outputs of every message it read become secret, not only those
+	// of the matched one.
+	defer func() { n.learnSeenSecrets(ctx.Context(), everSeen) }()
 	if len(n.Data.Expect) > 0 {
 		return n.executeExpectations(waitCtx, ctx, fetch, startTime)
 	}
@@ -169,7 +183,7 @@ func (n *EmailWaitNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error)
 	message, results, seen, waitErr := pollInbox(waitCtx, fetch, assertions)
 	if waitErr != nil {
 		failed := n.errorResult(ctx.Inputs, waitErr, startTime)
-		failed.AssertionResults = results
+		failed.AssertionResults = truncateActuals(results)
 		failed.RecentMessages = recentMessageSummaries(assertions, seen)
 		failed.Closest = closestMessage(assertions, seen)
 		return failed, waitErr
@@ -177,6 +191,48 @@ func (n *EmailWaitNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error)
 	matched := n.successResult(ctx.Inputs, message, results, startTime)
 	matched.RecentMessages = recentMessageSummaries(assertions, seen)
 	return matched, nil
+}
+
+// learnSeenSecrets adds the value each secret output has on each message to
+// the run's redaction. A value too short to mask by value withholds the
+// output, which reduces the reported result to the fields that cannot carry it.
+func (n *EmailWaitNode) learnSeenSecrets(ctx context.Context, seen []readEmail) {
+	for _, output := range n.GetOutputs() {
+		if !output.Secret || output.Extractor == nil {
+			continue
+		}
+		for _, message := range seen {
+			if value, err := output.Extractor.Extract(message.assertionContext()); err == nil {
+				redact.LearnOutput(ctx, n.GetID(), output.Name, value)
+			}
+		}
+	}
+}
+
+// truncateActuals cuts the text an assertion result compared to 4 KiB: an
+// assertion on the text or the HTML reports the body.
+func truncateActuals(results []spi.AssertionResult) []spi.AssertionResult {
+	for i := range results {
+		if text, isText := results[i].Actual.(string); isText {
+			results[i].Actual = truncateReported(text)
+		}
+	}
+	return results
+}
+
+// truncateOutcomeActuals does the same for the closest message of each
+// expected group.
+func truncateOutcomeActuals(outcomes []ExpectationOutcome) {
+	for _, outcome := range outcomes {
+		if outcome.Closest == nil {
+			continue
+		}
+		for i := range outcome.Closest.Checks {
+			if text, isText := outcome.Closest.Checks[i].Actual.(string); isText {
+				outcome.Closest.Checks[i].Actual = truncateReported(text)
+			}
+		}
+	}
 }
 
 func (n *EmailWaitNode) waitInputs(ctx spi.ExecutionContext) (string, string, error) {
@@ -318,6 +374,7 @@ func (n *EmailWaitNode) executeExpectations(
 	}
 	settle := time.Duration(n.Data.SettleMs) * time.Millisecond
 	outcomes, fetchErr := listenForExpectations(waitCtx, fetchEvents, groups, everyEvent, settle, startTime)
+	truncateOutcomeActuals(outcomes)
 	if fetchErr == nil {
 		fetchErr = expectationsFailure(emailWaitExpectationsFailedErr, outcomes)
 	}
@@ -353,7 +410,7 @@ func (n *EmailWaitNode) successResult(
 			NodeType:         spi.KindEmailWait,
 			Inputs:           inputs,
 			Outputs:          message.outputs(),
-			AssertionResults: assertionResults,
+			AssertionResults: truncateActuals(assertionResults),
 			ExecutedAt:       time.Now(),
 		},
 		DurationMs:   time.Since(startedAt).Milliseconds(),
