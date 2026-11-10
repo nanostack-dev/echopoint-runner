@@ -150,22 +150,25 @@ func (n *EmailWaitNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error)
 	waitCtx, cancel := context.WithTimeout(ctx.Context(), time.Duration(n.timeoutMs())*time.Millisecond)
 	defer cancel()
 	client := nodeHTTPClient()
-	// A stored message never changes, so each is parsed once, not every poll.
-	parsed := map[string]readEmail{}
+	// A stored message never changes, so each is read and parsed once: a poll
+	// asks only for the messages stored after the last one it read. An API
+	// that does not know the cursor answers with every message again, and the
+	// known ones are skipped.
+	known := map[string]bool{}
 	var everSeen []readEmail
 	fetch := func(fetchCtx context.Context) ([]readEmail, error) {
-		messages, fetchErr := fetchInboxMessages(fetchCtx, client, messagesURL, token)
-		read := make([]readEmail, len(messages))
-		for i, message := range messages {
-			known, isKnown := parsed[message.ID]
-			if !isKnown {
-				known = readMessage(message, *n.patterns)
-				parsed[message.ID] = known
-				everSeen = append(everSeen, known)
-			}
-			read[i] = known
+		after := ""
+		if len(everSeen) > 0 {
+			after = everSeen[len(everSeen)-1].ID
 		}
-		return read, fetchErr
+		messages, fetchErr := fetchInboxMessages(fetchCtx, client, messagesURL, token, after)
+		for _, message := range messages {
+			if !known[message.ID] {
+				known[message.ID] = true
+				everSeen = append(everSeen, readMessage(message, *n.patterns))
+			}
+		}
+		return slices.Clone(everSeen), fetchErr
 	}
 	// A wait reports checks and text of messages that did not match, so the
 	// secret outputs of every message it read become secret, not only those

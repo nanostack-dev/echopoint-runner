@@ -357,3 +357,50 @@ func TestEmailWaitNode_WithoutAssertionReportsNoChecks(t *testing.T) {
 	assert.Nil(t, res.Closest)
 	assert.Empty(t, res.RecentMessages)
 }
+
+func TestEmailWaitNode_APollReadsOnlyWhatArrivedAfterTheLastMessage(t *testing.T) {
+	stored := []emailFixture{
+		email("msg-1", "Welcome").with("text", "hi"),
+		email("msg-2", "Newsletter").with("text", "news"),
+		email("msg-3", "Verify").with("text", "code 123456"),
+	}
+	var cursors []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		after := r.URL.Query().Get("after")
+		cursors = append(cursors, after)
+		// One more message is stored between two polls.
+		arrived := stored[:min(len(cursors), len(stored))]
+		from := 0
+		for i, message := range arrived {
+			if message["id"] == after {
+				from = i + 1
+			}
+		}
+		_, _ = w.Write(inboxJSON(arrived[from:]...))
+	}))
+	t.Cleanup(srv.Close)
+
+	res, err := runEmailWait(t, emailWaitJSON(`{"timeout_ms":5000}`,
+		jsonPathCheck("$.subject", "contains", "Verify")), srv.URL)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"", "msg-1", "msg-2"}, cursors, "each poll continues after the last message read")
+	require.Len(t, res.RecentMessages, 2, "messages of earlier polls are kept")
+	assert.Equal(t, "msg-1", res.RecentMessages[0]["id"])
+	assert.Equal(t, "msg-2", res.RecentMessages[1]["id"])
+}
+
+func TestEmailWaitNode_AnAPIWithoutTheCursorStillWorks(t *testing.T) {
+	url, calls := serveInbox(t,
+		[]emailFixture{email("msg-1", "Welcome").with("text", "hi")},
+		[]emailFixture{
+			email("msg-1", "Welcome").with("text", "hi"),
+			email("msg-2", "Verify").with("text", "code 123456"),
+		},
+	)
+	res, err := runEmailWait(t, emailWaitJSON(`{"timeout_ms":5000}`,
+		jsonPathCheck("$.subject", "contains", "Verify")), url)
+	require.NoError(t, err)
+	assert.EqualValues(t, 2, calls.Load())
+	require.Len(t, res.RecentMessages, 1, "a message the API sends again is read once")
+	assert.Equal(t, "msg-1", res.RecentMessages[0]["id"])
+}

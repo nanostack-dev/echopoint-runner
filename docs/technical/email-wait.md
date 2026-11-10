@@ -1,6 +1,6 @@
 # Email wait
 
-An `email_wait` node reads the run inbox (ADR-0030 in Echopoint). Launch creates the inbox and injects `inbox.address`, `inbox.local`, `inbox.domain` and `inbox.messages_url`. The node polls `inbox.messages_url` with the job token (and the Job's trace context, see [control-plane calls](architecture.md#control-plane-calls)) every 250 ms until `timeout_ms` (default 60000). A timeout above 7200000, the lifetime of the inbox address, is rejected when the flow is parsed. The runner declares the `email_wait` capability on every claim.
+An `email_wait` node reads the run inbox (ADR-0030 in Echopoint). Launch creates the inbox and injects `inbox.address`, `inbox.local`, `inbox.domain` and `inbox.messages_url`. The node polls `inbox.messages_url` with the job token (and the Job's trace context, see [control-plane calls](architecture.md#control-plane-calls)) every 250 ms until `timeout_ms` (default 60000). Each poll after the first sends `after`, the id of the last message the node read, so the API returns only the messages stored since; the node keeps the earlier ones. An API that ignores `after` returns every message again, and the node skips the ones it knows. A timeout above 7200000, the lifetime of the inbox address, is rejected when the flow is parsed. The runner declares the `email_wait` capability on every claim.
 
 ## What an assertion reads
 
