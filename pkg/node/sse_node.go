@@ -370,7 +370,7 @@ func (n *SseNode) consume(
 	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, 0, sseScannerInitBytes), sseScannerBufferBytes)
 
-	p := &sseParser{node: n, assertions: assertions, events: make([]any, 0, n.maxEvents())}
+	p := &sseParser{node: n, assertions: assertions, events: make([]any, 0)}
 
 	for scanner.Scan() {
 		// Honor cancellation/deadline between lines so a slow producer cannot

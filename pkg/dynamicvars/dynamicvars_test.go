@@ -86,3 +86,12 @@ func TestTimeGeneratorsRefuseAMalformedOffset(t *testing.T) {
 		t.Error("expected an error for a malformed offset")
 	}
 }
+
+func TestANegativeCountDoesNotPanic(t *testing.T) {
+	c := dynamicvars.New("exec-negative-count")
+	for _, name := range []string{"words", "slug", "sentence", "digits", "letters", "string"} {
+		if _, err := c.Resolve(name, []string{"-2"}); err != nil {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+}

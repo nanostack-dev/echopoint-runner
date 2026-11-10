@@ -555,7 +555,7 @@ func learnSecretOutputs(ctx context.Context, n node.AnyNode, result spi.AnyResul
 		}
 		// A node that failed before reporting this output (another extractor or
 		// an assertion template erred) still reports the response carrying it.
-		if response == nil {
+		if response == nil || output.Extractor == nil {
 			continue
 		}
 		if value, err := output.Extractor.Extract(response); err == nil {
@@ -690,6 +690,9 @@ func extractAvailableOutputs(n node.AnyNode, rc extractors.ResponseContext) map[
 	outputs := n.GetOutputs()
 	available := make(map[string]any, len(outputs))
 	for _, output := range outputs {
+		if output.Extractor == nil {
+			continue
+		}
 		value, err := output.Extractor.Extract(rc)
 		if err != nil {
 			// This extraction is best effort after the assertion already failed;
