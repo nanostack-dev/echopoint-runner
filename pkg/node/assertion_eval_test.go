@@ -385,3 +385,10 @@ func TestExtractOutputs_BodyStaysStructured(t *testing.T) {
 		t.Errorf("whole=%#v, want the parsed object", produced["whole"])
 	}
 }
+
+func TestExtractOutputsRefusesAnOutputWithoutAnExtractor(t *testing.T) {
+	_, err := node.ExtractOutputs([]node.Output{{Name: "token"}}, nil)
+	if err == nil || !strings.Contains(err.Error(), `output "token" has no extractor`) {
+		t.Fatalf("err = %v, want it to name the output without an extractor", err)
+	}
+}

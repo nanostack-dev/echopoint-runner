@@ -87,6 +87,10 @@ func ExtractOutputs(
 ) (map[string]any, error) {
 	produced := make(map[string]any, len(outputs))
 	for _, outputItem := range outputs {
+		// An output declared without an "extractor" parses with a nil Extractor.
+		if outputItem.Extractor == nil {
+			return nil, fmt.Errorf("output %q has no extractor", outputItem.Name)
+		}
 		value, err := outputItem.Extractor.Extract(rc)
 		if err != nil {
 			return nil, err

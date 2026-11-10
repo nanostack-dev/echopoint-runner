@@ -479,7 +479,13 @@ func (r *Runtime) markJobRejected(jobID uuid.UUID) {
 	r.activeMu.Lock()
 	defer r.activeMu.Unlock()
 
-	if active, ok := r.active[jobID]; ok && active.cancel != nil {
+	// A job that is no longer active already finished: removeActiveJob has
+	// cleared its entries, and recording it here would keep it forever.
+	active, ok := r.active[jobID]
+	if !ok {
+		return
+	}
+	if active.cancel != nil {
 		active.cancel(errLeaseRejected)
 	}
 	delete(r.active, jobID)
