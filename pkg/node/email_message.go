@@ -222,10 +222,21 @@ func (c emailContext) GetHTML() []byte {
 	return c.html
 }
 
+// fetchInboxMessages reads the run inbox, oldest first. With after, the id of
+// a message, it reads only the messages stored after that one.
 func fetchInboxMessages(
-	ctx context.Context, client *http.Client, messagesURL, token string,
+	ctx context.Context, client *http.Client, messagesURL, token, after string,
 ) ([]inboxMessage, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, messagesURL, nil)
+	target, err := url.Parse(messagesURL)
+	if err != nil {
+		return nil, emailWaitError("could not build the inbox messages request", err)
+	}
+	if after != "" {
+		query := target.Query()
+		query.Set("after", after)
+		target.RawQuery = query.Encode()
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target.String(), nil)
 	if err != nil {
 		return nil, emailWaitError("could not build the inbox messages request", err)
 	}
