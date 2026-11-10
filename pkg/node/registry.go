@@ -51,6 +51,7 @@ func applyRunWhenDefault(base *BaseNode) {
 func init() {
 	registerCoreNodeKinds()
 	registerFlowNodeKinds()
+	registerWaitNodeKinds()
 }
 
 // registerCoreNodeKinds registers the original primitive node kinds.
@@ -176,6 +177,11 @@ func registerFlowNodeKinds() {
 			return &SseExecutionResult{BaseExecutionResult: base}
 		},
 	)
+}
+
+// registerWaitNodeKinds registers the nodes that wait for something to reach
+// the run from outside: an HTTP request or an email.
+func registerWaitNodeKinds() {
 	RegisterNodeKind(spi.KindWebhookWait,
 		func(data []byte) (AnyNode, error) {
 			var n WebhookWaitNode
@@ -190,6 +196,22 @@ func registerFlowNodeKinds() {
 		},
 		func(base spi.BaseExecutionResult) spi.AnyResult {
 			return &WebhookWaitExecutionResult{BaseExecutionResult: base}
+		},
+	)
+	RegisterNodeKind(spi.KindEmailWait,
+		func(data []byte) (AnyNode, error) {
+			var n EmailWaitNode
+			if err := json.Unmarshal(data, &n); err != nil {
+				return nil, err
+			}
+			if err := n.Validate(); err != nil {
+				return nil, err
+			}
+			applyRunWhenDefault(&n.BaseNode)
+			return &n, nil
+		},
+		func(base spi.BaseExecutionResult) spi.AnyResult {
+			return &EmailWaitExecutionResult{BaseExecutionResult: base}
 		},
 	)
 }

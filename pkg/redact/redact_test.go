@@ -333,6 +333,19 @@ func TestLearnOutput_DoesNotMaskAValueShorterThanTheMinimumByValue(t *testing.T)
 	}
 }
 
+// An email wait publishes code as "" when the message has none. A secret code
+// that is empty is not a secret: it is neither masked by value nor withheld.
+func TestLearnOutput_IgnoresAnEmptyValue(t *testing.T) {
+	redactor := &redact.Redactor{}
+	redactor.LearnOutput("verify", "code", "")
+	if got := redactor.Text("Verify your email"); got != "Verify your email" {
+		t.Errorf("an empty value must mask nothing, got %q", got)
+	}
+	if redactor.Withheld("verify.code") {
+		t.Error("an empty value must not withhold its output")
+	}
+}
+
 func TestLearnOutput_MasksAValueOfTheMinimumLengthByValue(t *testing.T) {
 	redactor := &redact.Redactor{}
 	value := strings.Repeat("7", redact.MinLearnedLength)

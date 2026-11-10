@@ -308,6 +308,9 @@ func (g *graph) lintText(
 		if source == "webhook" && !ids["webhook"] && (output == "url" || output == "requests_url") {
 			continue
 		}
+		if source == "inbox" && !ids["inbox"] && slices.Contains(inboxInputs, output) {
+			continue
+		}
 		if !ids[source] {
 			g.missingRef(n, source, output)
 			continue
@@ -377,6 +380,13 @@ func declaredOutputs(n *dslNode) map[string]bool {
 	case kindWebhook:
 		addWebhookOutputs(out)
 		addDeclared(out, n.outputs)
+	case kindEmail:
+		if n.mail != nil && len(n.mail.groups) > 0 {
+			out["received"] = true
+		} else {
+			addEmailOutputs(out)
+		}
+		addDeclared(out, n.outputs)
 	case kindIntegration:
 		if n.integ == nil || !n.integ.isEvent() {
 			// Launch generates an operation's outputs from the integration, so
@@ -394,6 +404,23 @@ func declaredOutputs(n *dslNode) map[string]bool {
 // addWebhookOutputs adds what a webhook_wait node always publishes.
 func addWebhookOutputs(out map[string]bool) {
 	for _, name := range []string{"id", "method", "headers", "query", "body", "received_at"} {
+		out[name] = true
+	}
+}
+
+// inboxInputs are the launch inputs of a run inbox: {{inbox.address}} and
+// its parts, and the URL an email wait reads.
+//
+//nolint:gochecknoglobals // read-only list
+var inboxInputs = []string{"address", "local", "domain", "messages_url"}
+
+// addEmailOutputs adds what an email_wait node always publishes when it
+// matches one message.
+func addEmailOutputs(out map[string]bool) {
+	for _, name := range []string{
+		"id", "message_id", "from", "to", "envelope_from", "envelope_to", "subject",
+		"text", "html", "links", "first_link", "code", "received_at",
+	} {
 		out[name] = true
 	}
 }
@@ -474,7 +501,7 @@ func (g *graph) publicName(name string) bool {
 func nodeExports(n *dslNode) map[string]string {
 	out := map[string]string{}
 	switch n.kind {
-	case kindRequest, kindSSE, kindAssert, kindWebhook, kindModule, kindIntegration:
+	case kindRequest, kindSSE, kindAssert, kindWebhook, kindEmail, kindModule, kindIntegration:
 		for _, item := range n.outputs {
 			if item.name != "" {
 				out[item.name] = n.id + "." + item.name
@@ -535,12 +562,17 @@ func nodeTexts(n *dslNode) []string {
 		add(item.OperatorData)
 		add(item.ExtractorData)
 	}
+	var groups []hookGroup
 	if n.hook != nil {
-		for _, group := range n.hook.groups {
-			for _, item := range group.checks {
-				add(item.OperatorData)
-				add(item.ExtractorData)
-			}
+		groups = append(groups, n.hook.groups...)
+	}
+	if n.mail != nil {
+		groups = append(groups, n.mail.groups...)
+	}
+	for _, group := range groups {
+		for _, item := range group.checks {
+			add(item.OperatorData)
+			add(item.ExtractorData)
 		}
 	}
 	return texts

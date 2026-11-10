@@ -138,6 +138,8 @@ func lowerNode(n *dslNode) (wire.FlowNode, error) {
 		return lowerLoop(n)
 	case kindWebhook:
 		return lowerWebhook(n)
+	case kindEmail:
+		return lowerEmail(n)
 	case kindSSE:
 		return lowerSSE(n)
 	case kindIntegration:
@@ -349,6 +351,27 @@ func lowerWebhook(n *dslNode) (wire.FlowNode, error) {
 	return node, err
 }
 
+func lowerEmail(n *dslNode) (wire.FlowNode, error) {
+	data := wire.EmailWaitNodeData{
+		TimeoutMs:   n.mail.timeout,
+		SettleMs:    n.mail.settle,
+		LinkPattern: strPtr(n.mail.linkPattern),
+		CodePattern: strPtr(n.mail.codePattern),
+		Expect:      hookGroups(n.mail.groups),
+	}
+	var node wire.FlowNode
+	err := node.FromEmailWaitFlowNode(wire.EmailWaitFlowNode{
+		Id:          n.id,
+		Type:        wire.EmailWaitFlowNodeTypeEmailWait,
+		DisplayName: n.display,
+		RunWhen:     runWhenOf(n.runWhen),
+		Assertions:  baseAssertions(n),
+		Outputs:     extractorOutputs(n.outputs),
+		Data:        data,
+	})
+	return node, err
+}
+
 func hookGroups(groups []hookGroup) *[]wire.WebhookExpectation {
 	if len(groups) == 0 {
 		return nil
@@ -408,6 +431,17 @@ func extractorOutputs(decls []outDecl) *[]wire.Output {
 			item.Extractor.Type = wire.ExtractorTypeBody
 		case string(wire.ExtractorTypeStatusCode):
 			item.Extractor.Type = wire.ExtractorTypeStatusCode
+		case string(wire.ExtractorTypeHtml):
+			item.Extractor.Type = wire.ExtractorTypeHtml
+			item.Extractor.Selector = strPtr(decl.selector)
+			item.Extractor.Attribute = strPtr(decl.attribute)
+			if decl.all {
+				item.Extractor.All = &decl.all
+			}
+		case string(wire.ExtractorTypeRegex):
+			item.Extractor.Type = wire.ExtractorTypeRegex
+			item.Extractor.Pattern = strPtr(decl.pattern)
+			item.Extractor.Group = decl.group
 		default:
 			item.Extractor.Type = wire.ExtractorTypeJsonPath
 			path := decl.path

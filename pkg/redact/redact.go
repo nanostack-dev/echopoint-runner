@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"maps"
 	"slices"
 	"strings"
@@ -272,14 +273,19 @@ func (r *Redactor) load() *secretSet {
 func longestFirst(a, b string) int { return len(b) - len(a) }
 
 // bodyForms lists every literal form a secret can take inside body text: the
-// value itself, and the two forms a JSON encoder writes it in — json.Marshal
+// value itself, the two forms a JSON encoder writes it in — json.Marshal
 // escapes &, < and > as \u00XX, an encoder with SetEscapeHTML(false) leaves
-// them alone, and both escape " and \.
+// them alone, and both escape " and \ — and the form HTML source writes it in,
+// alone and JSON-encoded: the html of an email keeps a link as href="…&amp;…".
 func bodyForms(secrets []string) []string {
 	forms := make([]string, 0, len(secrets))
 	seen := make(map[string]struct{}, len(secrets))
 	for _, secret := range secrets {
-		for _, form := range []string{secret, jsonEscape(secret, true), jsonEscape(secret, false)} {
+		escaped := html.EscapeString(secret)
+		for _, form := range []string{
+			secret, jsonEscape(secret, true), jsonEscape(secret, false),
+			escaped, jsonEscape(escaped, true), jsonEscape(escaped, false),
+		} {
 			if _, dup := seen[form]; !dup {
 				seen[form] = struct{}{}
 				forms = append(forms, form)
@@ -312,8 +318,10 @@ func (set *secretSet) text(s string) string {
 	if set == nil {
 		return s
 	}
-	for _, secret := range set.secrets {
-		s = strings.ReplaceAll(s, secret, Mask)
+	// The body forms include each secret itself. A reported string can be HTML
+	// source or embedded JSON, which write a secret in an escaped form.
+	for _, form := range set.bodyForms {
+		s = strings.ReplaceAll(s, form, Mask)
 	}
 	return s
 }
@@ -432,6 +440,33 @@ func keptWhenSealed(field string) bool {
 	return false
 }
 
+// sealedEmailOutput reports the outputs of an email wait that carry the message
+// body or values read from it. A withheld value of that node came from the
+// message, so each of them can hold it.
+func sealedEmailOutput(name string) bool {
+	switch name {
+	case "subject", "text", "html", "links", "first_link", "code":
+		return true
+	}
+	return false
+}
+
+// maskEmailOutputs masks the body-carrying outputs of a sealed email wait.
+func maskEmailOutputs(fields map[string]any) {
+	if fmt.Sprint(fields["node_type"]) != string(spi.KindEmailWait) {
+		return
+	}
+	outputs, ok := fields["outputs"].(map[string]any)
+	if !ok {
+		return
+	}
+	for name := range outputs {
+		if sealedEmailOutput(name) {
+			outputs[name] = Mask
+		}
+	}
+}
+
 // seal reduces a node result whose node produced a withheld value to the
 // fields that cannot carry it, masks that node's withheld outputs by name and
 // the values its assertions compared. A withheld value cannot be found by
@@ -451,6 +486,7 @@ func (set *secretSet) seal(fields map[string]any) {
 		}
 	}
 	set.maskOutputsByName(nodeID, fields["outputs"])
+	maskEmailOutputs(fields)
 	maskComparedValues(fields["assertion_results"])
 }
 

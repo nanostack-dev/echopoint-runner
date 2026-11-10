@@ -1,0 +1,45 @@
+{
+  "request": {
+    "method": "GET",
+    "urlPath": "/runner/jobs/job-email/inbox-messages",
+    "headers": {"X-Job-Token": {"equalTo": "job-token-email"}}
+  },
+  "response": {
+    "status": 200,
+    "headers": {"Content-Type": "application/json"},
+    "jsonBody": {
+      "count": 2,
+      "total": 2,
+      "items": [
+        {
+          "id": "msg-welcome",
+          "envelope_from": "bounces@acme.example",
+          "envelope_to": "aanuyjabcdefghijklmsjd6s2g@in.echopoint.dev",
+          "from": "Acme <no-reply@acme.example>",
+          "to": "aanuyjabcdefghijklmsjd6s2g@in.echopoint.dev",
+          "subject": "Welcome to Acme",
+          "message_id": "<welcome@acme.example>",
+          "text": "Thanks for joining.",
+          "html": null,
+          "attachments": [],
+          "raw_size": 812,
+          "received_at": "2026-11-08T12:00:00Z"
+        },
+        {
+          "id": "msg-verify",
+          "envelope_from": "bounces@acme.example",
+          "envelope_to": "aanuyjabcdefghijklmsjd6s2g@in.echopoint.dev",
+          "from": "Acme <no-reply@acme.example>",
+          "to": "aanuyjabcdefghijklmsjd6s2g@in.echopoint.dev",
+          "subject": "Verify your email",
+          "message_id": "<verify@acme.example>",
+          "text": null,
+          "html": "<html><head><style>.btn{color:#fff}</style></head><body><table><tr><td><p>Your code is <b>482913</b>.</p><a class=\"btn verify\" href=\"{{request.baseUrl}}/verify?token=abc123&amp;u=1\">Verify my email</a><br><a href=\"mailto:help@acme.example\">Help</a></td></tr></table></body></html>",
+          "attachments": [],
+          "raw_size": 18342,
+          "received_at": "2026-11-08T12:00:02Z"
+        }
+      ]
+    }
+  }
+}

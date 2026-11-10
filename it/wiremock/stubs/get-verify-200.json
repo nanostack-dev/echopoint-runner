@@ -1,0 +1,12 @@
+{
+  "request": {
+    "method": "GET",
+    "urlPath": "/verify",
+    "queryParameters": {"token": {"equalTo": "abc123"}, "u": {"equalTo": "1"}}
+  },
+  "response": {
+    "status": 200,
+    "headers": {"Content-Type": "application/json"},
+    "jsonBody": {"verified": true}
+  }
+}

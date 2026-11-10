@@ -13,4 +13,6 @@ const (
 	ExtractorTypeHeader     ExtractorType = "header"
 	ExtractorTypeBody       ExtractorType = "body"
 	ExtractorTypeQueryParam ExtractorType = "query_param"
+	ExtractorTypeHTML       ExtractorType = "html"
+	ExtractorTypeRegex      ExtractorType = "regex"
 )

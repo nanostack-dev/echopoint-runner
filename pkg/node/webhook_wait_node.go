@@ -55,9 +55,9 @@ func (n *WebhookWaitNode) InputSchema() []string {
 
 func (n *WebhookWaitNode) OutputSchema() []string {
 	if len(n.Data.Expect) > 0 {
-		return []string{"received"}
+		return []string{outputReceived}
 	}
-	return []string{"id", "method", "headers", "query", "body", "received_at"}
+	return []string{"id", "method", "headers", "query", capabilityBody, outputReceivedAt}
 }
 
 func (n *WebhookWaitNode) timeoutMs() int {
@@ -323,6 +323,10 @@ type capturedRequest struct {
 	QueryParams map[string]string `json:"query_params"`
 	Body        *string           `json:"body"`
 	ReceivedAt  time.Time         `json:"received_at"`
+}
+
+func (item capturedRequest) eventID() string {
+	return item.ID
 }
 
 func (item capturedRequest) assertionValue() any {

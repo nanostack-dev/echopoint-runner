@@ -1,6 +1,7 @@
 package flowdsl
 
 import (
+	"regexp"
 	"strings"
 
 	"github.com/nanostack-dev/echopoint-runner/pkg/flowdsl/wire"
@@ -28,6 +29,8 @@ func (g *graph) parseKind(node *dslNode, key string, body *yaml.Node) {
 		g.parseLoop(node, body)
 	case kindWebhook:
 		g.parseWebhook(node, body)
+	case kindEmail:
+		g.parseEmail(node, body)
 	case kindSSE:
 		g.parseSSE(node, body)
 	case kindIntegration:
@@ -317,6 +320,41 @@ func (g *graph) parseWebhook(node *dslNode, body *yaml.Node) {
 	node.hook = spec
 }
 
+func (g *graph) parseEmail(node *dslNode, body *yaml.Node) {
+	m, ok := g.kindMap(node, body)
+	if !ok {
+		return
+	}
+	spec := &mailSpec{hookSpec: hookSpec{
+		timeout: g.takePositive(node, m, "timeout_ms"),
+		settle:  g.takeNonNegative(node, m, "settle_ms"),
+	}}
+	if spec.timeout != nil && *spec.timeout > maxEmailWaitTimeoutMs {
+		g.add(Error, m.keyLine("timeout_ms"),
+			"node %q timeout_ms must not exceed %d, the inbox address lifetime", node.id, maxEmailWaitTimeoutMs)
+	}
+	spec.linkPattern = g.takePattern(node, m, "link_pattern")
+	spec.codePattern = g.takePattern(node, m, "code_pattern")
+	if raw, exists := m.take("expect"); exists {
+		spec.groups = g.parseHookGroups(node, raw)
+	}
+	g.rejectNodeFields(node.id, m)
+	node.mail = spec
+}
+
+// takePattern reads an optional regular expression and checks it compiles.
+func (g *graph) takePattern(node *dslNode, m ymap, key string) string {
+	if _, ok := m.val[key]; !ok {
+		return ""
+	}
+	line := m.keyLine(key)
+	text := g.takeString(m, key)
+	if _, err := regexp.Compile(text); err != nil || text == "" {
+		g.add(Error, line, "node %q %s must be a regular expression", node.id, key)
+	}
+	return text
+}
+
 func (g *graph) parseHookGroups(node *dslNode, body *yaml.Node) []hookGroup {
 	if body.Kind != yaml.SequenceNode {
 		g.add(Error, body.Line, "node %q expect must be a list of events", node.id)
@@ -409,7 +447,7 @@ func countTrue(flags ...bool) int {
 
 func outputsAllowed(kind string) bool {
 	switch kind {
-	case kindRequest, kindModule, kindAssert, kindWebhook, kindSSE, kindIntegration:
+	case kindRequest, kindModule, kindAssert, kindWebhook, kindEmail, kindSSE, kindIntegration:
 		return true
 	default:
 		return false
@@ -469,9 +507,32 @@ func (g *graph) parseOneOutput(node *dslNode, name string, body *yaml.Node) outD
 	path, hasPath := m.take("path")
 	header, hasHeader := m.take("header")
 	status, hasStatus := m.take(statusWord)
+	selector, hasHTML := m.take(htmlWord)
+	pattern, hasRegex := m.take(regexWord)
 	switch {
-	case countTrue(hasPath, hasHeader, hasStatus) > 1:
-		g.add(Error, decl.line, "node %q output %q sets more than one of path, header, status", node.id, name)
+	case countTrue(hasPath, hasHeader, hasStatus, hasHTML, hasRegex) > 1:
+		g.add(Error, decl.line,
+			"node %q output %q sets more than one of path, header, status, html, regex", node.id, name)
+	case hasHTML:
+		decl.extractor = string(wire.ExtractorTypeHtml)
+		decl.selector = scalarText(g, node, name, selector)
+		if raw, ok := m.take("attribute"); ok {
+			decl.attribute = scalarText(g, node, name, raw)
+		}
+		if raw, ok := m.take("all"); ok {
+			value, good := asBool(raw)
+			if !good {
+				g.add(Error, lineOf(raw), "node %q output %q all must be true or false", node.id, name)
+			}
+			decl.all = value
+		}
+	case hasRegex:
+		decl.extractor = string(wire.ExtractorTypeRegex)
+		decl.pattern = scalarText(g, node, name, pattern)
+		if _, err := regexp.Compile(decl.pattern); err != nil {
+			g.add(Error, lineOf(pattern), "node %q output %q regex: %s", node.id, name, err.Error())
+		}
+		decl.group = g.takeNonNegative(node, m, "group")
 	case hasPath:
 		decl.extractor = string(wire.ExtractorTypeJsonPath)
 		decl.path = scalarText(g, node, name, path)
@@ -485,7 +546,7 @@ func (g *graph) parseOneOutput(node *dslNode, name string, body *yaml.Node) outD
 		}
 		decl.extractor = string(wire.ExtractorTypeStatusCode)
 	default:
-		g.add(Error, decl.line, "node %q output %q needs a path, a header, or status: true", node.id, name)
+		g.add(Error, decl.line, "node %q output %q needs a path, a header, status: true, html or regex", node.id, name)
 	}
 	g.rejectNodeFields(node.id, m)
 	return decl
@@ -519,11 +580,20 @@ func (g *graph) parseOutputShorthand(node *dslNode, decl outDecl, text string) o
 		decl.extractor = string(wire.ExtractorTypeBody)
 	case text == statusWord:
 		decl.extractor = string(wire.ExtractorTypeStatusCode)
+	case strings.HasPrefix(text, htmlWord+":") && len(text) > len(htmlWord+":"):
+		decl.extractor = string(wire.ExtractorTypeHtml)
+		decl.selector, decl.attribute = splitHTMLTarget(strings.TrimPrefix(text, htmlWord+":"))
+	case strings.HasPrefix(text, regexWord+":") && len(text) > len(regexWord+":"):
+		decl.extractor = string(wire.ExtractorTypeRegex)
+		decl.pattern = strings.TrimPrefix(text, regexWord+":")
+		if _, err := regexp.Compile(decl.pattern); err != nil {
+			g.add(Error, decl.line, "node %q output %q regex: %s", node.id, decl.name, err.Error())
+		}
 	default:
 		g.add(
 			Error,
 			decl.line,
-			"node %q output %q needs a path ($.field), header:<name>, body, or status",
+			"node %q output %q needs a path ($.field), header:<name>, html:<selector>, regex:<pattern>, body, or status",
 			node.id,
 			decl.name,
 		)

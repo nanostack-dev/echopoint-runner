@@ -170,7 +170,7 @@ func TestClaimNextDeclaresTheCapabilitiesOfThisBuild(t *testing.T) {
 
 	require.ErrorIs(t, err, controlplane.ErrNoJobAvailable)
 	assert.Equal(t, "runner-1", body["runner_id"])
-	assert.Equal(t, []any{"secret_outputs", "form_body"}, body["capabilities"])
+	assert.Equal(t, []any{"secret_outputs", "form_body", "email_wait"}, body["capabilities"])
 }
 
 const testTraceparent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"

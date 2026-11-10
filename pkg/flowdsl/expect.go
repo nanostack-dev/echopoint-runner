@@ -2,9 +2,11 @@ package flowdsl
 
 import (
 	"fmt"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/nanostack-dev/echopoint-runner/pkg/flowdsl/wire"
 
@@ -147,9 +149,24 @@ func parseCheck(match string) (wire.CompositeAssertion, error) {
 		assertion.ExtractorType = wire.ExtractorTypeBody
 	case target == statusWord:
 		assertion.ExtractorType = wire.ExtractorTypeStatusCode
+	case strings.HasPrefix(target, htmlWord+":") && len(target) > len(htmlWord+":"):
+		assertion.ExtractorType = wire.ExtractorTypeHtml
+		selector, attribute := splitHTMLTarget(strings.TrimPrefix(target, htmlWord+":"))
+		assertion.ExtractorData["selector"] = selector
+		if attribute != "" {
+			assertion.ExtractorData["attribute"] = attribute
+		}
+	case strings.HasPrefix(target, regexWord+":") && len(target) > len(regexWord+":"):
+		pattern := strings.TrimPrefix(target, regexWord+":")
+		if _, err := regexp.Compile(pattern); err != nil {
+			return wire.CompositeAssertion{}, fmt.Errorf("%q: %w", match, err)
+		}
+		assertion.ExtractorType = wire.ExtractorTypeRegex
+		assertion.ExtractorData["pattern"] = pattern
 	default:
 		return wire.CompositeAssertion{}, fmt.Errorf(
-			"%q: target must be a JSONPath ($.id), header:<name>, query:<name>, body, or status: <code>", match)
+			"%q: target must be a JSONPath ($.id), header:<name>, query:<name>, html:<selector>[@attribute], "+
+				"regex:<pattern>, body, or status: <code>", match)
 	}
 	if operator == string(wire.OperatorTypeBetween) {
 		return finishBetween(assertion, match, value, hasValue)
@@ -164,6 +181,26 @@ func parseCheck(match string) (wire.CompositeAssertion, error) {
 		assertion.OperatorData["value"] = value
 	}
 	return assertion, nil
+}
+
+// splitHTMLTarget reads "selector@attribute". The attribute is the text after
+// the last @ that follows every ], so an @ inside an attribute selector such
+// as a[href*="@"] stays part of the selector.
+func splitHTMLTarget(text string) (string, string) {
+	at := strings.LastIndex(text, "@")
+	if at <= 0 || at < strings.LastIndex(text, "]") || !validAttribute(text[at+1:]) {
+		return text, ""
+	}
+	return text[:at], text[at+1:]
+}
+
+func validAttribute(name string) bool {
+	if name == "" {
+		return false
+	}
+	return strings.IndexFunc(name, func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r) && !strings.ContainsRune("-_:", r)
+	}) < 0
 }
 
 // splitCheck reads a target, then an operator, then the rest of the line.

@@ -16,6 +16,7 @@ const (
 	KindBranch      Kind = "branch"
 	KindSse         Kind = "sse"
 	KindWebhookWait Kind = "webhook_wait"
+	KindEmailWait   Kind = "email_wait"
 )
 
 // RunWhen controls whether a node runs only on the success path or also after

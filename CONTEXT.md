@@ -16,6 +16,8 @@
 | Secret input | A flow input named in `secret_input_keys`; its value is replaced by `***` in every result, progress event and error the run reports. See [secret redaction](docs/technical/secret-redaction.md). |
 | Secret output | A node output declared with `"secret": true`; from the moment the node extracts it, its value is masked like a secret input wherever it appears, including module outputs and downstream inputs that carry it. |
 | HTTP call | One outbound HTTP request a node sent during an execution; each loop iteration, poll attempt and retry is its own call. Control-plane reads such as webhook-wait polling are not HTTP calls. A top-level node's result lists its calls, its bodies' included, in `http_calls`. |
+| Run inbox | The email address the control plane creates for one run that contains an `email_wait`, injected as `inbox.address` with `inbox.local`, `inbox.domain` and `inbox.messages_url`. It expires 120 minutes after launch. See [email wait](docs/technical/email-wait.md). |
+| Email wait | An `email_wait` node: it reads the run inbox with the job token until a message matches, and outputs its parts, its `links` and its `code`. Inbox reads are control-plane reads, not HTTP calls. |
 | HTTP call limit | The most HTTP calls one execution may send (`max_http_calls_per_execution`). The node whose call would pass it fails with `HTTP_CALL_LIMIT_EXCEEDED`. |
 | Response budget | The response body bytes, with their parsed form, that every request node sharing a runner may hold at once (`ECHOPOINT_MAX_BUFFERED_RESPONSE_BYTES`). A node that cannot reserve its body waits within its request timeout. |
 
