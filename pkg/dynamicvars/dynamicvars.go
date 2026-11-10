@@ -122,10 +122,10 @@ func argInt(args []string, idx, def int) int {
 	return def
 }
 
-// argCount reads a count argument. A negative count is treated as zero, so it
+// argCount reads the count, the first argument. A negative count is treated as zero, so it
 // cannot reach make or strings.Repeat and panic.
-func argCount(args []string, idx, def int) int {
-	return max(argInt(args, idx, def), 0)
+func argCount(args []string, def int) int {
+	return max(argInt(args, 0, def), 0)
 }
 
 func argFloat(args []string, idx int, def float64) float64 {
@@ -336,7 +336,7 @@ var registry = map[string]Entry{
 		gen: func(c *Context, _ []string) (string, error) { return c.faker.Word(), nil }},
 	"words": {Category: catText, Desc: "N words (default 3).", Example: "{{$words:5}}",
 		gen: func(c *Context, args []string) (string, error) {
-			n := argCount(args, 0, 3)
+			n := argCount(args, 3)
 			parts := make([]string, n)
 			for i := range parts {
 				parts[i] = c.faker.Word()
@@ -347,14 +347,14 @@ var registry = map[string]Entry{
 		Category: catText,
 		Desc:     "A sentence of N words (default 8).",
 		Example:  "{{$sentence:10}}",
-		gen:      func(c *Context, args []string) (string, error) { return c.faker.Sentence(argCount(args, 0, 8)), nil },
+		gen:      func(c *Context, args []string) (string, error) { return c.faker.Sentence(argCount(args, 8)), nil },
 	},
 	"slug": {
 		Category: catText,
 		Desc:     "A kebab-case slug of N words (default 3).",
 		Example:  "{{$slug:2}}",
 		gen: func(c *Context, args []string) (string, error) {
-			n := argCount(args, 0, 3)
+			n := argCount(args, 3)
 			parts := make([]string, n)
 			for i := range parts {
 				parts[i] = strings.ToLower(c.faker.Word())
@@ -391,18 +391,18 @@ var registry = map[string]Entry{
 		gen: func(c *Context, _ []string) (string, error) { return strconv.FormatBool(c.faker.Bool()), nil }},
 	"digits": {Category: catPrimitive, Desc: "N digits (default 6).", Example: "{{$digits:4}}",
 		gen: func(c *Context, args []string) (string, error) {
-			return c.faker.DigitN(uint(argCount(args, 0, 6))), nil
+			return c.faker.DigitN(uint(argCount(args, 6))), nil
 		}},
 	"letters": {Category: catPrimitive, Desc: "N letters (default 8).", Example: "{{$letters:10}}",
 		gen: func(c *Context, args []string) (string, error) {
-			return c.faker.LetterN(uint(argCount(args, 0, 8))), nil
+			return c.faker.LetterN(uint(argCount(args, 8))), nil
 		}},
 	"string": {
 		Category: catPrimitive,
 		Desc:     "N-char alphanumeric (default 16).",
 		Example:  "{{$string:12}}",
 		gen: func(c *Context, args []string) (string, error) {
-			return c.faker.Lexify(strings.Repeat("?", argCount(args, 0, 16))), nil
+			return c.faker.Lexify(strings.Repeat("?", argCount(args, 16))), nil
 		},
 	},
 	"uuid": {Category: catPrimitive, Desc: "A UUIDv4.", Example: "{{$uuid}}",
