@@ -30,10 +30,15 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event_name == 'push' && 'main' || github.run_id }}
   queue: max
 
+# GITHUB_TOKEN starts with nothing; every job grants what it needs.
+permissions: {}
+
 jobs:
   lint-runner:
     name: Lint echopoint-runner
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -65,6 +70,8 @@ jobs:
   tests-runner:
     name: Test echopoint-runner
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     timeout-minutes: 30
     needs: lint-runner
     steps:
