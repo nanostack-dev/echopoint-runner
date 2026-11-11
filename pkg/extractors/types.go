@@ -14,6 +14,14 @@ type AnyExtractor interface {
 
 var ErrNotImplemented = errors.New("extractor not implemented")
 
+// Targeted is the optional interface an extractor implements when it reads one
+// named part of the response: a JSON path, a header name, a query parameter. A
+// failure message quotes the target so the reader knows what was checked.
+// Extractors that read the whole response (status_code, body) do not implement it.
+type Targeted interface {
+	Target() string
+}
+
 // ResponseContext is the main context interface that all extractors receive.
 // Concrete implementations can opt-in to specific capability interfaces.
 type ResponseContext interface {

@@ -25,8 +25,10 @@ type ResponseReleaser interface {
 }
 
 // EvaluateAssertions evaluates every assertion against rc, assigning each result
-// its Index. Evaluation stops at the first failing or erroring assertion — that
-// one IS recorded — and the corresponding error is returned. The returned slice
+// its 0-based Index. Evaluation stops at the first failing or erroring assertion
+// — that one IS recorded — and the corresponding error is returned. Its message
+// names the assertion by its 1-based position and by what it checked, such as
+// "assertion 2 failed: json_path $.status equals expected=sold actual=available". The returned slice
 // holds results for all assertions up to and including the first failure (or all
 // of them on success). This is the single assertion-evaluation implementation;
 // every node delegates to it.
@@ -38,18 +40,20 @@ func EvaluateAssertions(
 		res := assertions[i].Evaluate(rc)
 		res.Index = i
 		results = append(results, res)
+		// Index stays 0-based for consumers; the message counts from 1 for readers.
+		position := i + 1
 
 		// A UserError: an expected assertion failure logs at debug, not error.
 		if res.Error != "" {
 			return results, spi.NewUserError("ASSERTION_FAILED",
-				fmt.Sprintf("assertion %d (%s %s) evaluation error: %s",
-					i, res.Extractor, res.Operator, res.Error), nil)
+				fmt.Sprintf("assertion %d (%s) evaluation error: %s",
+					position, assertions[i].describe(), res.Error), nil)
 		}
 
 		if !res.Passed {
 			return results, spi.NewUserError("ASSERTION_FAILED",
-				fmt.Sprintf("assertion %d failed: %s %s expected=%v actual=%v",
-					i, res.Extractor, res.Operator, res.Expected, res.Actual), nil)
+				fmt.Sprintf("assertion %d failed: %s expected=%v actual=%v",
+					position, assertions[i].describe(), res.Expected, res.Actual), nil)
 		}
 	}
 

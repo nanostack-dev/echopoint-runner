@@ -85,3 +85,8 @@ func (e JSONPathExtractor) Extract(ctx ResponseContext) (any, error) {
 func (e JSONPathExtractor) GetType() spi.ExtractorType {
 	return spi.ExtractorTypeJSONPath
 }
+
+// Target names the JSON path the extractor reads.
+func (e JSONPathExtractor) Target() string {
+	return e.Path
+}

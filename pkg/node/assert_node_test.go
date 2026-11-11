@@ -90,13 +90,13 @@ func TestAssertNode_FailingAssertionFlipsToFailed(t *testing.T) {
 	)
 	require.Error(t, err)
 	require.False(t, result.Success)
-	assert.Contains(t, err.Error(), "assertion 0 failed")
+	assert.Contains(t, err.Error(), "assertion 1 failed: json_path $.status equals")
 
 	require.Len(t, assertRes.AssertionResults, 1)
 	assert.False(t, assertRes.AssertionResults[0].Passed)
 	assert.Equal(t, "error", assertRes.AssertionResults[0].Actual)
 	require.NotNil(t, assertRes.ErrorMsg)
-	assert.Contains(t, *assertRes.ErrorMsg, "assertion 0 failed")
+	assert.Contains(t, *assertRes.ErrorMsg, "assertion 1 failed: json_path $.status equals")
 	require.NotNil(t, assertRes.ErrorCode)
 	// The engine-level assertion pass owns failure classification — assert misses
 	// surface the unified ASSERTION_FAILED code (was node-local ASSERT_FAILED).
@@ -135,7 +135,7 @@ func TestAssertNode_StopsAtFirstFailingAssertion(t *testing.T) {
 		map[string]any{"status": "ok", "count": float64(3)},
 	)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "assertion 1 failed")
+	assert.Contains(t, err.Error(), "assertion 2 failed: json_path $.count equals")
 
 	require.Len(t, assertRes.AssertionResults, 2, "should record up to and including the failing assertion")
 	assert.True(t, assertRes.AssertionResults[0].Passed)

@@ -42,6 +42,11 @@ func (e RegexExtractor) GetType() spi.ExtractorType {
 	return spi.ExtractorTypeRegex
 }
 
+// Target names the pattern the extractor matches.
+func (e RegexExtractor) Target() string {
+	return e.Pattern
+}
+
 func (e RegexExtractor) group(pattern *regexp.Regexp) int {
 	if e.Group != nil {
 		return *e.Group
