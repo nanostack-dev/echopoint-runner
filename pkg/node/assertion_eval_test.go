@@ -187,8 +187,8 @@ func TestEvaluateAssertions_FailureIsUserError(t *testing.T) {
 	if userErr.Code != "ASSERTION_FAILED" {
 		t.Errorf("expected code ASSERTION_FAILED, got %q", userErr.Code)
 	}
-	if !strings.Contains(err.Error(), "assertion 0 failed") {
-		t.Errorf("expected message to contain 'assertion 0 failed', got %q", err.Error())
+	if !strings.Contains(err.Error(), "assertion 1 failed") {
+		t.Errorf("expected message to contain 'assertion 1 failed', got %q", err.Error())
 	}
 	if len(results) != 1 || results[0].Passed {
 		t.Errorf("expected one recorded failing result, got %+v", results)

@@ -29,3 +29,8 @@ func (e QueryParamExtractor) Extract(ctx extractors.ResponseContext) (any, error
 func (e QueryParamExtractor) GetType() spi.ExtractorType {
 	return spi.ExtractorTypeQueryParam
 }
+
+// Target names the query parameter the extractor reads.
+func (e QueryParamExtractor) Target() string {
+	return e.ParamName
+}

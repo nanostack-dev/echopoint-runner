@@ -65,6 +65,14 @@ func (e HTMLExtractor) GetType() spi.ExtractorType {
 	return spi.ExtractorTypeHTML
 }
 
+// Target names the selector the extractor reads, with its attribute as selector@attribute.
+func (e HTMLExtractor) Target() string {
+	if e.Attribute == "" || e.Selector == "" {
+		return e.Selector
+	}
+	return e.Selector + "@" + e.Attribute
+}
+
 func (e HTMLExtractor) pick(element *goquery.Selection) (string, bool) {
 	if e.Attribute == "" {
 		return collapseSpace(element.Text()), true

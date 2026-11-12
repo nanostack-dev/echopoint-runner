@@ -64,3 +64,8 @@ func lookupHeader(headers http.Header, name string) (string, bool) {
 func (e HeaderExtractor) GetType() spi.ExtractorType {
 	return spi.ExtractorTypeHeader
 }
+
+// Target names the header the extractor reads.
+func (e HeaderExtractor) Target() string {
+	return e.HeaderName
+}

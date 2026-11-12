@@ -41,6 +41,22 @@ extraction after an assertion failure logs unavailable output names at Debug.
 Recovery/fallback, continued-loop, per-event SSE and cancellation diagnostics keep
 their own existing policies because those branches handle the outcome locally.
 
+A failed assertion fails its node with `ASSERTION_FAILED` and a message for the
+reader, built in one place ([`EvaluateAssertions`](../../pkg/node/assertion_eval.go)).
+The message counts assertions from 1 and names what the extractor read (a JSON
+path, a header name, a query parameter, an HTML selector or a regex pattern)
+when it has such a target:
+
+- `assertion 2 failed: json_path $.status equals expected=sold actual=available`
+- `assertion 1 failed: status_code equals expected=404 actual=200`
+- `assertion 2 (json_path $.status equals) evaluation error: <error>` when the
+  extractor or operator cannot evaluate.
+
+The `index` of each entry in `assertion_results` stays 0-based, so `assertion 2`
+in a message is the entry with `index` 1 (an sse node's entries carry the event
+index instead). Consumers read the structured result; a consumer that matches the
+message text must not depend on the position number.
+
 ## Control-plane calls
 
 [`internal/controlplane`](../../internal/controlplane/client.go) makes these calls. A self-hosted runner authenticates with `X-Api-Key` and `X-Organization-Id`; a one-shot Job ([`pkg/jobrunner`](../../pkg/jobrunner/jobrunner.go)) uses `X-Job-Token`.

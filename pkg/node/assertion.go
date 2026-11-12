@@ -136,6 +136,26 @@ func (ca *CompositeAssertion) Evaluate(ctx extractors.ResponseContext) spi.Asser
 	return res
 }
 
+// Target names what the assertion's extractor reads (a JSON path, a header
+// name, a query parameter), or "" when the extractor reads the whole response
+// or the assertion has none. It is for messages only and is not serialized.
+func (ca *CompositeAssertion) Target() string {
+	targeted, hasTarget := ca.Extractor.(extractors.Targeted)
+	if !hasTarget {
+		return ""
+	}
+	return targeted.Target()
+}
+
+// describe renders "extractor target operator" for a failure message, without
+// the target when there is none.
+func (ca *CompositeAssertion) describe() string {
+	if target := ca.Target(); target != "" {
+		return ca.ExtractorType + " " + target + " " + string(ca.OperatorType)
+	}
+	return ca.ExtractorType + " " + string(ca.OperatorType)
+}
+
 func (ca *CompositeAssertion) extract(ctx extractors.ResponseContext) (any, error) {
 	if textExtractor, hasText := ca.Extractor.(extractors.TextExtractor); hasText &&
 		operators.ComparesText(ca.OperatorType) {

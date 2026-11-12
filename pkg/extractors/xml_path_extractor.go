@@ -24,3 +24,8 @@ func (e XMLPathExtractor) Extract(_ ResponseContext) (any, error) {
 func (e XMLPathExtractor) GetType() spi.ExtractorType {
 	return spi.ExtractorTypeXMLPath
 }
+
+// Target names the XML path the extractor reads.
+func (e XMLPathExtractor) Target() string {
+	return e.Path
+}
