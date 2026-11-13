@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/mail"
 	"net/url"
 	"regexp"
 	"strings"
@@ -23,6 +24,7 @@ const (
 	outputFrom       = "from"
 	outputSubject    = "subject"
 	outputEnvelopeTo = "envelope_to"
+	outputCc         = "cc"
 	capabilityBody   = "body"
 )
 
@@ -33,24 +35,28 @@ var textURLPattern = regexp.MustCompile(`(?i)https?://[^\s<>"'` + "`" + `]+`)
 // emailOutputNames are the outputs of a matched message, in report order.
 func emailOutputNames() []string {
 	return []string{
-		"id", "message_id", outputFrom, "to", "envelope_from", outputEnvelopeTo, outputSubject,
-		"text", "html", "links", "first_link", "code", outputReceivedAt,
+		"id", "message_id", outputFrom, "to", outputCc, "envelope_from", outputEnvelopeTo, outputSubject,
+		"bcc", "text", "html", "links", "first_link", "code", outputReceivedAt,
 	}
 }
 
 // inboxMessage is one email of the run inbox as the runner read endpoint
 // returns it.
 type inboxMessage struct {
-	ID           string    `json:"id"`
-	EnvelopeFrom string    `json:"envelope_from"`
-	EnvelopeTo   string    `json:"envelope_to"`
-	From         string    `json:"from"`
-	To           string    `json:"to"`
-	Subject      string    `json:"subject"`
-	MessageID    string    `json:"message_id"`
-	Text         *string   `json:"text"`
-	HTML         *string   `json:"html"`
-	ReceivedAt   time.Time `json:"received_at"`
+	ID           string `json:"id"`
+	EnvelopeFrom string `json:"envelope_from"`
+	EnvelopeTo   string `json:"envelope_to"`
+	From         string `json:"from"`
+	To           string `json:"to"`
+	Cc           string `json:"cc"`
+	Subject      string `json:"subject"`
+	MessageID    string `json:"message_id"`
+	// Headers holds every decoded header under its canonical MIME name. An API
+	// that predates the field omits it, and so does Cc.
+	Headers    map[string][]string `json:"headers"`
+	Text       *string             `json:"text"`
+	HTML       *string             `json:"html"`
+	ReceivedAt time.Time           `json:"received_at"`
 }
 
 type inboxMessageList struct {
@@ -142,9 +148,11 @@ func (m readEmail) outputs() map[string]any {
 		"message_id":     m.MessageID,
 		outputFrom:       m.From,
 		"to":             m.To,
+		outputCc:         m.Cc,
 		"envelope_from":  m.EnvelopeFrom,
 		outputEnvelopeTo: m.EnvelopeTo,
 		outputSubject:    m.Subject,
+		"bcc":            m.isBcc(),
 		"text":           m.text,
 		"html":           m.html,
 		"links":          links,
@@ -161,10 +169,44 @@ func (m readEmail) summary() map[string]any {
 		"id":             m.ID,
 		outputFrom:       m.From,
 		"to":             m.To,
+		outputCc:         m.Cc,
 		outputEnvelopeTo: m.EnvelopeTo,
 		outputSubject:    m.Subject,
 		outputReceivedAt: formatReceivedAt(m.ReceivedAt),
 	}
+}
+
+// isBcc reports whether the inbox received the message as a blind copy: its
+// envelope recipient is in neither To nor Cc. Addresses compare in full, case
+// insensitively. A header that does not parse falls back to a case insensitive
+// substring check. Without an envelope recipient the answer is false.
+func (m readEmail) isBcc() bool {
+	recipient := strings.TrimSpace(m.EnvelopeTo)
+	if recipient == "" {
+		return false
+	}
+	for _, header := range []string{m.To, m.Cc} {
+		if headerHasAddress(header, recipient) {
+			return false
+		}
+	}
+	return true
+}
+
+func headerHasAddress(header, recipient string) bool {
+	if strings.TrimSpace(header) == "" {
+		return false
+	}
+	addresses, err := mail.ParseAddressList(header)
+	if err != nil {
+		return strings.Contains(strings.ToLower(header), strings.ToLower(recipient))
+	}
+	for _, address := range addresses {
+		if strings.EqualFold(address.Address, recipient) {
+			return true
+		}
+	}
+	return false
 }
 
 func formatReceivedAt(at time.Time) string {
@@ -176,13 +218,22 @@ func formatReceivedAt(at time.Time) string {
 
 // assertionContext lets assertions and outputs read a message: json_path
 // reads its outputs, body and regex read its text, html reads its HTML part,
-// header reads From, To, Subject and Message-Id.
+// header reads any header of the message (Cc, Reply-To, X-...), and the
+// dedicated fields win over the header map for From, To, Subject and Message-Id.
 func (m readEmail) assertionContext() extractors.ResponseContext {
 	headers := http.Header{}
+	for name, values := range m.Headers {
+		for _, value := range values {
+			headers.Add(name, value)
+		}
+	}
 	headers.Set("From", m.From)
 	headers.Set("To", m.To)
 	headers.Set("Subject", m.Subject)
 	headers.Set("Message-Id", m.MessageID)
+	if m.Cc != "" {
+		headers.Set("Cc", m.Cc)
+	}
 	return emailContext{parsed: m.outputs(), text: []byte(m.text), html: []byte(m.html), headers: headers}
 }
 

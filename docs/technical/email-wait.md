@@ -9,13 +9,13 @@ The node's assertions are checked on each message, oldest first:
 - `json_path` reads the message as its outputs (below): `$.subject`, `$.envelope_to`, `$.code`, `$.first_link`.
 - `body` and `regex` read the text: the text part, or the HTML part rendered as text when the message has no text part.
 - `html` reads the HTML part with a CSS selector.
-- `header` reads `From`, `To`, `Subject` and `Message-Id`.
+- `header` reads any header of the message by name: `From`, `To`, `Cc`, `Reply-To`, `Subject`, `Message-Id`, `X-...`. A header the API does not send reads as empty.
 
 Without an assertion, the first message matches: the run inbox only receives the mail sent to this run. Match a `+tag` with `$.envelope_to contains +alice@`.
 
 ## First match
 
-Without `expect`, the wait completes on the first message that passes the assertions. Its outputs are `id`, `message_id`, `from`, `to`, `envelope_from`, `envelope_to`, `subject`, `text`, `html`, `links`, `first_link`, `code` and `received_at`. Every key is always present: `code` and `first_link` are empty strings and `links` is an empty list when the message has none.
+Without `expect`, the wait completes on the first message that passes the assertions. Its outputs are `id`, `message_id`, `from`, `to`, `cc`, `envelope_from`, `envelope_to`, `subject`, `bcc`, `text`, `html`, `links`, `first_link`, `code` and `received_at`. Every key is always present: `cc` is an empty string when the message has no Cc, `bcc` is `true` when `envelope_to` is in neither `To` nor `Cc` (compared in full, ignoring case; `false` without an envelope recipient), `code` and `first_link` are empty strings and `links` is an empty list when the message has none.
 
 - `links` are the `http` and `https` hrefs of the HTML `<a>` elements in document order, with entities decoded and duplicates removed, or the URLs of the text when there is no HTML. `link_pattern` keeps the links it matches.
 - `code` is the first match of `code_pattern` (default `\b\d{6}\b`) in the text: capture group 1 when the pattern has a group, else the whole match.

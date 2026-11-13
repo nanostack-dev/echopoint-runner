@@ -418,8 +418,8 @@ var inboxInputs = []string{"address", "local", "domain", "messages_url"}
 // matches one message.
 func addEmailOutputs(out map[string]bool) {
 	for _, name := range []string{
-		"id", "message_id", "from", "to", "envelope_from", "envelope_to", "subject",
-		"text", "html", "links", "first_link", "code", "received_at",
+		"id", "message_id", "from", "to", "cc", "envelope_from", "envelope_to", "subject",
+		"bcc", "text", "html", "links", "first_link", "code", "received_at",
 	} {
 		out[name] = true
 	}
