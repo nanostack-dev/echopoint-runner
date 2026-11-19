@@ -1,0 +1,123 @@
+{
+  "title": "Runner v0.112.0 released but not deployed: a rejected-lease race failed main CI",
+  "short": "Rejected lease race",
+  "service": "echopoint-runner",
+  "date": "2026-11-19",
+  "severity": "SEV4",
+  "status": "in review",
+  "authors": ["Nanostack routine (echopoint-investigation)"],
+  "summary": "The merge of echopoint-runner#126 (transport retries) released tag `v0.112.0` at 17:07Z, but the main CI test job failed on `TestRejectedLeaseStopsTheRunBeforeItsNextRequest`, so no container image was built and no deploy was dispatched. The dev and prod self-hosted runner services kept running v0.111.0 (`main-d159a21`), while echopoint-cli v5.0.1 already embeds v0.112.0. The test failed because `markJobRejected` cancelled the run before it recorded the rejection, so the cancelled run checked `isRejected`, saw false and sent a failure completion. The race existed since the first runner snapshot and failed CI once in about 40 main runs. The fix records the rejection first; it ships with this postmortem and deploys the retries.",
+  "impact": {
+    "text": "No customer impact. Self-hosted runs on dev and prod (monitors, the public status probe, the self-hosted CI monitor) kept running without the transport retries of v0.112.0 for about 1.5 h, while Ephemeral runs through CLI v5.0.1 had them. In production the race had no effect: every one of the 35 heartbeat rejections since 2026-10-20 came after the job had finished.",
+    "numbers": [
+      {"value": "1 of ~40", "label": "main CI runs failed on this race"},
+      {"value": "0", "label": "runner services on v0.112.0 after the release"},
+      {"value": "35", "label": "prod+dev lease rejections in 30 days, all after completion"}
+    ]
+  },
+  "trigger": "Main CI run [44573501171](https://github.com/nanostack-dev/echopoint-runner/actions/runs/44573501171) for caf812c failed `TestRejectedLeaseStopsTheRunBeforeItsNextRequest`; the image build and the dev deploy dispatch were skipped.",
+  "detection": "The `echopoint-investigation` routine saw at 18:1xZ that the runner services still logged `app.commit` `main-d159a21` an hour after the `v0.112.0` release. A failed main CI on the runner notifies nobody, and the PR body said the merge deploys the runners.",
+  "resolution": "The fix records the rejection in the rejected map before it cancels the run, so a cancelled run always sees the rejection and sends no completion. Its merge releases the next tag, builds the image and deploys both fixes.",
+  "timeline": {
+    "events": [
+      {"t": "2026-05-11T17:33:47Z", "kind": "change", "label": "markJobRejected cancels before it records the rejection", "detail": "Present since the first snapshot, c109bdf.", "link": "https://github.com/nanostack-dev/echopoint-runner/commit/c109bdf"},
+      {"t": "2026-10-14T21:29:58Z", "kind": "change", "label": "Test for rejected leases added (6cffb71)", "link": "https://github.com/nanostack-dev/echopoint-runner/commit/6cffb71"},
+      {"t": "2026-11-19T17:06:12Z", "kind": "change", "label": "echopoint-runner#126 merged (caf812c)", "detail": "PR checks were green.", "link": "https://github.com/nanostack-dev/echopoint-runner/pull/126"},
+      {"t": "2026-11-19T17:07:08Z", "kind": "note", "label": "Release workflow tags v0.112.0", "detail": "The Release workflow runs on every push to main and does not wait for tests.", "link": "https://github.com/nanostack-dev/echopoint-runner/releases/tag/v0.112.0"},
+      {"t": "2026-11-19T17:08:15Z", "kind": "trigger", "label": "Main test job fails; image build and deploy skipped", "detail": "`An error is expected but got nil` at runtime_test.go:270; 763 tests, 1 failure.", "link": "https://github.com/nanostack-dev/echopoint-runner/actions/runs/44573501171"},
+      {"t": "2026-11-19T17:22:34Z", "kind": "note", "label": "echopoint-cli v5.0.1 released with runner v0.112.0", "link": "https://github.com/nanostack-dev/echopoint-cli/pull/109"},
+      {"t": "2026-11-19T18:00:24Z", "kind": "note", "label": "Runner services still log main-d159a21", "detail": "VictoriaLogs `app.commit` on `echopoint-runner-prod_runner` and `-dev_runner`."},
+      {"t": "2026-11-19T18:15:00Z", "approx": true, "kind": "detect", "label": "Routine finds the release was never deployed"},
+      {"t": "2026-11-19T18:40:00Z", "approx": true, "kind": "mitigate", "label": "Race reproduced; fix passes all tests and lint"},
+      {"t": "2026-11-19T19:30:00Z", "approx": true, "kind": "resolve", "label": "Fix merged and runner services deployed"}
+    ]
+  },
+  "whys": {
+    "problem": "Runner v0.112.0 was released and pinned by CLI v5.0.1, but the dev and prod runner services never got it",
+    "because": [
+      {
+        "text": "The main CI test job failed, so `Build and Push Container Image` and `Dispatch Deploy (dev)` were skipped",
+        "evidence": "[Run 44573501171](https://github.com/nanostack-dev/echopoint-runner/actions/runs/44573501171): Test failure, the two later jobs skipped",
+        "because": [
+          {
+            "text": "`TestRejectedLeaseStopsTheRunBeforeItsNextRequest` got a nil error: the rejected run sent a failure completion",
+            "evidence": "Log: `runner job failed` with `context canceled`, no `skipping failure completion for rejected runner job` line",
+            "because": [
+              {
+                "text": "`markJobRejected` cancels the run before it writes the rejected map, and the woken run checks `isRejected` in that gap",
+                "evidence": "`internal/runtime/runtime.go` markJobRejected; a 50 ms sleep after the cancel fails the test 5 of 5 times, and passes with the fix",
+                "because": [
+                  {
+                    "text": "The test leaves the gap to the scheduler: it passed 400 local runs and the PR check, and failed once in about 40 main runs",
+                    "evidence": "Main `Go Build and Test` history since 2026-10-07: first failure on caf812c",
+                    "because": [
+                      {"id": "R1", "root": true, "text": "A rejection is two pieces of state written in the wrong order: the signal (cancel) before the fact (rejected map) it reports"}
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "text": "The release tag exists although the code failed its tests, so a consumer pinned an undeployed version",
+        "evidence": "`release.yml` runs on every push to main; v0.112.0 tagged at 17:07:08Z, tests failed at 17:08:15Z",
+        "because": [
+          {
+            "text": "Release and Go Build and Test are separate workflows on the same push, and Release does not wait for the tests",
+            "evidence": "[release.yml](https://github.com/nanostack-dev/echopoint-runner/blob/main/.github/workflows/release.yml) trigger `push: branches: [main]`",
+            "because": [
+              {"id": "R2", "root": true, "text": "Release tagging is not gated on a green main test run"}
+            ]
+          }
+        ]
+      },
+      {
+        "lens": "impact",
+        "text": "Nobody saw the skipped deploy for an hour, and the CLI release went ahead",
+        "evidence": "CLI v5.0.1 at 17:22Z; PR body of #126 says the merge deploys the runners",
+        "because": [
+          {
+            "text": "A failed main CI on echopoint-runner sends no alert, and no check compares the runner services' version with the latest release",
+            "because": [
+              {"id": "R3", "root": true, "text": "Nothing checks that a released runner version reaches the runner services"}
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "contributing": [
+    "Every push to main releases a version, so the tag is cut minutes before the tests finish."
+  ],
+  "lessons": {
+    "well": [
+      "A 50 ms sleep at the suspected gap reproduced the failure at once, which proved the cause before the fix.",
+      "Lease rejections in production all came after completion, so the race never sent a wrong completion there."
+    ],
+    "wrong": [
+      "The merge author released the CLI on the assumption that the merge had deployed the runners.",
+      "A red main run on a merged commit was the only signal."
+    ],
+    "lucky": [
+      "The skipped deploy only delayed a retry improvement; a skipped security fix would have stayed undeployed the same way.",
+      "No production lease was rejected mid-run in 30 days, where the race would have sent a completion for a reassigned job."
+    ]
+  },
+  "actions": [
+    {"id": "A1", "what": "Record the rejection before cancelling the run in `markJobRejected`", "type": "prevent", "owner": "Nanostack routine (echopoint-investigation)", "due": "2026-11-19", "status": "open", "ticket": {"label": "echopoint-runner#PR", "url": "https://github.com/nanostack-dev/echopoint-runner/pulls"}, "fixes": ["R1"]},
+    {"id": "A2", "what": "Tag a release only after `Go Build and Test` passed on that main commit (or tag from the go.yml run)", "type": "prevent", "owner": "echopoint-runner maintainers", "due": "2026-12-03", "status": "open", "fixes": ["R2"]},
+    {"id": "A3", "what": "The flow routine compares the runner services' `app.commit` with runner main HEAD every run", "type": "detect", "owner": "Nanostack routine (echopoint-investigation)", "due": "2026-11-19", "status": "done", "fixes": ["R3"]},
+    {"id": "A4", "what": "Alert when the echopoint-runner main CI fails after a merge", "type": "detect", "owner": "CI owners (infra / ci-workflows)", "due": "2026-12-03", "status": "open", "fixes": ["R3"]},
+    {"id": "A5", "what": "Deployment runbook: after a merge, confirm the main run is green and the services log `main-<sha>`", "type": "process", "owner": "Nanostack routine (echopoint-investigation)", "due": "2026-11-19", "status": "done", "fixes": ["R3"]}
+  ],
+  "responders": [{"role": "Investigation", "name": "Nanostack routine (echopoint-investigation)"}],
+  "messaging": {
+    "internal": "Runner v0.112.0 (transport retries) was tagged but never deployed: main CI failed on a rejected-lease race. Fix records the rejection before cancelling; its merge deploys both."
+  },
+  "links": [
+    {"label": "Failed main run", "url": "https://github.com/nanostack-dev/echopoint-runner/actions/runs/44573501171"},
+    {"label": "echopoint-runner#126", "url": "https://github.com/nanostack-dev/echopoint-runner/pull/126"}
+  ]
+}

@@ -485,15 +485,17 @@ func (r *Runtime) markJobRejected(jobID uuid.UUID) {
 	if !ok {
 		return
 	}
+	// Record the rejection before cancelling: the cancelled run checks
+	// isRejected right away, and must not send a completion for a lease the
+	// control plane already took back.
+	r.rejectedMu.Lock()
+	r.rejected[jobID] = struct{}{}
+	r.rejectedMu.Unlock()
+
 	if active.cancel != nil {
 		active.cancel(errLeaseRejected)
 	}
 	delete(r.active, jobID)
-
-	r.rejectedMu.Lock()
-	defer r.rejectedMu.Unlock()
-
-	r.rejected[jobID] = struct{}{}
 }
 
 func (r *Runtime) isRejected(jobID uuid.UUID) bool {
