@@ -395,6 +395,42 @@ func TestRun_TransportErrorTextCarriesNoEscapedSecret(t *testing.T) {
 	}
 }
 
+// A request node percent-encodes query_params into request_url, so the secret
+// it carries has no literal form there. Every report carries the mask instead.
+func TestRun_MasksTheSecretTheURLEscapes(t *testing.T) {
+	server := echoServer(t)
+	observer := &recordingObserver{}
+
+	result, err := runner.Run(urlSecretFlow(server.URL), nil,
+		runner.WithObserver(observer),
+		runner.WithSecretInputKeys([]string{"apiToken"}),
+	)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+
+	for name, value := range map[string]any{
+		"flow result":         result,
+		"flow.finished event": observer.flowResult,
+		"node.finished event": observer.nodeResults,
+	} {
+		var tree any
+		if decodeErr := json.Unmarshal([]byte(encodeJSON(t, value)), &tree); decodeErr != nil {
+			t.Fatalf("decode %s: %v", name, decodeErr)
+		}
+		for _, form := range append([]string{urlSecret}, urlEscapedForms()...) {
+			if treeLeaks(tree, form) {
+				t.Errorf("%s leaked the secret as %q: %s", name, form, encodeJSON(t, value))
+			}
+		}
+	}
+
+	encoded := encodeJSON(t, observer.nodeResults)
+	if want := `/v1/***/items?token=***`; !strings.Contains(encoded, want) {
+		t.Errorf("request_url should carry the mask, want %s in %s", want, encoded)
+	}
+}
+
 // (e) Masking is applied to a copy at the reporting boundary: a downstream node
 // consuming a secret-derived output still receives the real value.
 func TestRun_MasksACopySoDownstreamNodesKeepTheRealValue(t *testing.T) {

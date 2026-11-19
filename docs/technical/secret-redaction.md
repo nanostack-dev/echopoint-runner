@@ -13,7 +13,7 @@ The runner masks secret values in everything it reports: node results, the flow 
 {"name": "jwt", "secret": true, "extractor": {"type": "json_path", "path": "$.jwt"}}
 ```
 
-Redaction works by value, not by field. Every string in a report that contains a secret value has that value replaced by `***`, and so does every JSON number equal to a secret output value, including a base64 `response_body` (decoded, masked and re-encoded) and the JSON-escaped forms of the value. As a result:
+Redaction works by value, not by field. Every string in a report that contains a secret value has that value replaced by `***`, and so does every JSON number equal to a secret output value, including a base64 `response_body` (decoded, masked and re-encoded). The escaped forms of the value are replaced too: its HTML form, its JSON-escaped forms, and the forms a URL writes it in ([`urlForms`](../../pkg/redact/redact.go)). A request node percent-encodes `query_params` into `request_url`, as `url.Values.Encode` does (`a b&c` becomes `a+b%26c`), and Go escapes a URL path (`a%20b`); a secret in either is reported as `***`. As a result:
 
 - A secret output is masked in the response that produced it, in its node's `outputs`, in `final_outputs`, in the `inputs` and request headers of every node that references it, and in errors.
 - A module output bound to a child's secret output (`output_bindings: {"token": "mint.jwt"}`) is masked in the module result, its `child_final_outputs` and its consumers, without its own flag: it carries the same value.
@@ -43,7 +43,7 @@ Log lines are written outside the reporting boundary, so no producer logs a reso
 
 - Masking matches text. A short secret input such as `1` masks every occurrence of that text in the run's reports. A withheld secret output is masked only by name, so a consumer that embeds it in its request URL, headers or body, or a response that echoes it, still reports it. Only flag outputs that hold credentials or tokens. The fields the runner writes itself (`node_id`, `node_type`, `run_when`, `error_code`, `executed_at`, and the numbers `duration_ms`, `response_status_code`, `attempts`, `iterations`, `event_count`, `delay_ms` and those of `http_calls`) are never masked, so the report still decodes. A secret found only in the base64 text of a `response_body`, not in its bytes, replaces the whole body.
 - Inside JSON structures a number is masked only when it equals a secret output value masked by value. A numeric secret input is masked in text such as a body or an error, but not as a JSON number.
-- Only the value's exact text and its JSON-escaped forms are matched. A server that echoes it URL-encoded, base64-encoded or split, such as a JWT's segments, is not caught.
+- Only the value's exact text and its HTML, JSON and URL-escaped forms are matched, with Go's uppercase hex digits. A server that echoes it with lowercase percent-escapes, base64-encoded or split, such as a JWT's segments, is not caught. The escaped forms of a short secret input over-mask like its text does: `a b` also masks `a+b` and `a%20b`.
 - A value is masked from the moment it becomes secret. A secret output value that already appeared in an earlier report, for example one a server returned before the flow extracted it, is not masked retroactively.
 - Results that were stored before a value was declared secret keep the value. Removing it means purging those results in the control plane, and the credential should be rotated.
 

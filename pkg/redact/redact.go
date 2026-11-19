@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"html"
 	"maps"
+	"net/url"
 	"slices"
 	"strings"
 	"sync"
@@ -61,9 +62,10 @@ type Redactor struct {
 // leaves a single report half masked.
 type secretSet struct {
 	secrets []string
-	// bodyForms is secrets plus, for each, the forms a JSON encoder writes it in.
-	// A response body is text the target server produced, so a secret it echoed
-	// back is escaped there and has no literal form.
+	// bodyForms is secrets plus, for each, the forms HTML, a URL and a JSON
+	// encoder write it in. A response body is text the target server produced,
+	// and a request URL is text Go escaped, so a secret there may have no
+	// literal form.
 	bodyForms []string
 	// learned holds the secret output values masked by value, to match a JSON
 	// number leaf, which has no text to scan, by its whole literal.
@@ -272,28 +274,46 @@ func (r *Redactor) load() *secretSet {
 
 func longestFirst(a, b string) int { return len(b) - len(a) }
 
-// bodyForms lists every literal form a secret can take inside body text: the
-// value itself, the two forms a JSON encoder writes it in — json.Marshal
-// escapes &, < and > as \u00XX, an encoder with SetEscapeHTML(false) leaves
-// them alone, and both escape " and \ — and the form HTML source writes it in,
-// alone and JSON-encoded: the html of an email keeps a link as href="…&amp;…".
+// bodyForms lists every literal form a secret can take inside reported text:
+//   - the value itself;
+//   - the form HTML source writes it in: the html of an email keeps a link as
+//     href="…&amp;…";
+//   - the forms a URL writes it in (urlForms): a request node percent-encodes its
+//     query_params into request_url, and Go escapes the URL it repeats in a
+//     transport error;
+//   - each of these as a JSON encoder writes it: json.Marshal escapes &, < and >
+//     as \u00XX, an encoder with SetEscapeHTML(false) leaves them alone, and
+//     both escape " and \.
 func bodyForms(secrets []string) []string {
 	forms := make([]string, 0, len(secrets))
 	seen := make(map[string]struct{}, len(secrets))
 	for _, secret := range secrets {
-		escaped := html.EscapeString(secret)
-		for _, form := range []string{
-			secret, jsonEscape(secret, true), jsonEscape(secret, false),
-			escaped, jsonEscape(escaped, true), jsonEscape(escaped, false),
-		} {
-			if _, dup := seen[form]; !dup {
-				seen[form] = struct{}{}
-				forms = append(forms, form)
+		literals := append([]string{secret, html.EscapeString(secret)}, urlForms(secret)...)
+		for _, literal := range literals {
+			for _, form := range []string{literal, jsonEscape(literal, true), jsonEscape(literal, false)} {
+				if _, dup := seen[form]; !dup {
+					seen[form] = struct{}{}
+					forms = append(forms, form)
+				}
 			}
 		}
 	}
 	slices.SortFunc(forms, longestFirst)
 	return forms
+}
+
+// urlForms lists how Go writes secret inside a URL: url.Values.Encode writes a
+// query value with a space as "+", other encoders write "%20", url.PathEscape
+// escapes a path segment, '/' included, and url.URL.String escapes a whole
+// path, keeping '/'. A secret with no character to escape yields itself.
+func urlForms(secret string) []string {
+	query := url.QueryEscape(secret)
+	return []string{
+		query,
+		strings.ReplaceAll(query, "+", "%20"),
+		url.PathEscape(secret),
+		(&url.URL{Path: secret}).EscapedPath(),
+	}
 }
 
 // jsonEscape returns how a JSON encoder writes s, without the quotes.
@@ -319,7 +339,7 @@ func (set *secretSet) text(s string) string {
 		return s
 	}
 	// The body forms include each secret itself. A reported string can be HTML
-	// source or embedded JSON, which write a secret in an escaped form.
+	// source, a URL or embedded JSON, which write a secret in an escaped form.
 	for _, form := range set.bodyForms {
 		s = strings.ReplaceAll(s, form, Mask)
 	}
