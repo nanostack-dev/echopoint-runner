@@ -157,7 +157,7 @@ func TestCreateResponseBackedErrorResultPreservesHTTPContext(t *testing.T) {
 	assert.Equal(t, err.Error(), *result.ErrorMsg)
 	assert.Equal(t, http.StatusUnauthorized, result.ResponseStatusCode)
 	assert.Equal(t, map[string][]string(resp.Header), result.ResponseHeaders)
-	assert.Equal(t, respBody, result.ResponseBody)
+	assert.Nil(t, result.ResponseBody, "the parsed form reports the body")
 	assert.Equal(t, parsedBody, result.ResponseBodyParsed)
 	assert.Equal(t, "https://example.com/login", result.RequestURL)
 	assert.Equal(t, http.MethodPost, result.RequestMethod)

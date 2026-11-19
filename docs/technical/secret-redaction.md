@@ -13,7 +13,7 @@ The runner masks secret values in everything it reports: node results, the flow 
 {"name": "jwt", "secret": true, "extractor": {"type": "json_path", "path": "$.jwt"}}
 ```
 
-Redaction works by value, not by field. Every string in a report that contains a secret value has that value replaced by `***`, and so does every JSON number equal to a secret output value, including a base64 `response_body` (decoded, masked and re-encoded) and the JSON-escaped forms of the value. As a result:
+Redaction works by value, not by field. Every string in a report that contains a secret value has that value replaced by `***`, and so does every JSON number equal to a secret output value, including the parsed `response_body_parsed`, a base64 `response_body` (decoded, masked and re-encoded; the runner reports it for a body its parsed form cannot carry and for a failed JSON result, see [reported body](http-calls.md#reported-body)) and the JSON-escaped forms of the value. As a result:
 
 - A secret output is masked in the response that produced it, in its node's `outputs`, in `final_outputs`, in the `inputs` and request headers of every node that references it, and in errors.
 - A module output bound to a child's secret output (`output_bindings: {"token": "mint.jwt"}`) is masked in the module result, its `child_final_outputs` and its consumers, without its own flag: it carries the same value.

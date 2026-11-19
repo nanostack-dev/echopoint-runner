@@ -2,6 +2,7 @@ package node_test
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -12,6 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/nanostack-dev/echopoint-runner/pkg/extractors"
 	node "github.com/nanostack-dev/echopoint-runner/pkg/node"
 	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 )
@@ -174,9 +176,13 @@ func TestResponseBudgetReadsABodyWithoutContentLengthWhole(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, applyEnginePass(reqNode, res))
 	result := res.(*node.RequestExecutionResult)
-	assert.Equal(t, body, result.ResponseBody)
-	assert.NotNil(t, result.ResponseBodyParsed)
-	assert.Equal(t, int64(2*cap(result.ResponseBody)), budget.InUse())
+	var whole any
+	require.NoError(t, json.Unmarshal(body, &whole))
+	assert.Equal(t, whole, result.ResponseBodyParsed)
+	assert.Nil(t, result.ResponseBody, "the parsed form reports the body")
+	held, ok := result.AssertionContext().(extractors.ParsedBodyReader)
+	require.True(t, ok)
+	assert.Equal(t, int64(2*cap(held.GetRawBody())), budget.InUse())
 	result.ReleaseResponse()
 	assert.Zero(t, budget.InUse())
 }
