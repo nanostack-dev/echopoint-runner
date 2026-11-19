@@ -132,7 +132,7 @@ flowchart TD
 
 | ID | Action | Type | Owner | Due | Status | Ticket | Fixes |
 |---|---|---|---|---|---|---|---|
-| A1 | Record the rejection before cancelling the run in `markJobRejected` | prevent | Nanostack routine (echopoint-investigation) | 2026-11-19 | open | [echopoint-runner#PR](https://github.com/nanostack-dev/echopoint-runner/pulls) | R1 |
+| A1 | Record the rejection before cancelling the run in `markJobRejected` | prevent | Nanostack routine (echopoint-investigation) | 2026-11-19 | open | [echopoint-runner#129](https://github.com/nanostack-dev/echopoint-runner/pull/129) | R1 |
 | A2 | Tag a release only after `Go Build and Test` passed on that main commit (or tag from the go.yml run) | prevent | echopoint-runner maintainers | 2026-12-03 | open |  | R2 |
 | A3 | The flow routine compares the runner services' `app.commit` with runner main HEAD every run | detect | Nanostack routine (echopoint-investigation) | 2026-11-19 | done |  | R3 |
 | A4 | Alert when the echopoint-runner main CI fails after a merge | detect | CI owners (infra / ci-workflows) | 2026-12-03 | open |  | R3 |
@@ -150,5 +150,6 @@ Runner v0.112.0 (transport retries) was tagged but never deployed: main CI faile
 
 ## Supporting information
 
+- [Atelier](http://nanostack-dev-1340p:4320/postmortems/01a1f505-e0d3-71f2-9580-c6f61f2bb39a)
 - [Failed main run](https://github.com/nanostack-dev/echopoint-runner/actions/runs/44573501171)
 - [echopoint-runner#126](https://github.com/nanostack-dev/echopoint-runner/pull/126)
