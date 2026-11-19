@@ -121,8 +121,11 @@ func TestRun_TransportFailureHasNoStatusAndAClass(t *testing.T) {
 	require.Error(t, err)
 	down := httpCalls(t, result, "down")
 	require.Len(t, down, 1)
-	assert.Equal(t, []int{0}, down[0].StatusCodes)
-	assert.Equal(t, map[string]spi.HTTPCallErrorClass{"0": spi.HTTPCallErrorConnect}, down[0].TransportErrors)
+	// A refused connection carried no request, so the node sends it three times.
+	assert.Equal(t, []int{0, 0, 0}, down[0].StatusCodes)
+	assert.Equal(t, map[string]spi.HTTPCallErrorClass{
+		"0": spi.HTTPCallErrorConnect, "1": spi.HTTPCallErrorConnect, "2": spi.HTTPCallErrorConnect,
+	}, down[0].TransportErrors)
 }
 
 func TestRun_LoopIterationsShareOneGroupOnTheLoopNode(t *testing.T) {

@@ -310,10 +310,7 @@ func (n *RequestNode) makeRequestAndReadBody(
 	ctx, cancel := context.WithTimeout(parent, time.Duration(timeout)*time.Millisecond)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, method, url, nil)
-	if err != nil {
-		return nil, responseBody{}, err
-	}
+	header := http.Header{}
 	contentTypeSet := false
 	for key, value := range headers {
 		if strings.EqualFold(key, "Content-Type") {
@@ -322,22 +319,21 @@ func (n *RequestNode) makeRequestAndReadBody(
 				continue
 			}
 		}
-		req.Header.Set(key, value)
+		header.Set(key, value)
 	}
+	var payload []byte
 	if body != nil {
-		payload, contentType, serializeErr := n.serializeRequestBody(body)
+		serialized, contentType, serializeErr := n.serializeRequestBody(body)
 		if serializeErr != nil {
 			return nil, responseBody{}, serializeErr
 		}
 		if !contentTypeSet && contentType != "" {
-			req.Header.Set("Content-Type", contentType)
+			header.Set("Content-Type", contentType)
 		}
-		req.Body = io.NopCloser(bytes.NewReader(payload))
-		req.ContentLength = int64(len(payload))
+		payload = serialized
 	}
 
-	client := recordingClient(n.GetID(), n.Data.URL, false)
-	resp, err := client.Do(req)
+	resp, err := n.sendWithTransportRetry(ctx, method, url, header, payload)
 	if err != nil {
 		return nil, responseBody{}, err
 	}
@@ -351,6 +347,41 @@ func (n *RequestNode) makeRequestAndReadBody(
 	}
 
 	return resp, respBody, nil
+}
+
+// sendWithTransportRetry sends the request, and sends it again when its
+// connection fails in a way retryableTransportError allows. Every attempt is
+// its own HTTP call, so a retried reset stays visible in the node's calls.
+func (n *RequestNode) sendWithTransportRetry(
+	ctx context.Context, method, url string, header http.Header, payload []byte,
+) (*http.Response, error) {
+	client := recordingClient(n.GetID(), n.Data.URL, false)
+	for attempt := 1; ; attempt++ {
+		req, err := http.NewRequestWithContext(ctx, method, url, nil)
+		if err != nil {
+			return nil, err
+		}
+		req.Header = header.Clone()
+		if payload != nil {
+			req.Body = io.NopCloser(bytes.NewReader(payload))
+			req.ContentLength = int64(len(payload))
+		}
+		resp, err := client.Do(req)
+		if err == nil {
+			return resp, nil
+		}
+		if attempt == requestTransportAttempts || !retryableTransportError(method, header, err) {
+			return nil, err
+		}
+		log.Info().
+			Str("nodeID", n.GetID()).
+			Int("attempt", attempt).
+			Str("host", requestHost(url)).
+			Msg("Request connection failed before a response; retrying")
+		if waitErr := waitBeforeRetry(ctx, attempt); waitErr != nil {
+			return nil, err
+		}
+	}
 }
 
 // serializeRequestBody returns the payload and the content type to send when
