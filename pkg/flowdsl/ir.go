@@ -154,6 +154,12 @@ type graph struct {
 	exports     map[string]string
 	injected    []string // loop item and index names visible inside a body
 	diags       []Diagnostic
+
+	// descriptionSet and tagsSet record that the file wrote the key, even
+	// empty: an explicit `description: ""` or `tags: []` lowers to a clear,
+	// and an absent key lowers to nothing.
+	descriptionSet bool
+	tagsSet        bool
 }
 
 func (g *graph) add(sev Severity, line int, format string, args ...any) {

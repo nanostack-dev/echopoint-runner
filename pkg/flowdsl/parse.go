@@ -45,11 +45,13 @@ func parseGraph(path string, n *yaml.Node, inline bool) *graph {
 
 func (g *graph) readFile(m ymap) {
 	g.name = g.takeString(m, "name")
+	_, g.descriptionSet = m.val["description"]
 	g.description = g.takeString(m, "description")
 	g.role = g.takeString(m, "role")
 	if version := g.takeString(m, "version"); version != "" {
 		g.version = version
 	}
+	_, g.tagsSet = m.val["tags"]
 	g.tags = g.takeStringList(m, "tags")
 	g.id = strings.TrimSpace(g.takeString(m, "id"))
 	g.folderLine = m.keyLine("folder")
