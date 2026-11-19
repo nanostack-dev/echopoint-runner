@@ -15,3 +15,13 @@ A CLI that embeds a flowdsl older than this field refuses a file that carries it
 `description` and `tags` lower only when the file writes them. An absent key leaves `description` and `tags` out of the create request. A key written empty (`description: ""`, `description:` or `tags: []`) lowers to `"description": ""` (on the request and its `flow_definition`) and `"tags": []`, so an update can tell "clear it" from "keep it". `role` needs no empty form: write `role: standalone` to stop a flow being a module.
 
 Echopoint decides what an update from a file does with an absent key; flowdsl only keeps the difference.
+
+## Compile refusals
+
+Compile reports these as Error diagnostics, so the file produces no flow:
+
+| Check | Message |
+| --- | --- |
+| An edge (`next`, a branch `target` or `default`, or `on_failure`) leads back to a node on its own path, including a node to itself | `node "b" next "a" makes a cycle: a -> b -> a` |
+
+The engine counts every edge type before it starts a node, so a cyclic graph never runs: the run fails with `cycle detected or unreachable nodes` ([`pkg/engine`](../../pkg/engine/execution.go)). A poll or loop body is its own graph and is checked on its own; repeat work with those nodes, never with a back edge. Before this check a cyclic file compiled, saved and failed only at run time.

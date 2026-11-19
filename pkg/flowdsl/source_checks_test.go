@@ -65,3 +65,131 @@ func TestAbsentDescriptionAndTagsStayUnset(t *testing.T) {
 		t.Fatalf("description %v, definition %v, tags %v", req.Description, req.FlowDefinition.Description, req.Tags)
 	}
 }
+
+func assertOneError(t *testing.T, out flowdsl.Outcome, want string) {
+	t.Helper()
+	errs := out.Errors()
+	if len(errs) != 1 || !strings.Contains(errs[0].Message, want) {
+		t.Fatalf("want one error with %q, got: %s", want, joinDiags(errs))
+	}
+	if len(out.Flows) != 0 {
+		t.Fatalf("a flow with an error compiled: %d flows", len(out.Flows))
+	}
+}
+
+func TestNextBackEdgeIsACycleError(t *testing.T) {
+	out := compileSource(t, `
+name: loop back
+nodes:
+  a:
+    set:
+      x: 1
+    next: b
+  b:
+    set:
+      y: 2
+    next: a
+`)
+	assertOneError(t, out, `node "b" next "a" makes a cycle: a -> b -> a`)
+}
+
+func TestSelfNextIsACycleError(t *testing.T) {
+	out := compileSource(t, `
+name: self
+nodes:
+  a:
+    set:
+      x: 1
+    next: a
+`)
+	assertOneError(t, out, `node "a" next "a" makes a cycle: a -> a`)
+}
+
+func TestBranchDefaultBackToAnAncestorIsACycleError(t *testing.T) {
+	out := compileSource(t, `
+name: retry by branch
+nodes:
+  call:
+    request:
+      method: GET
+      url: "{{base}}/x"
+    outputs:
+      state: $.state
+    next: route
+  route:
+    branch:
+      target: "{{call.state}}"
+      cases:
+        - when: "body equals ready"
+          target: done
+      default: call
+  done:
+    set:
+      ok: true
+`)
+	assertOneError(t, out, `node "route" default "call" makes a cycle: call -> route -> call`)
+}
+
+func TestFailureBackEdgeIsACycleError(t *testing.T) {
+	out := compileSource(t, `
+name: fail back
+nodes:
+  a:
+    set:
+      x: 1
+    next: b
+  b:
+    run_when: always
+    set:
+      y: 2
+    on_failure: a
+`)
+	assertOneError(t, out, `node "b" on_failure "a" makes a cycle: a -> b -> a`)
+}
+
+func TestCycleInsideAPollBodyIsAnError(t *testing.T) {
+	out := compileSource(t, `
+name: poll cycle
+nodes:
+  wait:
+    poll:
+      max_attempts: 3
+      interval_ms: 100
+      body:
+        nodes:
+          probe:
+            set:
+              x: 1
+            next: again
+          again:
+            set:
+              y: 2
+            next: probe
+`)
+	assertOneError(t, out, `node "again" next "probe" makes a cycle: probe -> again -> probe`)
+}
+
+func TestDiamondIsNotACycle(t *testing.T) {
+	out := compileSource(t, `
+name: diamond
+nodes:
+  a:
+    set:
+      x: 1
+    next: [b, c]
+  b:
+    set:
+      y: 2
+    next: d
+  c:
+    set:
+      z: 3
+    next: d
+  d:
+    set:
+      w: 4
+`)
+	if len(out.Errors()) != 0 {
+		t.Fatal(joinDiags(out.Errors()))
+	}
+}

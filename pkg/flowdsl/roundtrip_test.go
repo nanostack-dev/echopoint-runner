@@ -218,10 +218,14 @@ func TestDecompileRoundTripsAFilterAndAnInlineBody(t *testing.T) {
 	      {
 	        "id": "other", "type": "request", "display_name": "Other", "run_when": "on_success",
 	        "data": {"method": "GET", "url": "https://example.test/other"}
+	      },
+	      {
+	        "id": "last", "type": "request", "display_name": "Last", "run_when": "on_success",
+	        "data": {"method": "GET", "url": "https://example.test/last"}
 	      }
 	    ],
 	    "edges": [
-	      {"id": "late", "source": "other", "target": "get", "type": "success"},
+	      {"id": "late", "source": "other", "target": "last", "type": "success"},
 	      {"id": "early", "source": "get", "target": "other", "type": "success"}
 	    ]
 	  }
