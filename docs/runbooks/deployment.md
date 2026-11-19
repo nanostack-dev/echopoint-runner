@@ -6,6 +6,8 @@ Every push to `main` creates the next minor semver tag and runs GoReleaser, incl
 
 Go/runtime changes selected by `go.yml` additionally run lint/tests, build the container and dispatch an immutable `main-<short-sha>` image to `nanostack-dev/infra` for development deployment with production promotion requested. Documentation-only changes do not select that path. Verify the infra router's deployment result and a representative flow; a module release is not proof of service rollout. Deployment stacks and runtime health verification belong to [infra](https://github.com/nanostack-dev/infra).
 
+After a merge, confirm the `Go Build and Test` run on that main commit is green and that the runner services log `app.commit` `main-<short-sha>` before a consumer pins the new tag: the Release workflow tags without waiting for the tests, so a red test leaves a released version with no image ([postmortem](../postmortems/2026-11-19-rejected-lease-test-race.md)).
+
 For library consumers, use the actual released version in each consumer checkout:
 
 ```sh
