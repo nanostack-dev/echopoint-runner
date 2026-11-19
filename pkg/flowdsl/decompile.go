@@ -832,7 +832,7 @@ func bindingNode(bindings map[string]string) *yaml.Node {
 func valueNode(value any) (*yaml.Node, error) {
 	switch typed := value.(type) {
 	case nil:
-		return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!null", Value: "null"}, nil
+		return &yaml.Node{Kind: yaml.ScalarNode, Tag: nullTag, Value: "null"}, nil
 	case string:
 		return strNode(typed), nil
 	case bool:

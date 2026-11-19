@@ -13,6 +13,8 @@ go get github.com/nanostack-dev/echopoint-runner@vX.Y.0
 go mod tidy
 ```
 
+[`pkg/flowdsl`](../technical/flow-files.md) is a nested module with its own tags. `release.yml` tags only the root module, so a flowdsl change ships when someone pushes the next `pkg/flowdsl/vX.Y.Z` tag on the merged `main` commit (`git tag --sort=-v:refname -l 'pkg/flowdsl/*' | head -n1` shows the latest). Consumers then run `go get github.com/nanostack-dev/echopoint-runner/pkg/flowdsl@vX.Y.Z` in both Echopoint `go.mod` files and the CLI.
+
 Upgrade Echopoint's main module, its `cloudworker` module and the CLI module. Run their affected execution/contract suites. The CLI and Action embed the runner, so CI callers receive the change only after a CLI release and selection of that release. Record the runner version and companion consumer PRs in rollout evidence.
 
 Security rebuilds pin a patched Go compiler in both go.mod and Docker, and

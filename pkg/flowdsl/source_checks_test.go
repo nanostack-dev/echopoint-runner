@@ -46,12 +46,14 @@ func TestExplicitEmptyDescriptionAndTagsLowerToClears(t *testing.T) {
 }
 
 func TestNullDescriptionLowersToAClear(t *testing.T) {
-	out := compileSource(t, "name: cleared\ndescription:\n"+oneNodeFlow)
-	if len(out.Errors()) != 0 {
-		t.Fatal(joinDiags(out.Errors()))
-	}
-	if got := out.Flows[0].Request.Description; got == nil || *got != "" {
-		t.Fatalf("description: %v", got)
+	for _, value := range []string{"", " ~", " null"} {
+		out := compileSource(t, "name: cleared\ndescription:"+value+"\n"+oneNodeFlow)
+		if len(out.Errors()) != 0 {
+			t.Fatal(joinDiags(out.Errors()))
+		}
+		if got := out.Flows[0].Request.Description; got == nil || *got != "" {
+			t.Fatalf("description:%s lowered to %v", value, got)
+		}
 	}
 }
 

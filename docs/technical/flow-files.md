@@ -1,6 +1,6 @@
 # Flow files
 
-[`pkg/flowdsl`](../../pkg/flowdsl) compiles a YAML flow file into the create-flow JSON the Echopoint API accepts, and decompiles a stored flow back into a file. It is a separate Go module: Echopoint pins it in two `go.mod` files and the echopoint CLI embeds it, so a change here reaches them only after they bump the pin. [`pkg/flowdsl/wire`](../../pkg/flowdsl/wire/types.go) is a hand-maintained subset of Echopoint's OpenAPI models; a node field it lacks is dropped on decompile.
+[`pkg/flowdsl`](../../pkg/flowdsl) compiles a YAML flow file into the create-flow JSON the Echopoint API accepts, and decompiles a stored flow back into a file. It is a separate Go module: Echopoint pins it in two `go.mod` files and the echopoint CLI embeds it, so a change here reaches them only after a `pkg/flowdsl/vX.Y.Z` tag and their pin bump ([deployment](../runbooks/deployment.md)). [`pkg/flowdsl/wire`](../../pkg/flowdsl/wire/types.go) is a hand-maintained subset of Echopoint's OpenAPI models; a node field it lacks is dropped on decompile.
 
 The full key reference for authors lives with the consumers: Echopoint's MCP flow-file reference (`internal/mcp/reference.go`) and the CLI's `docs/flows.md`.
 
@@ -12,7 +12,7 @@ A CLI that embeds a flowdsl older than this field refuses a file that carries it
 
 ## Flow header: absent and empty differ
 
-`description` and `tags` lower only when the file writes them. An absent key leaves `description` and `tags` out of the create request. A key written empty (`description: ""`, `description:` or `tags: []`) lowers to `"description": ""` (on the request and its `flow_definition`) and `"tags": []`, so an update can tell "clear it" from "keep it". `role` needs no empty form: write `role: standalone` to stop a flow being a module.
+`description` and `tags` lower only when the file writes them. An absent key leaves `description` and `tags` out of the create request. A key written empty (`description: ""`, a YAML null such as `description:` or `description: ~`, or `tags: []`) lowers to `"description": ""` (on the request and its `flow_definition`) and `"tags": []`, so an update can tell "clear it" from "keep it". `role` needs no empty form: write `role: standalone` to stop a flow being a module.
 
 Echopoint decides what an update from a file does with an absent key; flowdsl only keeps the difference.
 

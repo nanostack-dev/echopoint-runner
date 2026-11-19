@@ -57,7 +57,7 @@ func emptyDocument(doc *yaml.Node) bool {
 		return true
 	}
 	body := doc.Content[0]
-	return body.Kind == yaml.ScalarNode && body.Tag == "!!null" && body.Value == ""
+	return isNull(body) && body.Value == ""
 }
 
 func parseGraph(path string, n *yaml.Node, inline bool) *graph {
@@ -86,7 +86,7 @@ func parseGraph(path string, n *yaml.Node, inline bool) *graph {
 func (g *graph) readFile(m ymap) {
 	g.name = g.takeString(m, "name")
 	_, g.descriptionSet = m.val["description"]
-	g.description = g.takeString(m, "description")
+	g.description = g.takeText(m, "description")
 	g.role = g.takeString(m, "role")
 	if version := g.takeString(m, "version"); version != "" {
 		g.version = version
