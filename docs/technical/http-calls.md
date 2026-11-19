@@ -8,6 +8,18 @@ Request and SSE nodes record at the HTTP transport boundary, so each followed re
 
 The engine runs each top-level node on a context carrying its own `httpcall.Collector` and, once the node returns, sets the collected calls on its result before the `NodeFinished` event. Loop, poll and module bodies run on that node's context, so their calls land on the top-level node: a loop's result holds every iteration's calls, a poll's every attempt's. Retry middleware runs inside the same context, so each attempt is a call. The calls therefore reach the control plane with the node result, through progress events and the completion's `execution_results`.
 
+## Transport retries
+
+A request node sends a request up to three times when its connection fails before any response arrives, waiting 100 ms, then 200 ms, inside the node's timeout ([`request_retry.go`](../../pkg/node/request_retry.go)). Each attempt is its own call, so a recovered failure still shows in `transport_errors`.
+
+| Failure | Retried for |
+| --- | --- |
+| Dial failure, such as a refused connection: no request left the runner | Every method |
+| Connection reset or closed (`EOF`) after the request was written | `GET`, `HEAD`, `OPTIONS`, `TRACE`, `PUT`, `DELETE`, and any request with an `Idempotency-Key` or `X-Idempotency-Key` header |
+| Timeout, DNS, TLS, cancellation, HTTP call limit, any HTTP status | Never |
+
+A `POST` or `PATCH` without an idempotency key is not resent after a reset: the target may already have run it, and a second send could create a duplicate. HTTP statuses and assertion failures are left to the flow. The motivating failures were Cloudflare connection resets that failed about 1% of the dev gate-flow runs in November 2026.
+
 ## Format
 
 Calls are grouped by sending node, method, host and path template ([`spi.HTTPCallGroup`](../../pkg/spi/http_call.go)). The fixed fields are stored once; the varying ones are parallel arrays where index `i` is call `i`, in start order.
