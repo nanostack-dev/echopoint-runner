@@ -28,7 +28,7 @@ The runner leaves `response_body` out of a result whose parsed form carries the 
 ## Consequences
 
 - A request result for a JSON or text body is up to about 55 percent smaller in progress events, completions, storage and API or MCP reads. Nested reads stop compounding.
-- The report of a JSON body is its parsed tree, which is also what assertions and outputs evaluate against. It does not keep whitespace, key order, a leading byte order mark, duplicate keys or the digits of a number past float64 precision. A user who needs the exact bytes of a JSON response cannot get them from the result.
+- The report of a JSON body is its parsed tree, which is also what assertions and outputs evaluate against. It does not keep whitespace, key order, a leading byte order mark, duplicate keys or the digits of a number past float64 precision. A user who needs the exact bytes of a JSON response cannot get them from the result. A JSON string holding an escaped `\u0000` passes the rule because the bytes have no NUL; Echopoint still stores that character as U+FFFD.
 - `response_body` is now absent for most results. A consumer must read `response_body_parsed` first and fall back to decoding `response_body`. Results stored before the change keep both fields until retention removes them; no backfill is needed.
 - Secret redaction still decodes and masks a base64 `response_body`. That path now runs only for bodies the parsed form cannot carry.
 - The Echopoint frontend shows the HTML preview of a response only when `response_body_parsed` is absent, so it shows it only for a truncated HTML body. This was true before the change and is not changed by it.
