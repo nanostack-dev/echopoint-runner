@@ -52,6 +52,7 @@ func init() {
 	registerCoreNodeKinds()
 	registerFlowNodeKinds()
 	registerWaitNodeKinds()
+	registerContractNodeKinds()
 }
 
 // registerCoreNodeKinds registers the original primitive node kinds.
@@ -175,6 +176,35 @@ func registerFlowNodeKinds() {
 		},
 		func(base spi.BaseExecutionResult) spi.AnyResult {
 			return &SseExecutionResult{BaseExecutionResult: base}
+		},
+	)
+}
+
+func registerContractNodeKinds() {
+	RegisterNodeKind(spi.KindInput,
+		func(data []byte) (AnyNode, error) {
+			var n InputNode
+			if err := json.Unmarshal(data, &n); err != nil {
+				return nil, err
+			}
+			applyRunWhenDefault(&n.BaseNode)
+			return &n, nil
+		},
+		func(base spi.BaseExecutionResult) spi.AnyResult {
+			return &InputExecutionResult{BaseExecutionResult: base}
+		},
+	)
+	RegisterNodeKind(spi.KindOutput,
+		func(data []byte) (AnyNode, error) {
+			var n OutputNode
+			if err := json.Unmarshal(data, &n); err != nil {
+				return nil, err
+			}
+			applyRunWhenDefault(&n.BaseNode)
+			return &n, nil
+		},
+		func(base spi.BaseExecutionResult) spi.AnyResult {
+			return &OutputExecutionResult{BaseExecutionResult: base}
 		},
 	)
 }

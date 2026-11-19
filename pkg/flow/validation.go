@@ -36,6 +36,9 @@ func validateFlowReferences(parsedFlow *Flow, options ParseOptions) error {
 
 	outputsByNode := make(map[string]map[string]struct{}, len(parsedFlow.Nodes))
 	for _, currentNode := range parsedFlow.Nodes {
+		if err := validateAllowedNodeKind(currentNode, options); err != nil {
+			return err
+		}
 		nodeID := strings.TrimSpace(currentNode.GetID())
 		if nodeID != "" {
 			outputsByNode[nodeID] = buildOutputSet(currentNode.OutputSchema())
@@ -58,6 +61,22 @@ func validateFlowReferences(parsedFlow *Flow, options ParseOptions) error {
 		return err
 	}
 
+	return nil
+}
+
+func validateAllowedNodeKind(currentNode node.AnyNode, options ParseOptions) error {
+	if currentNode.GetType() == spi.KindInput && !options.AllowInputNodes {
+		return fmt.Errorf(
+			"node %s: input node is not allowed when AllowInputNodes is false",
+			currentNode.GetID(),
+		)
+	}
+	if currentNode.GetType() == spi.KindOutput && !options.AllowOutputNodes {
+		return fmt.Errorf(
+			"node %s: output node is not allowed when AllowOutputNodes is false",
+			currentNode.GetID(),
+		)
+	}
 	return nil
 }
 

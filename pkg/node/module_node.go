@@ -113,7 +113,7 @@ func (n *ModuleNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 	if err != nil {
 		return n.createErrorResult(ctx.Inputs, flowID, err, startTime, result), err
 	}
-	n.withholdBoundOutputs(ctx.Context())
+	n.withholdBoundOutputs(ctx.Context(), result)
 
 	return &ModuleExecutionResult{
 		BaseExecutionResult: spi.BaseExecutionResult{
@@ -148,6 +148,16 @@ func (n *ModuleNode) resolveModuleInputs(parentInputs map[string]any) (map[strin
 }
 
 func (n *ModuleNode) exportOutputs(result *spi.FlowExecutionResult) (map[string]any, error) {
+	if len(n.Data.OutputBindings) == 0 && result != nil {
+		outputs := make(map[string]any)
+		for _, nodeRes := range result.ExecutionResults {
+			if nodeRes == nil || nodeRes.GetNodeType() != spi.KindOutput || nodeRes.GetError() != nil {
+				continue
+			}
+			maps.Copy(outputs, nodeRes.GetOutputs())
+		}
+		return outputs, nil
+	}
 	outputs := make(map[string]any, len(n.Data.OutputBindings))
 	for outputName, sourceRef := range n.Data.OutputBindings {
 		trimmedOutputName := strings.TrimSpace(outputName)
@@ -171,7 +181,20 @@ func (n *ModuleNode) exportOutputs(result *spi.FlowExecutionResult) (map[string]
 // withholdBoundOutputs masks by name each module output bound to a child output
 // masked by name. A value masked by value needs nothing: the same value is
 // masked wherever it appears.
-func (n *ModuleNode) withholdBoundOutputs(ctx context.Context) {
+func (n *ModuleNode) withholdBoundOutputs(ctx context.Context, result *spi.FlowExecutionResult) {
+	if len(n.Data.OutputBindings) == 0 && result != nil {
+		for childNodeID, nodeRes := range result.ExecutionResults {
+			if nodeRes == nil || nodeRes.GetNodeType() != spi.KindOutput {
+				continue
+			}
+			for outputName := range nodeRes.GetOutputs() {
+				if redact.Withheld(ctx, childNodeID+"."+outputName) {
+					redact.Withhold(ctx, n.GetID(), outputName)
+				}
+			}
+		}
+		return
+	}
 	for outputName, sourceRef := range n.Data.OutputBindings {
 		if redact.Withheld(ctx, strings.TrimSpace(sourceRef)) {
 			redact.Withhold(ctx, n.GetID(), strings.TrimSpace(outputName))

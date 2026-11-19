@@ -118,6 +118,8 @@ func resolveModuleFlow(
 	parsedFlow, err := flow.ParseFromJSONWithOptions(resolvedFlow.FlowDefinition, flow.ParseOptions{
 		AllowedInitialInputKeys:   inputKeys,
 		AllowUnknownInitialInputs: true,
+		AllowInputNodes:           true,
+		AllowOutputNodes:          true,
 	})
 	if err != nil {
 		// The referenced flow's own definition fails to parse — the flow author's
