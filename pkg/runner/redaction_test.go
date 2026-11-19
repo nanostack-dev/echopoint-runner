@@ -196,17 +196,14 @@ func TestRun_ReportsValuesWhenNoInputIsSecret(t *testing.T) {
 // encoded bytes cannot find it.
 const escapedSecret = `p@ss&w"rd<x>\y`
 
-// (a) A server that echoes the token into its response body. The raw body is
-// reported as base64 (RequestExecutionResult.ResponseBody is []byte), where a
-// plaintext scan is blind.
+// (a) A server that echoes the token into its JSON response body, which the
+// result reports as its parsed form.
 func TestRun_MasksTheSecretEchoedInTheResponseBody(t *testing.T) {
 	assertEchoedSecretIsMasked(t, secretValue)
 }
 
-// (a2) Both blind spots at once: a server echoing an escapable secret into its
-// own JSON response. The reported response_body decodes to that JSON, where the
-// server's encoder has escaped the secret — so it has no literal form there
-// either.
+// (a2) A server echoing an escapable secret into its own JSON response. The
+// parsed body holds the decoded secret, which the report must still mask.
 func TestRun_MasksAnEscapableSecretEchoedInTheResponseBody(t *testing.T) {
 	assertEchoedSecretIsMasked(t, escapedSecret)
 }
@@ -233,6 +230,36 @@ func assertEchoedSecretIsMasked(t *testing.T, secret string) {
 	}
 
 	if leaks(t, observer.nodeResults[0], secret) {
+		t.Errorf("node result leaked the echoed secret: %s", encodeJSON(t, observer.nodeResults[0]))
+	}
+}
+
+// (a3) A JSON or UTF-8 body is reported only as its parsed form, so the base64
+// response_body carries only a body the parsed form would alter, such as bytes
+// that are not UTF-8. A secret echoed there is masked too.
+func TestRun_MasksTheSecretEchoedInARawBinaryBody(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/octet-stream")
+		_, _ = w.Write(append([]byte("\xff\xfe token="), r.Header.Get("Authorization")...))
+	}))
+	t.Cleanup(server.Close)
+
+	observer := &recordingObserver{}
+	if _, err := runner.Run(secretFlowWith(server.URL, secretValue), nil,
+		runner.WithObserver(observer),
+		runner.WithSecretInputKeys([]string{"apiToken"}),
+	); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+
+	var report map[string]any
+	if err := json.Unmarshal([]byte(encodeJSON(t, observer.nodeResults[0])), &report); err != nil {
+		t.Fatalf("decode node result: %v", err)
+	}
+	if _, raw := report["response_body"].(string); !raw {
+		t.Fatalf("a body that is not UTF-8 should be reported raw, got %v", report["response_body"])
+	}
+	if leaks(t, observer.nodeResults[0], secretValue) {
 		t.Errorf("node result leaked the echoed secret: %s", encodeJSON(t, observer.nodeResults[0]))
 	}
 }

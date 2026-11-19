@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"unicode/utf8"
 
 	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 )
@@ -52,15 +53,30 @@ func formatBytes(n int64) string {
 }
 
 // reportedBody is the body a result carries for a body of size bytes whose
-// first bytes are body: past ReportedResponseBodyBytes it keeps the first
-// bytes, copied when body holds more so the full body can be released, and
-// drops the parsed tree.
+// first bytes are body. Up to ReportedResponseBodyBytes it reports the parsed
+// form alone when that form carries the body (see parsedCarriesBody), and the
+// raw bytes otherwise. Past the limit it keeps the first bytes, copied when
+// body holds more so the full body can be released, and drops the parsed tree.
 func reportedBody(body []byte, size int64, parsed any) ([]byte, any, bool) {
 	if size <= ReportedResponseBodyBytes {
+		if parsedCarriesBody(body, parsed) {
+			return nil, parsed, false
+		}
 		return body, parsed, false
 	}
 	if len(body) > ReportedResponseBodyBytes {
 		return bytes.Clone(body[:ReportedResponseBodyBytes]), nil, true
 	}
 	return body, nil, true
+}
+
+// parsedCarriesBody reports whether a result's parsed body makes its raw copy
+// redundant (ADR 0001). The parsed form is the JSON tree or the body as text,
+// so it holds the body unless the bytes are not valid UTF-8, which JSON text
+// cannot carry, or contain NUL, which Echopoint stores as U+FFFD. A JSON null
+// parses to nil and has only its raw form. The JSON tree does not keep
+// whitespace, key order or the digits of a number past float64 precision; the
+// assertions and outputs see the same tree.
+func parsedCarriesBody(body []byte, parsed any) bool {
+	return parsed != nil && utf8.Valid(body) && bytes.IndexByte(body, 0) < 0
 }

@@ -2,6 +2,7 @@ package node_test
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -174,9 +175,11 @@ func TestResponseBudgetReadsABodyWithoutContentLengthWhole(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, applyEnginePass(reqNode, res))
 	result := res.(*node.RequestExecutionResult)
-	assert.Equal(t, body, result.ResponseBody)
-	assert.NotNil(t, result.ResponseBodyParsed)
-	assert.Equal(t, int64(2*cap(result.ResponseBody)), budget.InUse())
+	var whole any
+	require.NoError(t, json.Unmarshal(body, &whole))
+	assert.Equal(t, whole, result.ResponseBodyParsed)
+	assert.Nil(t, result.ResponseBody, "the parsed form reports the body")
+	assert.GreaterOrEqual(t, budget.InUse(), int64(2*len(body)))
 	result.ReleaseResponse()
 	assert.Zero(t, budget.InUse())
 }

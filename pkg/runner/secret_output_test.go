@@ -261,8 +261,10 @@ func TestRun_MasksASecretOutputTooShortToMaskByValueByName(t *testing.T) {
 	if outputs, _ := mint["outputs"].(map[string]any); outputs["pin"] != redact.Mask {
 		t.Errorf("the minting node should mask the pin by name: %v", mint)
 	}
-	if _, present := mint["response_body"]; present {
-		t.Errorf("the response that produced the pin should be dropped: %v", mint)
+	for _, body := range []string{"response_body", "response_body_parsed"} {
+		if _, present := mint[body]; present {
+			t.Errorf("the response that produced the pin should be dropped (%s): %v", body, mint)
+		}
 	}
 	if inputs, _ := nodeResult(t, result, "me")["inputs"].(map[string]any); inputs["mint.pin"] != redact.Mask {
 		t.Errorf("the consumer's input should mask the pin by name: %v", inputs)

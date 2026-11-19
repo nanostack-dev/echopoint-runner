@@ -50,6 +50,20 @@ The limit reaches the runner as `max_http_calls_per_execution` on a self-hosted 
 
 A request node reads at most 10 MiB of response body (`node.DefaultMaxResponseBytes`). A larger body is not kept: the node fails with `RESPONSE_TOO_LARGE`, naming the host and the limit. A `Content-Length` above the limit fails before the body is read; otherwise the read stops one byte past the limit. `runner.WithMaxResponseBytes(n)` changes the limit for a run; the self-hosted runner and ephemeral mode read it from `ECHOPOINT_MAX_RESPONSE_BYTES` (bytes, default 10485760).
 
+## Reported body
+
+A request result reports a body of up to 1 MiB once. `response_body_parsed` holds it as a JSON tree when the response is `application/json` and parses, and as text otherwise. `response_body` (base64 bytes) is left out whenever that parsed form carries the body (`node.parsedCarriesBody`). It is kept only when the parsed form would alter or lose the body:
+
+| Body | `response_body_parsed` | `response_body` |
+|---|---|---|
+| JSON or text, valid UTF-8, no NUL byte | present | omitted |
+| Not valid UTF-8 (images, archives, Latin-1 text) | tree or text, with U+FFFD for each invalid byte | exact bytes |
+| Holds a NUL byte (Echopoint stores NUL as U+FFFD) | tree or text | exact bytes |
+| JSON `null` | omitted | `null` |
+| Larger than 1 MiB | omitted | first 1 MiB |
+
+The JSON tree is what assertions and outputs evaluate against. It does not keep whitespace, key order, a leading byte order mark or the digits of a number past float64 precision. Results stored before this change carry both fields; a consumer reads `response_body_parsed` first and falls back to decoding `response_body`. [ADR 0001](../adr/0001-report-a-parsed-response-body-once.md) records the decision.
+
 Assertions and outputs evaluate against the whole body, but a request result reports at most 1 MiB of it (`node.ReportedResponseBodyBytes`). Past that, `response_body` holds the first 1 MiB, `response_body_parsed` is left out and `response_body_truncated` is `true`, in progress events and the completion alike. The full size remains in the call's `response_bytes`. Secret masking runs on the reported body, so only a secret cut by the 1 MiB boundary can leave its first characters unmasked.
 
 ## Response memory

@@ -35,8 +35,11 @@ type RequestExecutionResult struct {
 	// HTTP Response fields
 	ResponseStatusCode int                 `json:"response_status_code"`
 	ResponseHeaders    map[string][]string `json:"response_headers"`
-	ResponseBody       []byte              `json:"response_body,omitempty"`
-	ResponseBodyParsed any                 `json:"response_body_parsed,omitempty"`
+	// ResponseBody holds the raw bytes only when ResponseBodyParsed cannot carry
+	// them: a body that is not UTF-8, holds NUL, parses to JSON null or was
+	// truncated. Otherwise the parsed form alone reports the body (ADR 0001).
+	ResponseBody       []byte `json:"response_body,omitempty"`
+	ResponseBodyParsed any    `json:"response_body_parsed,omitempty"`
 	// ResponseBodyTruncated reports a body cut to ReportedResponseBodyBytes and
 	// sent without its parsed form.
 	ResponseBodyTruncated bool `json:"response_body_truncated,omitempty"`
