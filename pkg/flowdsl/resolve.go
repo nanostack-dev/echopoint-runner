@@ -65,6 +65,7 @@ func (r *resolver) finish(g *graph) {
 		r.visitBody(n)
 	}
 	g.lintEdges()
+	g.lintCycles()
 	g.lintRefs()
 	g.lintFailure()
 	g.lintCorrelation()

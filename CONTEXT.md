@@ -20,5 +20,7 @@
 | Email wait | An `email_wait` node: it reads the run inbox with the job token until a message matches, and outputs its parts, its `links` and its `code`. Inbox reads are control-plane reads, not HTTP calls. |
 | HTTP call limit | The most HTTP calls one execution may send (`max_http_calls_per_execution`). The node whose call would pass it fails with `HTTP_CALL_LIMIT_EXCEEDED`. |
 | Response budget | The response body bytes, with their parsed form, that every request node sharing a runner may hold at once (`ECHOPOINT_MAX_BUFFERED_RESPONSE_BYTES`). A node that cannot reserve its body waits within its request timeout. |
+| Flow file | A YAML file holding one flow, which `pkg/flowdsl` compiles to the create-flow request and decompiles back. It keeps an absent `description` or `tags` key apart from one written empty, so an update can clear them. See [flow files](docs/technical/flow-files.md). |
+| Transient control-plane error | A 5xx, 429 or edge 404 answer (a 404 whose body has no API error code), a network error, an EOF or a single-attempt timeout from the control plane (`controlplane.IsTransient`). Completion and the final event flush retry it with capped backoff inside a 60 s budget; any other answer stops them at once, including a 404 with a code such as `RUNNER_JOB_NOT_FOUND`. |
 
 The [architecture](docs/technical/architecture.md) identifies current implementation packages. Proposed `pkg/core` types do not replace the live vocabulary until consumers migrate.

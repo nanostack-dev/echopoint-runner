@@ -6,6 +6,8 @@ The live engine is in `pkg/engine`, `pkg/node` and `pkg/flow`, supported by `pkg
 
 The runtime heartbeats every claimed Job. Each Job runs on its own cancellable context; when a heartbeat answers `rejected` (the lease expired or the control plane already failed the execution), the runtime cancels that context, so in-flight HTTP calls and delays abort and later requests are never sent. A rejected Job sends no completion.
 
+When the run ends, the runtime flushes the remaining progress events and then completes the Job ([`completeJob`](../../internal/runtime/runtime.go)). Each of the two steps retries a transient failure (a 5xx, 429, edge 404, network error or request timeout) through [`controlplane.RetryTransient`](../../internal/controlplane/retry.go): the wait starts at 200 ms and doubles to 5 s, less up to half at random. Each step has its own 60 s budget, and each attempt its own `RequestTimeout`. An edge 404 is one whose body carries no API error code: the proxy answers it while routes churn during a redeploy. Any other answer stops at once; for example, a 409 means the Job is no longer this runner's to complete, and a 404 with a code (`RUNNER_JOB_NOT_FOUND`, `EPHEMERAL_JOB_NOT_FOUND`) means the Job row is gone, for example after a workspace delete during the run. The same rule sets the claim and heartbeat log level, so a coded 404 there logs at error on the first failure. The Job stays active until completion returns, so heartbeats keep renewing the lease while it retries. The control plane refuses a completion once the lease has expired, so a full outage longer than the lease TTL (30 s) still loses the result. A completion that landed but whose response was lost is safe to repeat on the job-token path (`pkg/jobrunner`), which recognises the same body. On the runner-API-key path the repeat answers 409 `RUNNER_JOB_COMPLETION_REJECTED`, although the Job is already complete.
+
 ```mermaid
 flowchart LR
     CP[Echopoint control plane] --> RT[Long-lived runtime]
@@ -28,6 +30,16 @@ and JSON keys remain the consumer contract. Failed-result constructors share onl
 identity, inputs, error pointers and timestamps; each node still chooses its own
 error code and message (including request `UserError` handling, SSE's `SSE_FAILED`
 code, and poll-specific codes and assertion outcomes).
+
+A request or SSE transport failure becomes a `UserError` in
+[`classifyRequestError`](../../pkg/node/request_error.go), with a stable code
+(`DNS_RESOLUTION_FAILED`, `REQUEST_TIMEOUT`, `CONNECTION_REFUSED`, `TLS_ERROR`,
+`CONNECTION_FAILED` or `REQUEST_FAILED`) and a message that names only the host.
+Its cause is the transport error without Go's `*url.Error` wrapper. So the error
+text of the `node.failed` event and the execution error message, such as
+`Connection refused by api.example: dial tcp …: connect: connection refused`,
+keeps the transport detail and never repeats the target URL, which Go writes
+with its own escaping.
 
 The engine owns terminal failure logging and chooses severity from `spi.UserError`
 with `SafeErrorMessage`, node identity and flow identity. A failure from the

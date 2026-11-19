@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	neturl "net/url"
 	"strings"
 	"sync"
 	"testing"
@@ -318,6 +319,115 @@ func TestRun_MasksTheSecretInTheReportedErrorMessage(t *testing.T) {
 	}
 	if leaks(t, result, escapedSecret) {
 		t.Errorf("failed flow result leaked the secret: %s", encodeJSON(t, result))
+	}
+}
+
+// urlSecret holds the characters a URL escapes: a space, '/', '+', '&', '=' and
+// '@'. It stays clear of '?', '#' and '%', which would end or break a URL path.
+const urlSecret = "sk live/a+b&c=d@e"
+
+// urlEscapedForms returns the forms Go writes urlSecret in inside a URL: the
+// query form url.Values.Encode writes, the same with %20 for a space, and the
+// path forms url.URL.String writes for a path segment and for a whole path.
+func urlEscapedForms() []string {
+	return []string{
+		neturl.QueryEscape(urlSecret),
+		strings.ReplaceAll(neturl.QueryEscape(urlSecret), "+", "%20"),
+		neturl.PathEscape(urlSecret),
+		(&neturl.URL{Path: urlSecret}).EscapedPath(),
+	}
+}
+
+// urlSecretFlow carries urlSecret in the URL path and in query_params, which the
+// request node percent-encodes.
+func urlSecretFlow(baseURL string) flow.Flow {
+	request := node.NewRequest("call").GET("{{baseURL}}/v1/{{apiToken}}/items")
+	request.Data.QueryParams = map[string]any{"token": "{{apiToken}}"}
+	return flow.NewBuilder("url-secret").
+		Input("baseURL", baseURL).
+		Input("apiToken", urlSecret).
+		Add(request).
+		Build()
+}
+
+func carriesURLSecret(text string) bool {
+	for _, form := range append([]string{urlSecret}, urlEscapedForms()...) {
+		if strings.Contains(text, form) {
+			return true
+		}
+	}
+	return false
+}
+
+// A transport failure: the error text of the node.failed event and the
+// execution error_message must carry neither the secret nor the form Go escaped
+// it in, and must keep the transport cause.
+func TestRun_TransportErrorTextCarriesNoEscapedSecret(t *testing.T) {
+	observer := &recordingObserver{}
+	// Port 1 is never listening, so the request fails during connect.
+	result, err := runner.Run(urlSecretFlow("http://127.0.0.1:1"), nil,
+		runner.WithObserver(observer),
+		runner.WithSecretInputKeys([]string{"apiToken"}),
+	)
+	if err == nil {
+		t.Fatal("the flow should fail")
+	}
+
+	texts := map[string]string{"returned error": err.Error()}
+	if result.ErrorMsg != nil {
+		texts["execution error_message"] = *result.ErrorMsg
+	}
+	for _, nodeResult := range observer.nodeResults {
+		if nodeErr := nodeResult.GetError(); nodeErr != nil {
+			texts["node.failed error"] = nodeErr.Error()
+		}
+	}
+	if _, ok := texts["node.failed error"]; !ok {
+		t.Fatal("the node result should carry its error")
+	}
+	for name, text := range texts {
+		if carriesURLSecret(text) {
+			t.Errorf("%s carries the secret: %s", name, text)
+		}
+	}
+	if !strings.Contains(texts["node.failed error"], "connection refused") {
+		t.Errorf("node.failed error lost the transport cause: %s", texts["node.failed error"])
+	}
+}
+
+// A request node percent-encodes query_params into request_url, so the secret
+// it carries has no literal form there. Every report carries the mask instead.
+func TestRun_MasksTheSecretTheURLEscapes(t *testing.T) {
+	server := echoServer(t)
+	observer := &recordingObserver{}
+
+	result, err := runner.Run(urlSecretFlow(server.URL), nil,
+		runner.WithObserver(observer),
+		runner.WithSecretInputKeys([]string{"apiToken"}),
+	)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+
+	for name, value := range map[string]any{
+		"flow result":         result,
+		"flow.finished event": observer.flowResult,
+		"node.finished event": observer.nodeResults,
+	} {
+		var tree any
+		if decodeErr := json.Unmarshal([]byte(encodeJSON(t, value)), &tree); decodeErr != nil {
+			t.Fatalf("decode %s: %v", name, decodeErr)
+		}
+		for _, form := range append([]string{urlSecret}, urlEscapedForms()...) {
+			if treeLeaks(tree, form) {
+				t.Errorf("%s leaked the secret as %q: %s", name, form, encodeJSON(t, value))
+			}
+		}
+	}
+
+	encoded := encodeJSON(t, observer.nodeResults)
+	if want := `/v1/***/items?token=***`; !strings.Contains(encoded, want) {
+		t.Errorf("request_url should carry the mask, want %s in %s", want, encoded)
 	}
 }
 

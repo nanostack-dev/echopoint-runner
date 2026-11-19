@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/url"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/nanostack-dev/echopoint-runner/pkg/node"
@@ -66,8 +67,14 @@ func TestClassifyRequestError(t *testing.T) {
 			if _, ok := spi.AsUserError(got); !ok {
 				t.Fatal("expected a UserError")
 			}
-			if !errors.Is(got, tc.err) {
-				t.Fatalf("expected wrapped cause to remain reachable via errors.Is")
+			// The cause is the transport error the *url.Error wraps: the wrapper
+			// only adds the URL, which the error text must not repeat.
+			want := tc.err
+			if urlErr, ok := errors.AsType[*url.Error](tc.err); ok {
+				want = urlErr.Err
+			}
+			if !errors.Is(got, want) {
+				t.Fatalf("expected the transport cause to remain reachable via errors.Is")
 			}
 		})
 	}
@@ -116,5 +123,50 @@ func TestClassifyRequestError_UnparseableURLStillDropsTheQueryString(t *testing.
 		if strings.Contains(got.Message, secret) {
 			t.Fatalf("message leaked the query of %q: %q", target, got.Message)
 		}
+	}
+}
+
+// Error() appends the cause to the message, and that text is the node.failed
+// event error and the execution error_message. The *url.Error wrapper repeats
+// the URL as Go escaped it, a form of a secret that text masking may miss, so
+// the cause keeps only the transport error it wraps.
+func TestClassifyRequestError_ErrorTextDropsTheURLAndKeepsTheTransportCause(t *testing.T) {
+	const target = "https://x.example/v1/p@ss%20w/rd?token=p%40ss+w%2Frd"
+	cause := &url.Error{
+		Op:  "Get",
+		URL: target,
+		Err: &net.OpError{Op: "read", Net: "tcp", Err: syscall.ECONNRESET},
+	}
+
+	got := node.ClassifyRequestErrorForTest(target, cause)
+
+	text := got.Error()
+	for _, fragment := range []string{`Get "`, "/v1/", "token=", "p%40ss", "p@ss"} {
+		if strings.Contains(text, fragment) {
+			t.Errorf("error text carries %q: %q", fragment, text)
+		}
+	}
+	if !strings.Contains(text, "connection reset by peer") {
+		t.Errorf("error text lost the transport cause: %q", text)
+	}
+	if got.Code != "CONNECTION_FAILED" {
+		t.Errorf("code: got %q want CONNECTION_FAILED", got.Code)
+	}
+	if !errors.Is(got, syscall.ECONNRESET) {
+		t.Error("the transport cause must stay reachable via errors.Is")
+	}
+}
+
+// The code is classified on the full error. A *url.Error is itself a net.Error,
+// so an unrecognized transport failure inside one keeps CONNECTION_FAILED even
+// though the cause drops the wrapper.
+func TestClassifyRequestError_KeepsTheCodeOfAnUnknownErrorInsideAURLError(t *testing.T) {
+	const target = "https://x.example/v1"
+	got := node.ClassifyRequestErrorForTest(target, &url.Error{Op: "Get", URL: target, Err: errors.New("boom")})
+	if got.Code != "CONNECTION_FAILED" {
+		t.Errorf("code: got %q want CONNECTION_FAILED", got.Code)
+	}
+	if got.Error() != "Could not connect to x.example: boom" {
+		t.Errorf("error text: got %q", got.Error())
 	}
 }

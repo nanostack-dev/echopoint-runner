@@ -46,6 +46,16 @@ func (g *graph) takeString(m ymap, key string) string {
 	return text
 }
 
+// takeText reads an optional string where a YAML null (`key:`, `~` or `null`)
+// means empty, not the literal text "~" or "null".
+func (g *graph) takeText(m ymap, key string) string {
+	if isNull(m.val[key]) {
+		delete(m.val, key)
+		return ""
+	}
+	return g.takeString(m, key)
+}
+
 func (g *graph) takeStringList(m ymap, key string) []string {
 	n, ok := m.take(key)
 	if !ok {

@@ -32,7 +32,7 @@ func (g *graph) lower() (wire.CreateFlowRequest, error) {
 		FlowDefinition: definition,
 		Version:        &version,
 	}
-	if g.description != "" {
+	if g.descriptionSet {
 		description := g.description
 		request.Description = &description
 		request.FlowDefinition.Description = &description
@@ -41,7 +41,7 @@ func (g *graph) lower() (wire.CreateFlowRequest, error) {
 		role := wire.FlowRole(g.role)
 		request.Role = &role
 	}
-	if len(g.tags) > 0 {
+	if g.tagsSet {
 		tags := append([]string{}, g.tags...)
 		request.Tags = &tags
 	}
@@ -175,6 +175,10 @@ func lowerRequest(n *dslNode) (wire.FlowNode, error) {
 	}
 	if n.request.hasBody {
 		data.Body = n.request.body
+	}
+	if n.request.encoding != "" {
+		encoding := wire.RequestNodeDataBodyEncoding(n.request.encoding)
+		data.BodyEncoding = &encoding
 	}
 	var node wire.FlowNode
 	err := node.FromRequestFlowNode(wire.RequestFlowNode{

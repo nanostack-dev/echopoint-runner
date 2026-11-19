@@ -467,3 +467,67 @@ func TestJobCallbacksCarryTheTraceContextAndTargetRequestsDoNot(t *testing.T) {
 	assert.Empty(t, targetHeaders.Get("Traceparent"))
 	assert.Empty(t, targetHeaders.Get("Tracestate"))
 }
+
+// A control-plane blip at the end of a passed run must not lose its result:
+// each completion attempt has its own request timeout inside a longer budget,
+// and the lease keeps renewing while completion retries.
+func TestCompletionOutlastsAControlPlaneBlipAndKeepsHeartbeating(t *testing.T) {
+	jobID := uuid.New()
+	var (
+		mu             sync.Mutex
+		firstComplete  time.Time
+		completedAt    time.Time
+		heartbeatTimes []time.Time
+	)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/heartbeat"):
+			heartbeatTimes = append(heartbeatTimes, time.Now())
+			_, _ = w.Write([]byte(`[{"job_id":"` + jobID.String() + `","status":"renewed"}]`))
+		case strings.HasSuffix(r.URL.Path, "/complete"):
+			if firstComplete.IsZero() {
+				firstComplete = time.Now()
+			}
+			if time.Since(firstComplete) < 1200*time.Millisecond {
+				w.WriteHeader(http.StatusServiceUnavailable)
+				return
+			}
+			completedAt = time.Now()
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			_ = json.NewEncoder(w).Encode(controlplane.SendJobEventsResponse{LastAcceptedSequence: 1 << 20})
+		}
+	}))
+	defer server.Close()
+
+	config := testConfig(server.URL)
+	config.HeartbeatInterval = 20 * time.Millisecond
+	config.RequestTimeout = 300 * time.Millisecond
+	job := &controlplane.ClaimedJob{
+		JobID:       jobID,
+		ExecutionID: uuid.New(),
+		FlowDefinition: json.RawMessage(`{
+			"name": "Short wait", "version": "1.0",
+			"nodes": [{"id": "wait", "type": "delay", "data": {"duration": 1}}],
+			"edges": []
+		}`),
+		Inputs: map[string]any{},
+	}
+
+	outcome, err := RunOne(context.Background(), config, "job-token", uuid.New(), job)
+
+	require.NoError(t, err)
+	assert.Equal(t, jobStatusCompleted, outcome.Status)
+	mu.Lock()
+	defer mu.Unlock()
+	require.False(t, completedAt.IsZero())
+	renewedDuringCompletion := 0
+	for _, at := range heartbeatTimes {
+		if at.After(firstComplete) && at.Before(completedAt) {
+			renewedDuringCompletion++
+		}
+	}
+	assert.Positive(t, renewedDuringCompletion, "the lease renews while completion retries")
+}

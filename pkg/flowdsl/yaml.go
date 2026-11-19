@@ -59,6 +59,14 @@ func (m ymap) keyLine(key string) int {
 	return m.line
 }
 
+// nullTag is the tag yaml.v3 gives `key:`, `~` and `null`.
+const nullTag = "!!null"
+
+// isNull reports a YAML null: an empty value, `~` or `null`.
+func isNull(n *yaml.Node) bool {
+	return n != nil && n.Kind == yaml.ScalarNode && n.Tag == nullTag
+}
+
 func scalar(n *yaml.Node) (string, bool) {
 	if n == nil || n.Kind != yaml.ScalarNode {
 		return "", false

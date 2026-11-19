@@ -218,10 +218,14 @@ func TestDecompileRoundTripsAFilterAndAnInlineBody(t *testing.T) {
 	      {
 	        "id": "other", "type": "request", "display_name": "Other", "run_when": "on_success",
 	        "data": {"method": "GET", "url": "https://example.test/other"}
+	      },
+	      {
+	        "id": "last", "type": "request", "display_name": "Last", "run_when": "on_success",
+	        "data": {"method": "GET", "url": "https://example.test/last"}
 	      }
 	    ],
 	    "edges": [
-	      {"id": "late", "source": "other", "target": "get", "type": "success"},
+	      {"id": "late", "source": "other", "target": "last", "type": "success"},
 	      {"id": "early", "source": "get", "target": "other", "type": "success"}
 	    ]
 	  }
@@ -708,5 +712,76 @@ func preview(value any) string {
 		return "object(" + strconv.Itoa(len(typed)) + " keys)"
 	default:
 		return reflect.TypeOf(value).String()
+	}
+}
+
+func TestDecompileRoundTripsAFormBody(t *testing.T) {
+	assertRoundTrip(t, []byte(`{
+  "name": "form body",
+  "role": "standalone",
+  "version": "1.0",
+  "flow_definition": {
+    "name": "form body",
+    "version": "1.0",
+    "edges": [],
+    "nodes": [
+      {
+        "id": "customer", "type": "request", "display_name": "customer", "run_when": "on_success",
+        "data": {
+          "method": "POST",
+          "url": "{{stripeUrl}}/v1/customers",
+          "body_encoding": "form",
+          "body": {"email": "{{email}}", "metadata": {"plan": "pro"}}
+        }
+      }
+    ]
+  }
+}`))
+}
+
+func TestFormBodyEncodingCompiles(t *testing.T) {
+	root := t.TempDir()
+	writeFlow(t, root, "form.flow.yaml", `
+name: form
+nodes:
+  customer:
+    request:
+      method: POST
+      url: "{{stripeUrl}}/v1/customers"
+      body_encoding: form
+      body:
+        email: "{{email}}"
+`)
+	out, err := flowdsl.CompileDir(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Errors()) != 0 {
+		t.Fatal(joinDiags(out.Errors()))
+	}
+	data := object(t, nodeByID(t, out.Flows[0].Request, "customer"), "data")
+	if data["body_encoding"] != "form" {
+		t.Fatalf("body_encoding: %#v", data)
+	}
+}
+
+func TestUnknownBodyEncodingIsAnError(t *testing.T) {
+	root := t.TempDir()
+	writeFlow(t, root, "form.flow.yaml", `
+name: form
+nodes:
+  customer:
+    request:
+      method: POST
+      url: "{{stripeUrl}}/v1/customers"
+      body_encoding: xml
+      body: "<a/>"
+`)
+	out, err := flowdsl.CompileDir(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Errors()) != 1 || !strings.Contains(out.Errors()[0].Message, "body_encoding must be form") {
+		t.Fatalf("errors: %v", out.Errors())
 	}
 }

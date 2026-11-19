@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 	"sync"
 	"testing"
@@ -269,6 +270,67 @@ func TestValue_MasksAnEscapedSecretInANonJSONResponseBody(t *testing.T) {
 	}
 	if strings.Contains(string(decoded), `p@ss&w\"rd<x>\\y`) {
 		t.Errorf("the escaped secret survived in the stream: %s", decoded)
+	}
+}
+
+// urlSecret holds the characters a URL escapes: a space, '/', '+', '&', '=' and
+// '@'.
+const urlSecret = "sk live/a+b&c=d@e"
+
+// A request node percent-encodes query_params into request_url, and Go escapes
+// the URL it repeats in a transport error, so a secret with an escapable
+// character has no literal form there.
+func TestText_MasksASecretInEveryFormAURLWritesItIn(t *testing.T) {
+	redactor := redact.New(map[string]any{"token": urlSecret}, []string{"token"})
+
+	forms := map[string]string{
+		"query, space as +":   url.QueryEscape(urlSecret),
+		"query, space as %20": strings.ReplaceAll(url.QueryEscape(urlSecret), "+", "%20"),
+		"path segment":        url.PathEscape(urlSecret),
+		"whole path":          (&url.URL{Path: urlSecret}).EscapedPath(),
+	}
+	for name, form := range forms {
+		reported := "https://api.example/v1/" + form + "/items?token=" + form + "&page=2"
+		masked := redactor.Text(reported)
+		if strings.Contains(masked, form) {
+			t.Errorf("%s: the escaped secret survived: %s", name, masked)
+		}
+		want := "https://api.example/v1/***/items?token=***&page=2"
+		if masked != want {
+			t.Errorf("%s: got %q want %q", name, masked, want)
+		}
+	}
+}
+
+// The forms apply to every reported string, an error included.
+func TestError_MasksAURLEscapedSecret(t *testing.T) {
+	redactor := redact.New(map[string]any{"token": urlSecret}, []string{"token"})
+	err := fmt.Errorf("Get %q: connection refused", "https://api.example/?token="+url.QueryEscape(urlSecret))
+
+	masked := redactor.Error(err).Error()
+	if strings.Contains(masked, url.QueryEscape(urlSecret)) {
+		t.Errorf("the escaped secret survived: %s", masked)
+	}
+}
+
+// A response body that is not JSON, such as an HTML page linking back with the
+// token in its query, is masked against the URL forms too.
+func TestValue_MasksAURLEscapedSecretInANonJSONResponseBody(t *testing.T) {
+	redactor := redact.New(map[string]any{"token": urlSecret}, []string{"token"})
+
+	page := `<a href="https://api.example/next?token=` + url.QueryEscape(urlSecret) + `">next</a>`
+	body := base64.StdEncoding.EncodeToString([]byte(page))
+	masked, ok := redactor.Value(map[string]any{"response_body": body}).(map[string]any)
+	if !ok {
+		t.Fatal("expected a map back")
+	}
+
+	decoded, err := base64.StdEncoding.DecodeString(masked["response_body"].(string))
+	if err != nil {
+		t.Fatalf("response_body must stay decodable: %v", err)
+	}
+	if want := `<a href="https://api.example/next?token=***">next</a>`; string(decoded) != want {
+		t.Errorf("got %s want %s", decoded, want)
 	}
 }
 

@@ -25,9 +25,30 @@ import (
 //
 // Every branch authors its own message from the host, never from the raw error:
 // the raw error carries the full URL, query string included, and a UserError's
-// Message is what both the node result and the failure log line report. The raw
-// error stays available as the Cause.
+// Message is what both the node result and the failure log line report.
+//
+// The Cause is the transport error without its *url.Error wrapper. Error()
+// appends the Cause to the Message, and that text reaches the node.failed event
+// and the execution error_message. The wrapper repeats the URL Go escaped, a
+// form of a secret the redactor may not recognize; the inner error keeps the
+// transport detail, such as "connection reset by peer", that failure triage
+// needs. The code is classified on the full error, so it does not change.
 func classifyRequestError(rawURL string, err error) *spi.UserError {
+	userErr := classifyTransportError(rawURL, err)
+	userErr.Cause = withoutURL(err)
+	return userErr
+}
+
+// withoutURL returns the error a *url.Error in err's chain wraps, or err when
+// the chain holds none.
+func withoutURL(err error) error {
+	if urlErr, ok := errors.AsType[*url.Error](err); ok && urlErr.Err != nil {
+		return urlErr.Err
+	}
+	return err
+}
+
+func classifyTransportError(rawURL string, err error) *spi.UserError {
 	host := requestHost(rawURL)
 
 	var dnsErr *net.DNSError
