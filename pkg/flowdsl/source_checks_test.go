@@ -193,3 +193,35 @@ nodes:
 		t.Fatal(joinDiags(out.Errors()))
 	}
 }
+
+func TestASecondYAMLDocumentIsAnError(t *testing.T) {
+	out := compileSource(t, "name: first\n"+strings.TrimSpace(oneNodeFlow)+"\n---\nname: second\n"+oneNodeFlow)
+	assertOneError(t, out, "more than one YAML document")
+	if line := out.Errors()[0].Line; line != 8 {
+		t.Fatalf("error line %d, want 8 (the second document)", line)
+	}
+}
+
+func TestABrokenSecondYAMLDocumentIsAnError(t *testing.T) {
+	out := compileSource(t, "name: first\n"+strings.TrimSpace(oneNodeFlow)+"\n---\nname: [\n")
+	assertOneError(t, out, "YAML:")
+}
+
+func TestATrailingDocumentMarkerStillCompiles(t *testing.T) {
+	for _, tail := range []string{"---\n", "---\n...\n", "--- # end\n"} {
+		src := "name: one\n" + strings.TrimSpace(oneNodeFlow) + "\n" + tail
+		out := flowdsl.CompileSource("flow", []byte(src))
+		if len(out.Errors()) != 0 || len(out.Flows) != 1 {
+			t.Fatalf("%q: %s", tail, joinDiags(out.Errors()))
+		}
+	}
+}
+
+func TestAnEmptyFileIsStillReportedAsEmpty(t *testing.T) {
+	for _, src := range []string{"", "# only a comment\n"} {
+		out := flowdsl.CompileSource("flow", []byte(src))
+		if errs := out.Errors(); len(errs) != 1 || errs[0].Message != "file is empty" || errs[0].Line != 1 {
+			t.Fatalf("%q: %s", src, joinDiags(errs))
+		}
+	}
+}

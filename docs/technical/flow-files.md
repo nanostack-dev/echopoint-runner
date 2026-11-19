@@ -23,5 +23,8 @@ Compile reports these as Error diagnostics, so the file produces no flow:
 | Check | Message |
 | --- | --- |
 | An edge (`next`, a branch `target` or `default`, or `on_failure`) leads back to a node on its own path, including a node to itself | `node "b" next "a" makes a cycle: a -> b -> a` |
+| The file holds a second YAML document after `---` (a trailing empty `---` or `...` is allowed) | `the file holds more than one YAML document; write one flow per file` |
 
 The engine counts every edge type before it starts a node, so a cyclic graph never runs: the run fails with `cycle detected or unreachable nodes` ([`pkg/engine`](../../pkg/engine/execution.go)). A poll or loop body is its own graph and is checked on its own; repeat work with those nodes, never with a back edge. Before this check a cyclic file compiled, saved and failed only at run time.
+
+Before the document check, compile read only the first document and dropped everything after `---` without a diagnostic.

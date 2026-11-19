@@ -1,6 +1,9 @@
 package flowdsl
 
 import (
+	"bytes"
+	"errors"
+	"io"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -8,16 +11,53 @@ import (
 
 func parseSource(path string, src []byte) *graph {
 	g := &graph{path: path, version: defaultFlowVersion}
+	dec := yaml.NewDecoder(bytes.NewReader(src))
 	var doc yaml.Node
-	if err := yaml.Unmarshal(src, &doc); err != nil {
-		g.add(Error, 0, "YAML: %s", cleanYAML(err))
+	if err := dec.Decode(&doc); err != nil {
+		if errors.Is(err, io.EOF) {
+			g.add(Error, 1, "file is empty")
+		} else {
+			g.add(Error, 0, "YAML: %s", cleanYAML(err))
+		}
 		return g
 	}
 	if len(doc.Content) == 0 {
 		g.add(Error, 1, "file is empty")
 		return g
 	}
-	return parseGraph(path, doc.Content[0], false)
+	parsed := parseGraph(path, doc.Content[0], false)
+	parsed.rejectMoreDocuments(dec)
+	return parsed
+}
+
+// rejectMoreDocuments refuses content after a `---`: yaml.Unmarshal would read
+// the first document and drop the rest without a word. A document that holds
+// nothing, such as a trailing `---` or `...`, is allowed.
+func (g *graph) rejectMoreDocuments(dec *yaml.Decoder) {
+	for {
+		var doc yaml.Node
+		err := dec.Decode(&doc)
+		if errors.Is(err, io.EOF) {
+			return
+		}
+		if err != nil {
+			g.add(Error, 0, "YAML: %s", cleanYAML(err))
+			return
+		}
+		if emptyDocument(&doc) {
+			continue
+		}
+		g.add(Error, lineOf(doc.Content[0]), "the file holds more than one YAML document; write one flow per file")
+		return
+	}
+}
+
+func emptyDocument(doc *yaml.Node) bool {
+	if len(doc.Content) == 0 {
+		return true
+	}
+	body := doc.Content[0]
+	return body.Kind == yaml.ScalarNode && body.Tag == "!!null" && body.Value == ""
 }
 
 func parseGraph(path string, n *yaml.Node, inline bool) *graph {
