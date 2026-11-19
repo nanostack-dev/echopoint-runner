@@ -274,12 +274,7 @@ func (r *Runtime) executeClaimedJob(ctx context.Context, active *activeJob) (Out
 				errorMsg = *result.ErrorMsg
 			}
 		}
-		if flushErr := reporter.FlushWithRetry(context.Background()); flushErr != nil {
-			log.Error().
-				Err(flushErr).
-				Str("job_id", active.job.JobID.String()).
-				Msg("failed to flush runner progress before failed completion")
-		}
+		flushBeforeCompletion(active, reporter, "failed to flush runner progress before failed completion")
 		completeErr := r.completeWithFailure(active, reporter, execErr, errorMsg, errorCode)
 		return Outcome{Status: jobStatusFailed, Result: result, ErrorMessage: &errorMsg}, completeErr
 	}
@@ -290,12 +285,7 @@ func (r *Runtime) executeClaimedJob(ctx context.Context, active *activeJob) (Out
 		completeErr := r.completeWithFailure(active, reporter, err, message, nil)
 		return Outcome{Status: jobStatusFailed, Result: result, ErrorMessage: &message}, completeErr
 	}
-	if flushErr := reporter.FlushWithRetry(context.Background()); flushErr != nil {
-		log.Error().
-			Err(flushErr).
-			Str("job_id", active.job.JobID.String()).
-			Msg("failed to flush runner progress before completion")
-	}
+	flushBeforeCompletion(active, reporter, "failed to flush runner progress before completion")
 	if r.isRejected(active.job.JobID) {
 		log.Warn().
 			Str("job_id", active.job.JobID.String()).
@@ -432,9 +422,26 @@ func (r *Runtime) runHeartbeatLoop(ctx context.Context) error {
 	}
 }
 
+// completionRetryBudget bounds the retries of the final progress flush and,
+// separately, of the completion, across a control-plane redeploy or rate limit.
+// Each attempt keeps its own RequestTimeout. The heartbeat loop renews the lease
+// until completion returns, but the control plane refuses a completion once the
+// lease has expired, so a full outage longer than the lease TTL still loses it.
+const completionRetryBudget = 60 * time.Second
+
+// flushBeforeCompletion sends the job's remaining progress events, which the
+// control plane requires before it accepts the completion.
+func flushBeforeCompletion(active *activeJob, reporter *jobEventReporter, failureMessage string) {
+	ctx, cancel := context.WithTimeout(context.Background(), completionRetryBudget)
+	defer cancel()
+	if flushErr := reporter.FlushWithRetry(ctx); flushErr != nil {
+		log.Error().Err(flushErr).Str("job_id", active.job.JobID.String()).Msg(failureMessage)
+	}
+}
+
 func (r *Runtime) completeJob(job *controlplane.ClaimedJob, request controlplane.CompleteJobRequest) error {
 	traced := spi.WithTraceContext(context.Background(), job.TraceContext)
-	ctx, cancel := context.WithTimeout(traced, r.config.RequestTimeout)
+	ctx, cancel := context.WithTimeout(traced, completionRetryBudget)
 	defer cancel()
 
 	return r.client.Complete(ctx, job.JobID, request)

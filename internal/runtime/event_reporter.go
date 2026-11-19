@@ -17,8 +17,6 @@ const (
 	reporterMaxBatchEvents = 16
 	reporterMaxBatchBytes  = 32 * 1024
 	reporterFlushInterval  = 150 * time.Millisecond
-	reporterFlushRetries   = 3
-	reporterRetryBackoff   = 200 * time.Millisecond
 )
 
 type jobEventReporter struct {
@@ -167,24 +165,10 @@ func (r *jobEventReporter) FlowFinished(evt engine.FlowFinishedEvent) {
 	_ = evt
 }
 
+// FlushWithRetry sends every pending event, retrying a transient failure with
+// backoff until ctx ends. The deadline of ctx is the whole retry budget.
 func (r *jobEventReporter) FlushWithRetry(ctx context.Context) error {
-	var lastErr error
-	for attempt := range reporterFlushRetries {
-		flushErr := r.Flush(ctx)
-		if flushErr == nil {
-			return nil
-		}
-		lastErr = flushErr
-
-		if attempt == reporterFlushRetries-1 {
-			break
-		}
-		if sleepErr := sleepContext(ctx, reporterRetryBackoff); sleepErr != nil {
-			return lastErr
-		}
-	}
-
-	return lastErr
+	return controlplane.RetryTransient(ctx, controlplane.Backoff{}, "send_events", r.Flush)
 }
 
 // Flush sends every pending event in batches the control plane accepts. A

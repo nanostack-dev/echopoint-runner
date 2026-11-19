@@ -30,6 +30,7 @@ type Client struct {
 	baseURL    string
 	headers    http.Header
 	httpClient *http.Client
+	backoff    Backoff
 }
 
 type Config struct {
@@ -243,31 +244,23 @@ func (c *Client) ClaimNext(ctx context.Context, request ClaimNextRequest) (*Clai
 	return &claimed, nil
 }
 
+// Complete reports the job's final status. It retries a transient failure (a
+// 5xx, 429, edge 404, network error or attempt timeout) until ctx ends, so the
+// deadline of ctx is the completion budget, and stops at once on any other
+// answer. Every attempt sends the same body, which the control plane's
+// job-token path recognises as a repeat of a completion that already landed.
 func (c *Client) Complete(ctx context.Context, jobID uuid.UUID, request CompleteJobRequest) error {
 	path := fmt.Sprintf("/runner/jobs/%s/complete", jobID.String())
-	var lastErr error
-	for attempt := range 3 {
-		if attempt > 0 {
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case <-time.After(time.Duration(attempt) * 200 * time.Millisecond):
-			}
-		}
+	return RetryTransient(ctx, c.backoff, "complete", func(ctx context.Context) error {
 		statusCode, responseBody, requestErr := c.postJSON(ctx, path, request)
 		if requestErr != nil {
-			lastErr = requestErr
-			continue
+			return requestErr
 		}
 		if statusCode == http.StatusNoContent {
 			return nil
 		}
-		lastErr = readAPIError(statusCode, responseBody)
-		if statusCode < http.StatusInternalServerError {
-			return lastErr
-		}
-	}
-	return lastErr
+		return readAPIError(statusCode, responseBody)
+	})
 }
 
 func (c *Client) SendJobEvents(

@@ -6,6 +6,8 @@ The live engine is in `pkg/engine`, `pkg/node` and `pkg/flow`, supported by `pkg
 
 The runtime heartbeats every claimed Job. Each Job runs on its own cancellable context; when a heartbeat answers `rejected` (the lease expired or the control plane already failed the execution), the runtime cancels that context, so in-flight HTTP calls and delays abort and later requests are never sent. A rejected Job sends no completion.
 
+When the run ends, the runtime flushes the remaining progress events and then completes the Job ([`completeJob`](../../internal/runtime/runtime.go)). Each of the two steps retries a transient failure (a 5xx, 429, edge 404, network error or request timeout) through [`controlplane.RetryTransient`](../../internal/controlplane/retry.go): the wait starts at 200 ms and doubles to 5 s, less up to half at random. Each step has its own 60 s budget, and each attempt its own `RequestTimeout`. Any other answer stops at once; for example, a 409 means the Job is no longer this runner's to complete. The Job stays active until completion returns, so heartbeats keep renewing the lease while it retries. The control plane refuses a completion once the lease has expired, so a full outage longer than the lease TTL (30 s) still loses the result. A completion that landed but whose response was lost is safe to repeat on the job-token path (`pkg/jobrunner`), which recognises the same body. On the runner-API-key path the repeat answers 409 `RUNNER_JOB_COMPLETION_REJECTED`, although the Job is already complete.
+
 ```mermaid
 flowchart LR
     CP[Echopoint control plane] --> RT[Long-lived runtime]
