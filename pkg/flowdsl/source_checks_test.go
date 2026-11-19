@@ -2,6 +2,7 @@ package flowdsl_test
 
 import (
 	"encoding/json"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -66,6 +67,41 @@ func TestAbsentDescriptionAndTagsStayUnset(t *testing.T) {
 	if req.Description != nil || req.FlowDefinition.Description != nil || req.Tags != nil {
 		t.Fatalf("description %v, definition %v, tags %v", req.Description, req.FlowDefinition.Description, req.Tags)
 	}
+}
+
+// Only `tags: []` clears tags. A stray empty `tags:` key is an error rather
+// than a silent clear, because clearing tags can drop a flow from a
+// tag-selected monitor.
+func TestNullTagsIsAnError(t *testing.T) {
+	for _, value := range []string{"", " ~", " null"} {
+		out := compileSource(t, "name: tagged\ntags:"+value+"\n"+oneNodeFlow)
+		assertOneError(t, out, "tags: line 2: expected a list")
+	}
+}
+
+// The server trims and lowercases a tag, then refuses it unless it matches
+// its pattern; compile must refuse the same tags and accept the same ones.
+func TestAnInvalidTagIsAnError(t *testing.T) {
+	for _, tag := range []string{`"has space"`, `"-leading"`, `""`, `"abcdefghijklmnopqrstu"`, `"semi;colon"`} {
+		assertOneError(t, compileSource(t, "name: tagged\ntags: ["+tag+"]\n"+oneNodeFlow), "is invalid")
+	}
+}
+
+func TestATagTheServerNormalisesStillCompiles(t *testing.T) {
+	out := compileSource(t, "name: tagged\ntags: [Smoke, \" prod \", team/api, v1.2:x_y-z]\n"+oneNodeFlow)
+	if len(out.Errors()) != 0 {
+		t.Fatal(joinDiags(out.Errors()))
+	}
+}
+
+func TestMoreThanThirtyTwoTagsIsAnError(t *testing.T) {
+	tags := make([]string, 0, 34)
+	for i := range 33 {
+		tags = append(tags, "t"+strconv.Itoa(i))
+	}
+	tags = append(tags, "T0") // a duplicate after lowercasing is not counted twice
+	src := "name: tagged\ntags: [" + strings.Join(tags, ", ") + "]\n" + oneNodeFlow
+	assertOneError(t, compileSource(t, src), "at most 32 tags, got 33")
 }
 
 func assertOneError(t *testing.T, out flowdsl.Outcome, want string) {

@@ -92,7 +92,9 @@ func (g *graph) readFile(m ymap) {
 		g.version = version
 	}
 	_, g.tagsSet = m.val["tags"]
+	tagsLine := m.keyLine("tags")
 	g.tags = g.takeStringList(m, "tags")
+	g.checkTags(tagsLine)
 	g.id = strings.TrimSpace(g.takeString(m, "id"))
 	g.folderLine = m.keyLine("folder")
 	g.folder = strings.TrimSpace(g.takeString(m, "folder"))
