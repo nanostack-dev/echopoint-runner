@@ -56,13 +56,15 @@ A request result reports a body of up to 1 MiB once. `response_body_parsed` hold
 
 | Body | `response_body_parsed` | `response_body` |
 |---|---|---|
-| JSON or text, valid UTF-8, no NUL byte | present | omitted |
+| Text, or JSON of a passing result, valid UTF-8, no NUL byte | present | omitted |
 | Not valid UTF-8 (images, archives, Latin-1 text) | tree or text, with U+FFFD for each invalid byte | exact bytes |
 | Holds a NUL byte (Echopoint stores NUL as U+FFFD) | tree or text | exact bytes |
+| JSON with a `\u0000` or unpaired surrogate escape (decoded to NUL or U+FFFD) | tree | exact bytes |
+| JSON tree of a failed result (assertion, output extraction or validation) | tree | exact bytes |
 | JSON `null` | omitted | `null` |
 | Larger than 1 MiB | omitted | first 1 MiB |
 
-The JSON tree is what assertions and outputs evaluate against. It does not keep whitespace, key order, a leading byte order mark or the digits of a number past float64 precision. Results stored before this change carry both fields; a consumer reads `response_body_parsed` first and falls back to decoding `response_body`. [ADR 0001](../adr/0001-report-a-parsed-response-body-once.md) records the decision.
+JSONPath assertions and outputs evaluate against the JSON tree. Regex outputs and assertions read the wire bytes, and a string operator on a body that parses to a JSON object or array matches the wire text. The tree does not keep whitespace, key order, a leading byte order mark, escapes or the digits of a number past float64 precision, so a failed result keeps the wire bytes to explain the failure (`RequestExecutionResult.Fail`). A valid escaped surrogate pair decodes without loss. Results stored before this change carry both fields; a consumer reads `response_body_parsed` first and falls back to decoding `response_body`. [ADR 0001](../adr/0001-report-a-parsed-response-body-once.md) records the decision.
 
 Assertions and outputs evaluate against the whole body, but a request result reports at most 1 MiB of it (`node.ReportedResponseBodyBytes`). Past that, `response_body` holds the first 1 MiB, `response_body_parsed` is left out and `response_body_truncated` is `true`, in progress events and the completion alike. The full size remains in the call's `response_bytes`. Secret masking runs on the reported body, so only a secret cut by the 1 MiB boundary can leave its first characters unmasked.
 

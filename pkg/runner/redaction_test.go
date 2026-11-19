@@ -264,6 +264,51 @@ func TestRun_MasksTheSecretEchoedInARawBinaryBody(t *testing.T) {
 	}
 }
 
+// (a4) A failed JSON result reports its wire bytes beside the parsed tree, so
+// the secret echoed in it must be masked in both forms.
+func TestRun_MasksTheSecretEchoedInAFailedJSONResult(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"authorization": r.Header.Get("Authorization")})
+	}))
+	t.Cleanup(server.Close)
+	var contains node.CompositeAssertion
+	if err := json.Unmarshal([]byte(`{"extractor_type":"body","extractor_data":{},`+
+		`"operator_type":"contains","operator_data":{"value":"never sent"}}`), &contains); err != nil {
+		t.Fatalf("assertion: %v", err)
+	}
+	failing := flow.NewBuilder("secret").
+		Input("baseURL", server.URL).
+		Input("apiToken", escapedSecret).
+		Add(node.NewRequest("call").
+			GET("{{baseURL}}/resource").
+			Header("Authorization", "Bearer {{apiToken}}").
+			Assert(contains)).
+		Build()
+
+	observer := &recordingObserver{}
+	if _, err := runner.Run(failing, nil,
+		runner.WithObserver(observer),
+		runner.WithSecretInputKeys([]string{"apiToken"}),
+	); err == nil {
+		t.Fatal("the flow should fail its assertion")
+	}
+
+	var report map[string]any
+	if err := json.Unmarshal([]byte(encodeJSON(t, observer.nodeResults[0])), &report); err != nil {
+		t.Fatalf("decode node result: %v", err)
+	}
+	if _, raw := report["response_body"].(string); !raw {
+		t.Fatalf("a failed JSON result should report its wire bytes, got %v", report["response_body"])
+	}
+	if _, parsed := report["response_body_parsed"].(map[string]any); !parsed {
+		t.Fatalf("a failed JSON result should keep its parsed tree, got %v", report["response_body_parsed"])
+	}
+	if leaks(t, observer.nodeResults[0], escapedSecret) {
+		t.Errorf("node result leaked the echoed secret: %s", encodeJSON(t, observer.nodeResults[0]))
+	}
+}
+
 // (b) A secret holding the characters json.Marshal escapes.
 func TestRun_MasksASecretThatJSONEscapes(t *testing.T) {
 	server := echoServer(t)

@@ -36,8 +36,9 @@ type RequestExecutionResult struct {
 	ResponseStatusCode int                 `json:"response_status_code"`
 	ResponseHeaders    map[string][]string `json:"response_headers"`
 	// ResponseBody holds the raw bytes only when ResponseBodyParsed cannot carry
-	// them: a body that is not UTF-8, holds NUL, parses to JSON null or was
-	// truncated. Otherwise the parsed form alone reports the body (ADR 0001).
+	// them: a body that is not UTF-8, holds NUL or a lossy JSON escape, parses to
+	// JSON null or was truncated, and a failed result whose parsed form is a JSON
+	// tree. Otherwise the parsed form alone reports the body (ADR 0001).
 	ResponseBody       []byte `json:"response_body,omitempty"`
 	ResponseBodyParsed any    `json:"response_body_parsed,omitempty"`
 	// ResponseBodyTruncated reports a body cut to ReportedResponseBodyBytes and
@@ -74,6 +75,24 @@ func (r *RequestExecutionResult) AssertionContext() extractors.ResponseContext {
 func (r *RequestExecutionResult) ReleaseResponse() {
 	r.assertionCtx = nil
 	r.bodyHold.release()
+}
+
+// Fail marks the result failed. A failed check may have read the wire bytes (a
+// regex, or a string operator on a JSON object), which a parsed JSON tree does
+// not keep, so a result that reports only that tree reports the raw bytes too.
+// It runs before ReleaseResponse, while the assertion context holds the body.
+func (r *RequestExecutionResult) Fail(err error, code string) {
+	r.BaseExecutionResult.Fail(err, code)
+	if err == nil || r.ResponseBody != nil || r.ResponseBodyTruncated {
+		return
+	}
+	reader, ok := r.assertionCtx.(extractors.ParsedBodyReader)
+	if !ok {
+		return
+	}
+	if raw := reader.GetRawBody(); !parsedIsBodyText(raw, r.ResponseBodyParsed) {
+		r.ResponseBody = raw
+	}
 }
 
 // DelayExecutionResult stores delay node execution data.

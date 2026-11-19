@@ -16,7 +16,9 @@ The consumers of a stored node result, checked on 2026-11-19:
 
 ## Decision
 
-The runner leaves `response_body` out of a result whose parsed form carries the body: the parsed form is present, and the body is valid UTF-8 with no NUL byte (`node.parsedCarriesBody`). It keeps the raw bytes when the parsed form would alter or lose them: a body that is not UTF-8, a body with a NUL byte (Echopoint stores NUL as U+FFFD), a JSON `null` (which parses to nothing) and a body truncated at 1 MiB (which has no parsed form).
+The runner leaves `response_body` out of a result whose parsed form carries the body: the parsed form is present, and the body is valid UTF-8 with no NUL byte (`node.parsedCarriesBody`). It keeps the raw bytes when the parsed form would alter or lose them: a body that is not UTF-8, a body with a NUL byte (Echopoint stores NUL as U+FFFD), a JSON body with a string escape of NUL (`\u0000`) or of an unpaired surrogate (such as `\ud800`, which `encoding/json` decodes to U+FFFD), a JSON `null` (which parses to nothing) and a body truncated at 1 MiB (which has no parsed form). A valid escaped surrogate pair, such as an emoji, is decoded without loss and does not keep the raw bytes.
+
+A failed request result whose parsed form is a JSON tree also keeps the raw bytes (`RequestExecutionResult.Fail`). This covers a failed assertion, output extraction or output validation. Regex outputs and assertions read the wire bytes, and a string operator on a body that parses to a JSON object or array matches the wire text (`BodyExtractor.ExtractText`). The tree cannot explain why such a check failed: it has no spacing, no number digits past float64 (`10.50` becomes `10.5`, a 19-digit id is rounded) and no escapes. A text body is its own parsed form, so a failed text result still reports it once.
 
 ## Alternatives
 
@@ -28,7 +30,7 @@ The runner leaves `response_body` out of a result whose parsed form carries the 
 ## Consequences
 
 - A request result for a JSON or text body is up to about 55 percent smaller in progress events, completions, storage and API or MCP reads. Nested reads stop compounding.
-- The report of a JSON body is its parsed tree, which is also what assertions and outputs evaluate against. It does not keep whitespace, key order, a leading byte order mark, duplicate keys or the digits of a number past float64 precision. A user who needs the exact bytes of a JSON response cannot get them from the result. A JSON string holding an escaped `\u0000` passes the rule because the bytes have no NUL; Echopoint still stores that character as U+FFFD.
+- The report of a successful JSON result is its parsed tree. JSONPath assertions and outputs evaluate against that tree, but regex checks and string operators on a JSON object or array read the wire bytes. The tree does not keep whitespace, key order, a leading byte order mark, duplicate keys, escapes or the digits of a number past float64 precision, so a passing result does not report the exact bytes of a JSON response. A failed one does.
 - `response_body` is now absent for most results. A consumer must read `response_body_parsed` first and fall back to decoding `response_body`. Results stored before the change keep both fields until retention removes them; no backfill is needed.
-- Secret redaction still decodes and masks a base64 `response_body`. That path now runs only for bodies the parsed form cannot carry.
+- Secret redaction still decodes and masks a base64 `response_body`. That path now runs for bodies the parsed form cannot carry and for failed JSON results.
 - The Echopoint frontend shows the HTML preview of a response only when `response_body_parsed` is absent, so it shows it only for a truncated HTML body. This was true before the change and is not changed by it.

@@ -51,6 +51,9 @@ func TestRequestResult_ReportsAParsedBodyWithoutItsRawCopy(t *testing.T) {
 		"json that fails":   {"application/json", `{"broken"`, `{"broken"`},
 		"empty json":        {"application/json", ``, ""},
 		"json with bom":     {"application/json", "\xEF\xBB\xBF{\"a\":1}", map[string]any{"a": 1.0}},
+		"escaped emoji":     {"application/json", `{"e":"\ud83d\ude00"}`, map[string]any{"e": "\U0001F600"}},
+		"escaped backslash": {"application/json", `{"p":"\\u0000"}`, map[string]any{"p": `\u0000`}},
+		"text escape":       {"text/plain", `\u0000 \ud800`, `\u0000 \ud800`},
 		"nested node blobs": {"application/json", `{"result":{"response_body_parsed":{"x":1}}}`, map[string]any{"result": map[string]any{"response_body_parsed": map[string]any{"x": 1.0}}}},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -65,7 +68,8 @@ func TestRequestResult_ReportsAParsedBodyWithoutItsRawCopy(t *testing.T) {
 
 // A body the parsed form would alter keeps its exact bytes in response_body:
 // JSON text cannot hold invalid UTF-8, and Echopoint stores a NUL as U+FFFD.
-// A JSON null parses to nothing, so the raw body is the only report of it.
+// A JSON string escape of NUL or of an unpaired surrogate decodes to one of
+// those. A JSON null parses to nothing, so the raw body is the only report of it.
 func TestRequestResult_KeepsTheRawBodyWhenTheParsedFormIsLossy(t *testing.T) {
 	for name, tc := range map[string]struct {
 		contentType string
@@ -76,6 +80,10 @@ func TestRequestResult_KeepsTheRawBodyWhenTheParsedFormIsLossy(t *testing.T) {
 		"json with bad utf-8":  {"application/json", []byte("{\"name\":\"caf\xe9\"}")},
 		"text with a nul byte": {"text/plain", []byte("a\x00b")},
 		"json null":            {"application/json", []byte("null")},
+		"json escaped nul":     {"application/json", []byte(`{"a":"x\u0000y"}`)},
+		"json lone high":       {"application/json", []byte(`{"a":"\ud800"}`)},
+		"json lone low":        {"application/json", []byte(`{"a":"\uDC00x"}`)},
+		"json high then ascii": {"application/json", []byte(`{"a":"\uD83D\u0041"}`)},
 	} {
 		t.Run(name, func(t *testing.T) {
 			wire := reportedWire(t, tc.contentType, tc.body)
@@ -102,4 +110,73 @@ func TestRequestResult_KeepsTheRawPrefixOfATruncatedBody(t *testing.T) {
 	assert.True(t, bytes.Equal(body[:node.ReportedResponseBodyBytes], decoded))
 	assert.NotContains(t, wire, "response_body_parsed")
 	assert.Equal(t, true, wire["response_body_truncated"])
+}
+
+// encoding/json decodes an unpaired surrogate escape to U+FFFD, so the parsed
+// form cannot report it.
+func TestRequestResult_ParsedFormReplacesALoneSurrogate(t *testing.T) {
+	wire := reportedWire(t, "application/json", []byte(`{"a":"\ud800"}`))
+
+	parsed, ok := wire["response_body_parsed"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "\uFFFD", parsed["a"])
+}
+
+// failedWire is the report of a request result whose assertions or outputs
+// failed in the engine pass. checks holds the node's assertions and outputs.
+func failedWire(t *testing.T, contentType string, body []byte, checks string) map[string]any {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", contentType)
+		_, _ = w.Write(body)
+	}))
+	t.Cleanup(srv.Close)
+	anyNode, err := node.UnmarshalNode([]byte(`{"id":"get","type":"request",` + checks + `,"data":{` +
+		`"method":"GET","url":"` + srv.URL + `","timeout":5000}}`))
+	require.NoError(t, err)
+	reqNode, ok := anyNode.(*node.RequestNode)
+	require.True(t, ok)
+
+	res, err := reqNode.Execute(spi.ExecutionContext{Ctx: context.Background()})
+	require.NoError(t, err)
+	require.Error(t, applyEnginePass(reqNode, res))
+	encoded, err := json.Marshal(res)
+	require.NoError(t, err)
+	var wire map[string]any
+	require.NoError(t, json.Unmarshal(encoded, &wire))
+	return wire
+}
+
+// A regex or a string operator on a JSON object reads the wire bytes, which the
+// parsed tree does not keep (spacing, number digits, escapes). A failed result
+// reports them too, so the failure can be diagnosed from the result.
+func TestRequestResult_FailedJSONResultReportsTheWireBytes(t *testing.T) {
+	body := []byte(`{"status": "ok", "total": 10.50, "id": 1234567890123456789}`)
+	for name, checks := range map[string]string{
+		"failed contains assertion": `"assertions":[{"extractor_type":"body","extractor_data":{},` +
+			`"operator_type":"contains","operator_data":{"value":"\"status\":\"ok\""}}]`,
+		"failed regex output": `"outputs":[{"name":"total","extractor":{"type":"regex","pattern":"\"total\":(\\d+)"}}]`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			wire := failedWire(t, "application/json", body, checks)
+
+			require.NotNil(t, wire["error_code"])
+			encoded, ok := wire["response_body"].(string)
+			require.True(t, ok, "a failed JSON result should report its wire bytes, got %v", wire["response_body"])
+			decoded, err := base64.StdEncoding.DecodeString(encoded)
+			require.NoError(t, err)
+			assert.Equal(t, body, decoded)
+			assert.Contains(t, wire, "response_body_parsed")
+		})
+	}
+}
+
+// A text body is its own parsed form, so a failed text result still reports it
+// once.
+func TestRequestResult_FailedTextResultReportsTheBodyOnce(t *testing.T) {
+	wire := failedWire(t, "text/plain", []byte("status: down"), `"assertions":[{"extractor_type":"body",`+
+		`"extractor_data":{},"operator_type":"contains","operator_data":{"value":"status: up"}}]`)
+
+	assert.NotContains(t, wire, "response_body")
+	assert.Equal(t, "status: down", wire["response_body_parsed"])
 }
