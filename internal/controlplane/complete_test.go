@@ -123,8 +123,9 @@ func TestCompleteGivesUpWhenItsBudgetEnds(t *testing.T) {
 	assert.Greater(t, len(server.attempts()), 3)
 }
 
-// The control plane recognises a repeated completion by its digest, so every
-// attempt must send the same bytes.
+// The control plane's job-token path recognises a repeated completion by its
+// digest, so every attempt must send the same bytes. The runner-API-key path
+// does not replay yet and answers a repeat with 409.
 func TestCompleteSendsTheSameBodyOnEveryAttempt(t *testing.T) {
 	server, err := completeAgainst(t, func(attempt int, _ time.Duration) int {
 		if attempt < 3 {
@@ -138,4 +139,55 @@ func TestCompleteSendsTheSameBodyOnEveryAttempt(t *testing.T) {
 	require.Len(t, attempts, 3)
 	assert.Equal(t, attempts[0], attempts[1])
 	assert.Equal(t, attempts[0], attempts[2])
+}
+
+// completeAgainstNotFound completes against a server that always answers 404
+// with body, and returns the number of attempts.
+func completeAgainstNotFound(t *testing.T, body string) (int, error) {
+	t.Helper()
+	var (
+		mu       sync.Mutex
+		attempts int
+	)
+	httpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		mu.Lock()
+		attempts++
+		mu.Unlock()
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(body))
+	}))
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	client := controlplane.NewRunnerClient(controlplane.Config{BaseURL: httpServer.URL, RequestTimeout: time.Second})
+	controlplane.SetBackoff(client, controlplane.Backoff{Initial: 10 * time.Millisecond, Max: 40 * time.Millisecond})
+	err := client.Complete(ctx, uuid.New(), controlplane.CompleteJobRequest{RunnerID: "runner", Status: "completed"})
+	mu.Lock()
+	defer mu.Unlock()
+	return attempts, err
+}
+
+// A 404 with an API error code is the control plane saying the job is gone,
+// for example after a workspace delete during the run. Retrying would hold the
+// runner slot for the whole completion budget.
+func TestCompleteStopsAtOnceWhenTheAPISaysTheJobIsGone(t *testing.T) {
+	attempts, err := completeAgainstNotFound(t,
+		`{"errors":[{"code":"RUNNER_JOB_NOT_FOUND","message":"runner job does not exist"}]}`)
+
+	statusErr, ok := errors.AsType[*controlplane.StatusError](err)
+	require.True(t, ok, "got %v", err)
+	assert.Equal(t, "RUNNER_JOB_NOT_FOUND", statusErr.Code)
+	assert.Equal(t, 1, attempts)
+}
+
+// A 404 without an API error code is the edge answering while it reroutes
+// during a control plane redeploy, so it is retried.
+func TestCompleteRetriesAnEdgeNotFound(t *testing.T) {
+	attempts, err := completeAgainstNotFound(t, "404 page not found")
+
+	statusErr, ok := errors.AsType[*controlplane.StatusError](err)
+	require.True(t, ok, "got %v", err)
+	assert.Empty(t, statusErr.Code)
+	assert.Greater(t, attempts, 3)
 }

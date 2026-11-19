@@ -247,8 +247,12 @@ func (c *Client) ClaimNext(ctx context.Context, request ClaimNextRequest) (*Clai
 // Complete reports the job's final status. It retries a transient failure (a
 // 5xx, 429, edge 404, network error or attempt timeout) until ctx ends, so the
 // deadline of ctx is the completion budget, and stops at once on any other
-// answer. Every attempt sends the same body, which the control plane's
-// job-token path recognises as a repeat of a completion that already landed.
+// answer. Every attempt sends the same body. Only the control plane's job-token
+// path (Cloud and ephemeral jobs) recognises it as a repeat of a completion that
+// already landed. The runner-API-key path that a self-hosted daemon uses does
+// not yet: a retry after a lost or timed-out response gets 409
+// RUNNER_JOB_COMPLETION_REJECTED for a job that is already complete, until
+// echopoint gives runnerJobService.Complete the same digest replay.
 func (c *Client) Complete(ctx context.Context, jobID uuid.UUID, request CompleteJobRequest) error {
 	path := fmt.Sprintf("/runner/jobs/%s/complete", jobID.String())
 	return RetryTransient(ctx, c.backoff, "complete", func(ctx context.Context) error {
@@ -359,7 +363,10 @@ func (c *Client) postJSON(ctx context.Context, path string, payload any) (int, [
 // StatusError is a non-success HTTP status returned by the control plane.
 type StatusError struct {
 	StatusCode int
-	Detail     string
+	// Code is the control plane's API error code. It is empty when the body
+	// carries none, as in an answer from the edge proxy instead of the API.
+	Code   string
+	Detail string
 }
 
 func (e *StatusError) Error() string {
@@ -370,16 +377,19 @@ func readAPIError(statusCode int, body []byte) error {
 	var apiErr APIErrorResponse
 	if unmarshalErr := json.Unmarshal(body, &apiErr); unmarshalErr == nil && len(apiErr.Errors) > 0 {
 		first := apiErr.Errors[0]
-		return &StatusError{StatusCode: statusCode, Detail: first.Code + ": " + first.Message}
+		return &StatusError{StatusCode: statusCode, Code: first.Code, Detail: first.Code + ": " + first.Message}
 	}
 
 	return &StatusError{StatusCode: statusCode, Detail: strings.TrimSpace(string(body))}
 }
 
 // IsTransient reports whether err is a control-plane failure expected to clear on
-// retry: a 5xx, 429 or 404 status, a network error, or a request deadline. A
-// control plane redeploy produces these for a few seconds; the 404 is the edge
-// answering while it reroutes. Callers escalate one that persists.
+// retry: a 5xx, 429 or edge 404 status, a network error, or a request deadline. A
+// control plane redeploy produces these for a few seconds; the edge 404 is the
+// proxy answering while it reroutes, so its body has no API error code. A 404
+// with a code, such as RUNNER_JOB_NOT_FOUND after a workspace delete, is the API
+// saying the job is gone, and no retry can change that. Callers escalate a
+// transient failure that persists.
 func IsTransient(err error) bool {
 	if errors.Is(err, context.Canceled) {
 		return false
@@ -387,7 +397,7 @@ func IsTransient(err error) bool {
 	if statusErr, ok := errors.AsType[*StatusError](err); ok {
 		return statusErr.StatusCode >= http.StatusInternalServerError ||
 			statusErr.StatusCode == http.StatusTooManyRequests ||
-			statusErr.StatusCode == http.StatusNotFound
+			(statusErr.StatusCode == http.StatusNotFound && statusErr.Code == "")
 	}
 	if _, ok := errors.AsType[net.Error](err); ok {
 		return true

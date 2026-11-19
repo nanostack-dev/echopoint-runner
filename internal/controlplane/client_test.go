@@ -139,6 +139,19 @@ func TestIsTransientForEdgeNotFoundWhileRoutesChurn(t *testing.T) {
 	assert.True(t, controlplane.IsTransient(claimErrorForStatus(t, http.StatusNotFound)))
 }
 
+func TestIsNotTransientForAPINotFound(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"errors":[{"code":"EPHEMERAL_JOB_NOT_FOUND","message":"job does not exist"}]}`))
+	}))
+	defer server.Close()
+
+	client := controlplane.NewRunnerClient(controlplane.Config{BaseURL: server.URL})
+	_, err := client.ClaimNext(context.Background(), controlplane.ClaimNextRequest{})
+	require.Error(t, err)
+	assert.False(t, controlplane.IsTransient(err))
+}
+
 func TestIsNotTransientForRejectedRunnerKey(t *testing.T) {
 	assert.False(t, controlplane.IsTransient(claimErrorForStatus(t, http.StatusUnauthorized)))
 	assert.False(t, controlplane.IsTransient(claimErrorForStatus(t, http.StatusForbidden)))

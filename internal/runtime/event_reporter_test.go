@@ -106,9 +106,13 @@ func reporterAgainst(t *testing.T, statusOf func(sinceFirst time.Duration) int) 
 	}))
 	t.Cleanup(server.Close)
 
+	return reporterWithOnePendingEvent(server.URL), &calls
+}
+
+func reporterWithOnePendingEvent(baseURL string) *jobEventReporter {
 	reporter := &jobEventReporter{
 		client: controlplane.NewRunnerClient(
-			controlplane.Config{BaseURL: server.URL, RequestTimeout: time.Second},
+			controlplane.Config{BaseURL: baseURL, RequestTimeout: time.Second},
 		),
 		jobID:          uuid.New(),
 		requestTimeout: time.Second,
@@ -119,7 +123,7 @@ func reporterAgainst(t *testing.T, statusOf func(sinceFirst time.Duration) int) 
 		{Sequence: 1, Type: "node.started", Payload: map[string]int{}},
 	}
 	reporter.mu.Unlock()
-	return reporter, &calls
+	return reporter
 }
 
 // The final flush precedes completion, which the control plane refuses while
@@ -144,6 +148,26 @@ func TestFlushWithRetrySurvivesATwoSecondRunOf503s(t *testing.T) {
 // A sequence conflict will not clear on retry; it must not spend the budget.
 func TestFlushWithRetryStopsAtOnceOnAConflict(t *testing.T) {
 	reporter, calls := reporterAgainst(t, func(time.Duration) int { return http.StatusConflict })
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+
+	require.Error(t, reporter.FlushWithRetry(ctx))
+	assert.Equal(t, int32(1), calls.Load())
+}
+
+// The control plane answers 404 RUNNER_JOB_NOT_FOUND once the job row is gone,
+// for example after a workspace delete during the run. That will not clear on
+// retry, so the final flush must not hold the runner slot for its whole budget.
+func TestFlushWithRetryStopsAtOnceWhenTheAPISaysTheJobIsGone(t *testing.T) {
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"errors":[{"code":"RUNNER_JOB_NOT_FOUND","message":"runner job does not exist"}]}`))
+	}))
+	t.Cleanup(server.Close)
+	reporter := reporterWithOnePendingEvent(server.URL)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 
