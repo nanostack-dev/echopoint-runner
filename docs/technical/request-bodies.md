@@ -8,3 +8,5 @@ A request node sends its `body` after it resolves `{{…}}` templates. `body_enc
 The runner encodes a form body after templates resolve. A body encoded beforehand would carry `{{signup.email}}` inside an encoded string, and a resolved `garbage+tag@nanostack.dev` would then read as `garbage tag@…` on the server, because `+` means a space in a form.
 
 A runner older than this support sends a `form` body as JSON. Every claim therefore declares the `form_body` capability ([`controlplane.Capabilities`](../../internal/controlplane/client.go)), and the control plane refuses a job that uses a form body to a claim without it, as it does for `secret_outputs` ([secret redaction](secret-redaction.md)).
+
+A flow file spells it `body_encoding: form` inside the `request` node ([flow files](flow-files.md)).

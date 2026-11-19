@@ -96,6 +96,10 @@ const (
 )
 
 const (
+	RequestNodeDataBodyEncodingForm RequestNodeDataBodyEncoding = "form"
+)
+
+const (
 	SetVariableFlowNodeTypeSetVariable SetVariableFlowNodeType = "set_variable"
 )
 
@@ -717,6 +721,9 @@ type RequestFlowNode struct {
 // RequestFlowNodeType defines model for RequestFlowNode.Type.
 type RequestFlowNodeType string
 
+// RequestNodeDataBodyEncoding defines model for RequestNodeData.BodyEncoding.
+type RequestNodeDataBodyEncoding string
+
 // RequestNodeData defines model for RequestNodeData.
 type RequestNodeData struct {
 	// Body Request body (can be any JSON structure). Supports variable substitution.
@@ -726,6 +733,11 @@ type RequestNodeData struct {
 	//
 	// Examples: {"email":"{{userEmail}}","name":"{{userName}}"}
 	Body interface{} `json:"body,omitempty"`
+
+	// BodyEncoding How the body is sent. Absent: a string body as it is, any other body as JSON.
+	// `form`: an object body as `application/x-www-form-urlencoded` with bracket nesting
+	// (`metadata[plan]=pro`), encoded after templates resolve.
+	BodyEncoding *RequestNodeDataBodyEncoding `json:"body_encoding,omitempty"`
 
 	// Headers HTTP headers. Supports the same variable substitution as URL.
 	// Headers can reference both initial inputs and previous node outputs.

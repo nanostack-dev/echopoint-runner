@@ -90,6 +90,9 @@ func (o Outcome) filterPaths(keep map[string]bool) Outcome {
 
 const defaultFlowVersion = "1.0"
 
+// bodyEncodingKey is the request field that sends a body form-encoded.
+const bodyEncodingKey = "body_encoding"
+
 // statusWord is the YAML spelling of a status_code extractor, both as an
 // expect target (`status between 200 299`) and as an output (`status: status`).
 const (
@@ -242,7 +245,9 @@ type reqSpec struct {
 	query   []pair
 	body    any
 	hasBody bool
-	timeout *int
+	// encoding is the body_encoding value: "" or form.
+	encoding string
+	timeout  *int
 }
 
 // integSpec is an integration node: an operation call or an event wait.

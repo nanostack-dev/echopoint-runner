@@ -250,6 +250,9 @@ func addRequest(body *mapBuilder, node wire.FlowNode) error {
 		}
 		req.raw("body", rendered)
 	}
+	if spec.Data.BodyEncoding != nil && *spec.Data.BodyEncoding != "" {
+		req.str(bodyEncodingKey, string(*spec.Data.BodyEncoding))
+	}
 	addInt(req, "timeout_ms", spec.Data.Timeout)
 	body.raw(kindRequest, req.node)
 	return nil

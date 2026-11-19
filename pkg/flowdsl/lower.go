@@ -176,6 +176,10 @@ func lowerRequest(n *dslNode) (wire.FlowNode, error) {
 	if n.request.hasBody {
 		data.Body = n.request.body
 	}
+	if n.request.encoding != "" {
+		encoding := wire.RequestNodeDataBodyEncoding(n.request.encoding)
+		data.BodyEncoding = &encoding
+	}
 	var node wire.FlowNode
 	err := node.FromRequestFlowNode(wire.RequestFlowNode{
 		Id:          n.id,

@@ -69,9 +69,25 @@ func (g *graph) parseRequest(node *dslNode, body *yaml.Node) {
 		spec.body = val
 		spec.hasBody = true
 	}
+	spec.encoding = g.takeBodyEncoding(node, m)
 	spec.timeout = g.takePositive(node, m, "timeout_ms")
 	g.rejectNodeFields(node.id, m)
 	node.request = spec
+}
+
+// takeBodyEncoding reads body_encoding. The only value is form; an absent key
+// sends a string body as it is and any other body as JSON.
+func (g *graph) takeBodyEncoding(node *dslNode, m ymap) string {
+	line := m.keyLine(bodyEncodingKey)
+	if _, present := m.val[bodyEncodingKey]; !present {
+		return ""
+	}
+	encoding := g.takeString(m, bodyEncodingKey)
+	if encoding != string(wire.RequestNodeDataBodyEncodingForm) {
+		g.add(Error, line, "node %q body_encoding must be form", node.id)
+		return ""
+	}
+	return encoding
 }
 
 func (g *graph) parseModule(node *dslNode, body *yaml.Node) {
