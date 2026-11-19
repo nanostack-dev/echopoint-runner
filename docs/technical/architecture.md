@@ -29,6 +29,16 @@ identity, inputs, error pointers and timestamps; each node still chooses its own
 error code and message (including request `UserError` handling, SSE's `SSE_FAILED`
 code, and poll-specific codes and assertion outcomes).
 
+A request or SSE transport failure becomes a `UserError` in
+[`classifyRequestError`](../../pkg/node/request_error.go), with a stable code
+(`DNS_RESOLUTION_FAILED`, `REQUEST_TIMEOUT`, `CONNECTION_REFUSED`, `TLS_ERROR`,
+`CONNECTION_FAILED` or `REQUEST_FAILED`) and a message that names only the host.
+Its cause is the transport error without Go's `*url.Error` wrapper. So the error
+text of the `node.failed` event and the execution error message, such as
+`Connection refused by api.example: dial tcp …: connect: connection refused`,
+keeps the transport detail and never repeats the target URL, which Go writes
+with its own escaping.
+
 The engine owns terminal failure logging and chooses severity from `spi.UserError`
 with `SafeErrorMessage`, node identity and flow identity. A failure from the
 user's target or a condition they configured is a `UserError` where it is created:
