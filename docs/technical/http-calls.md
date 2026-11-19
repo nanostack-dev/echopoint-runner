@@ -52,7 +52,7 @@ A request node reads at most 10 MiB of response body (`node.DefaultMaxResponseBy
 
 ## Reported body
 
-A request result reports a body of up to 1 MiB once. `response_body_parsed` holds it as a JSON tree when the response is `application/json` and parses, and as text otherwise. `response_body` (base64 bytes) is left out whenever that parsed form carries the body (`node.parsedCarriesBody`). It is kept only when the parsed form would alter or lose the body:
+A request result usually reports a body of up to 1 MiB once. `response_body_parsed` holds it as a JSON tree when the response is `application/json` and parses, and as text otherwise. `response_body` (base64 bytes) is left out whenever that parsed form carries the body (`node.parsedCarriesBody`). It is kept when the parsed form would alter or lose the body, and when a failed result's parsed form is a JSON tree:
 
 | Body | `response_body_parsed` | `response_body` |
 |---|---|---|

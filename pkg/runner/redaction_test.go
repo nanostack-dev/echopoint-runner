@@ -234,8 +234,8 @@ func assertEchoedSecretIsMasked(t *testing.T, secret string) {
 	}
 }
 
-// (a3) A JSON or UTF-8 body is reported only as its parsed form, so the base64
-// response_body carries only a body the parsed form would alter, such as bytes
+// (a3) A passing JSON or UTF-8 body is reported only as its parsed form, so the
+// base64 response_body carries a body the parsed form would alter, such as bytes
 // that are not UTF-8. A secret echoed there is masked too.
 func TestRun_MasksTheSecretEchoedInARawBinaryBody(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
