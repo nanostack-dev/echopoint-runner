@@ -73,6 +73,8 @@ func (e moduleExecutor) ExecuteModule(request spi.ModuleExecutionRequest) (*spi.
 
 	parsedFlow, err := flow.ParseFromJSONWithOptions(request.FlowDefinition, flow.ParseOptions{
 		AllowedInitialInputKeys: sortedInputKeys(request.Inputs),
+		AllowInputNodes:         request.AllowContractNodes,
+		AllowOutputNodes:        request.AllowContractNodes,
 	})
 	if err != nil {
 		return nil, spi.NewUserError("MODULE_FLOW_PARSE_FAILED", "parse module flow", err)

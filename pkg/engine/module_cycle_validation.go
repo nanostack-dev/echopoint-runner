@@ -59,6 +59,12 @@ func validateModuleReferences(
 			return err
 		}
 
+		if len(moduleNode.Data.OutputBindings) == 0 {
+			if refErr := validateAutoExportedModuleReferences(current, moduleNode.GetID(), targetFlow); refErr != nil {
+				return refErr
+			}
+		}
+
 		nextStack := append(cloneStringSlice(callStack), targetFlowID)
 		validateErr := validateModuleReferences(targetFlow, resolver, parsedFlows, nextStack, targetInputs)
 		if validateErr != nil {
@@ -118,6 +124,8 @@ func resolveModuleFlow(
 	parsedFlow, err := flow.ParseFromJSONWithOptions(resolvedFlow.FlowDefinition, flow.ParseOptions{
 		AllowedInitialInputKeys:   inputKeys,
 		AllowUnknownInitialInputs: true,
+		AllowInputNodes:           true,
+		AllowOutputNodes:          true,
 	})
 	if err != nil {
 		// The referenced flow's own definition fails to parse — the flow author's
@@ -128,4 +136,49 @@ func resolveModuleFlow(
 
 	parsedFlows[cacheKey] = *parsedFlow
 	return *parsedFlow, inputKeys, nil
+}
+
+// validateAutoExportedModuleReferences checks that any node in parent
+// referencing {{moduleNodeID.<key>}} on a binding-less module targets a
+// property declared by the resolved child flow's output node.
+func validateAutoExportedModuleReferences(parent flow.Flow, moduleNodeID string, child flow.Flow) error {
+	declared := make(map[string]struct{})
+	for _, childNode := range child.Nodes {
+		if outputNode, ok := node.AsOutputNode(childNode); ok {
+			for _, name := range outputNode.OutputSchema() {
+				declared[name] = struct{}{}
+			}
+		}
+	}
+	prefix := moduleNodeID + "."
+	for _, parentNode := range parent.Nodes {
+		if parentNode.GetRunWhen() == spi.RunWhenAlways {
+			continue
+		}
+		refs := append(slices.Clone(parentNode.InputSchema()), node.AssertionReferences(parentNode)...)
+		if selfResolving, ok := parentNode.(node.SelfResolvingNode); ok {
+			refs = append(refs, selfResolving.ResolvedReferences()...)
+		}
+		for _, ref := range refs {
+			trimmed := strings.TrimSpace(ref)
+			if !strings.HasPrefix(trimmed, prefix) {
+				continue
+			}
+			keyPath := strings.TrimPrefix(trimmed, prefix)
+			rootKey, _, _ := strings.Cut(keyPath, ".")
+			if _, ok := declared[rootKey]; !ok {
+				return spi.NewUserError(
+					"MODULE_OUTPUT_NOT_DECLARED",
+					fmt.Sprintf(
+						"node %s: output %q is not declared by function flow called by %q",
+						parentNode.GetID(),
+						rootKey,
+						moduleNodeID,
+					),
+					nil,
+				)
+			}
+		}
+	}
+	return nil
 }

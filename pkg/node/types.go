@@ -99,6 +99,36 @@ type SetVariableExecutionResult struct {
 	DurationMs int64 `json:"duration_ms"`
 }
 
+// InputExecutionResult stores input node execution data.
+type InputExecutionResult struct {
+	spi.BaseExecutionResult
+
+	DurationMs int64 `json:"duration_ms"`
+}
+
+// AssertionContext exposes the resolved input parameters map for assertions.
+func (r *InputExecutionResult) AssertionContext() extractors.ResponseContext {
+	if r.Outputs == nil {
+		return nil
+	}
+	return extractors.NewValueResponseContext(r.Outputs)
+}
+
+// OutputExecutionResult stores output node execution data.
+type OutputExecutionResult struct {
+	spi.BaseExecutionResult
+
+	DurationMs int64 `json:"duration_ms"`
+}
+
+// AssertionContext exposes the resolved output fields map for assertions.
+func (r *OutputExecutionResult) AssertionContext() extractors.ResponseContext {
+	if r.Outputs == nil {
+		return nil
+	}
+	return extractors.NewValueResponseContext(r.Outputs)
+}
+
 // AssertionContext exposes the computed variables map (the node Outputs) as the
 // ResponseContext the engine-level assertion/output pass evaluates against. This
 // gives set-variable nodes free assertions over their resolved variables,

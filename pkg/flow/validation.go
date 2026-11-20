@@ -1,6 +1,7 @@
 package flow
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -34,11 +35,19 @@ func validateFlowReferences(parsedFlow *Flow, options ParseOptions) error {
 		}
 	}
 
+	if err := validateContractNodes(parsedFlow.Nodes, options); err != nil {
+		return err
+	}
+
 	outputsByNode := make(map[string]map[string]struct{}, len(parsedFlow.Nodes))
+	openOutputNodes := make(map[string]struct{})
 	for _, currentNode := range parsedFlow.Nodes {
 		nodeID := strings.TrimSpace(currentNode.GetID())
 		if nodeID != "" {
 			outputsByNode[nodeID] = buildOutputSet(currentNode.OutputSchema())
+			if mod, isMod := node.AsModuleNode(currentNode); isMod && len(mod.Data.OutputBindings) == 0 {
+				openOutputNodes[nodeID] = struct{}{}
+			}
 		}
 	}
 
@@ -48,6 +57,7 @@ func validateFlowReferences(parsedFlow *Flow, options ParseOptions) error {
 			currentNode,
 			availableInitialInputs,
 			upstreamOutputs(strings.TrimSpace(currentNode.GetID()), predecessorsByNode, outputsByNode),
+			openOutputNodes,
 			options,
 		); err != nil {
 			return err
@@ -58,6 +68,95 @@ func validateFlowReferences(parsedFlow *Flow, options ParseOptions) error {
 		return err
 	}
 
+	return nil
+}
+
+func validateContractNodes(nodes []node.AnyNode, options ParseOptions) error {
+	var inputCount, outputCount int
+	for _, currentNode := range nodes {
+		if err := validateContractNode(currentNode, options, &inputCount, &outputCount); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateContractNode(
+	currentNode node.AnyNode,
+	options ParseOptions,
+	inputCount *int,
+	outputCount *int,
+) error {
+	switch currentNode.GetType() { //nolint:exhaustive // Only contract and inline-body nodes are gated here.
+	case spi.KindInput:
+		return validateSingleContractNode(
+			currentNode.GetID(), "input", options.AllowInputNodes, "AllowInputNodes", inputCount,
+		)
+	case spi.KindOutput:
+		return validateSingleContractNode(
+			currentNode.GetID(), "output", options.AllowOutputNodes, "AllowOutputNodes", outputCount,
+		)
+	case spi.KindLoop:
+		if loopNode, ok := node.AsLoopNode(currentNode); ok {
+			return rejectInlineBodyContractNodes(currentNode.GetID(), loopNode.Data.Body)
+		}
+	case spi.KindPoll:
+		if pollNode, ok := node.AsPollNode(currentNode); ok {
+			return rejectInlineBodyContractNodes(currentNode.GetID(), pollNode.Data.Body)
+		}
+	}
+	return nil
+}
+
+func validateSingleContractNode(nodeID, kind string, allowed bool, flag string, count *int) error {
+	if !allowed {
+		return fmt.Errorf("node %s: %s node is not allowed when %s is false", nodeID, kind, flag)
+	}
+	*count++
+	if *count > 1 {
+		return fmt.Errorf("node %s: a flow may declare at most one %s node", nodeID, kind)
+	}
+	return nil
+}
+
+// rejectInlineBodyContractNodes rejects input and output nodes inside inline
+// loop or poll bodies at parse time, so a test flow cannot smuggle contract
+// nodes through a body sub-flow.
+func rejectInlineBodyContractNodes(parentID string, rawBody json.RawMessage) error {
+	if len(rawBody) == 0 {
+		return nil
+	}
+	var body struct {
+		Nodes []json.RawMessage `json:"nodes"`
+	}
+	if err := json.Unmarshal(rawBody, &body); err != nil {
+		return nil //nolint:nilerr // Malformed bodies are surfaced by the body's own parse path.
+	}
+	for _, rawNode := range body.Nodes {
+		var peek struct {
+			ID   string   `json:"id"`
+			Type spi.Kind `json:"type"`
+			Data struct {
+				Body json.RawMessage `json:"body"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal(rawNode, &peek); err != nil {
+			continue
+		}
+		if peek.Type == spi.KindInput || peek.Type == spi.KindOutput {
+			return fmt.Errorf(
+				"node %s: %s node %q is not allowed inside a loop or poll body",
+				parentID,
+				peek.Type,
+				peek.ID,
+			)
+		}
+		if peek.Type == spi.KindLoop || peek.Type == spi.KindPoll {
+			if err := rejectInlineBodyContractNodes(peek.ID, peek.Data.Body); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
 }
 
@@ -167,6 +266,7 @@ func validateNodeReferences(
 	currentNode node.AnyNode,
 	availableInitialInputs map[string]struct{},
 	availableNodeOutputs map[string]map[string]struct{},
+	openOutputNodes map[string]struct{},
 	options ParseOptions,
 ) error {
 	nodeID := currentNode.GetID()
@@ -206,6 +306,7 @@ func validateNodeReferences(
 			sourceNodeID,
 			outputKey,
 			availableNodeOutputs,
+			openOutputNodes,
 		); validateErr != nil {
 			// A step of the same name that never publishes the path leaves it to
 			// the flow input at run time (resolveDataRef), so accept it here too.
@@ -244,6 +345,7 @@ func validateNodeOutputReference(
 	sourceNodeID string,
 	outputKey string,
 	availableNodeOutputs map[string]map[string]struct{},
+	openOutputNodes map[string]struct{},
 ) error {
 	outputs, ok := availableNodeOutputs[sourceNodeID]
 	if !ok {
@@ -256,6 +358,9 @@ func validateNodeOutputReference(
 			sourceNodeID,
 			ref,
 		)
+	}
+	if _, open := openOutputNodes[sourceNodeID]; open {
+		return nil
 	}
 	if hasPathRoot(outputKey, outputs) || currentNode.GetRunWhen() == spi.RunWhenAlways {
 		return nil

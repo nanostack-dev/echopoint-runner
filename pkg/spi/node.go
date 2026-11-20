@@ -34,6 +34,10 @@ type ModuleExecutionRequest struct {
 	FlowID         string
 	FlowDefinition []byte
 	Inputs         map[string]any
+	// AllowContractNodes permits input and output nodes inside the nested flow.
+	// Set by ModuleNode for referenced function/module flows; loop and poll
+	// bodies leave it false so they cannot bypass the flow-level gate.
+	AllowContractNodes bool
 	// Ctx bounds the nested flow, such as a poll's timeout_ms. When nil, the
 	// calling node's context is used.
 	Ctx context.Context

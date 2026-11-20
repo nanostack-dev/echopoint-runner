@@ -19,6 +19,8 @@ type Flow struct {
 type ParseOptions struct {
 	AllowedInitialInputKeys   []string
 	AllowUnknownInitialInputs bool
+	AllowInputNodes           bool
+	AllowOutputNodes          bool
 }
 
 func ParseFromJSON(data []byte) (*Flow, error) {
