@@ -19,22 +19,29 @@ import (
 
 var uuidFormatPattern = regexp.MustCompile(`(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 
-// SchemaProperty describes one JSON Schema property on an input or output node.
-type SchemaProperty struct {
+// InputProperty describes one JSON Schema property on an input node.
+type InputProperty struct {
 	Type        string `json:"type,omitempty"`
 	Format      string `json:"format,omitempty"`
 	Description string `json:"description,omitempty"`
 	Enum        []any  `json:"enum,omitempty"`
 	Default     any    `json:"default,omitempty"`
-	Value       any    `json:"value,omitempty"`
 	Required    bool   `json:"required,omitempty"`
 	Secret      bool   `json:"secret,omitempty"`
 }
 
+// schemaConstraint holds the validation fields shared by input and output
+// JSON Schema properties.
+type schemaConstraint struct {
+	Type   string
+	Format string
+	Enum   []any
+}
+
 // InputData configures an input node using a JSON Schema object shape.
 type InputData struct {
-	Properties map[string]SchemaProperty `json:"properties"`
-	Required   []string                  `json:"required,omitempty"`
+	Properties map[string]InputProperty `json:"properties"`
+	Required   []string                 `json:"required,omitempty"`
 }
 
 // InputNode validates and exposes caller-supplied function inputs as node
@@ -75,7 +82,7 @@ func (n *InputNode) OutputSchema() []string {
 	return keys
 }
 
-func (n *InputNode) isRequired(name string, prop SchemaProperty) bool {
+func (n *InputNode) isRequired(name string, prop InputProperty) bool {
 	return prop.Required || slices.Contains(n.Data.Required, name)
 }
 
@@ -102,7 +109,8 @@ func (n *InputNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 			return n.createErrorResult(ctx.Inputs, userErr, startTime), userErr
 		}
 		if present && val != nil {
-			if err := validateSchemaProperty(name, val, prop); err != nil {
+			constraint := schemaConstraint{Type: prop.Type, Format: prop.Format, Enum: prop.Enum}
+			if err := validateSchemaProperty(name, val, constraint); err != nil {
 				userErr := spi.NewUserError("INPUT_INVALID", err.Error(), err)
 				return n.createErrorResult(ctx.Inputs, userErr, startTime), userErr
 			}
@@ -143,7 +151,7 @@ func (n *InputNode) createErrorResult(
 	}
 }
 
-func validateSchemaProperty(name string, val any, prop SchemaProperty) error {
+func validateSchemaProperty(name string, val any, prop schemaConstraint) error {
 	if err := validatePropertyType(name, val, prop.Type); err != nil {
 		return err
 	}

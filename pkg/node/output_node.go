@@ -10,10 +10,22 @@ import (
 	"github.com/nanostack-dev/echopoint-runner/pkg/spi"
 )
 
+// OutputProperty describes one JSON Schema property on an output node.
+// Value is required and holds the literal or template expression producing
+// the field.
+type OutputProperty struct {
+	Type        string `json:"type,omitempty"`
+	Format      string `json:"format,omitempty"`
+	Description string `json:"description,omitempty"`
+	Enum        []any  `json:"enum,omitempty"`
+	Value       any    `json:"value"`
+	Secret      bool   `json:"secret,omitempty"`
+}
+
 // OutputData configures an output node using JSON Schema properties whose
 // Value templates assemble the function's returned fields.
 type OutputData struct {
-	Properties map[string]SchemaProperty `json:"properties"`
+	Properties map[string]OutputProperty `json:"properties"`
 }
 
 // OutputNode resolves and validates the named output contract of a function
@@ -32,6 +44,25 @@ func AsOutputNode(candidate AnyNode) (*OutputNode, bool) {
 
 func (n *OutputNode) GetData() OutputData {
 	return n.Data
+}
+
+// Validate checks static output property invariants at parse time.
+func (n *OutputNode) Validate() error {
+	keys := make([]string, 0, len(n.Data.Properties))
+	for key := range n.Data.Properties {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		trimmed := strings.TrimSpace(key)
+		if trimmed == "" {
+			return fmt.Errorf("output node %s: property name cannot be empty", n.GetID())
+		}
+		if n.Data.Properties[key].Value == nil {
+			return fmt.Errorf("output node %s: property %q requires a value", n.GetID(), trimmed)
+		}
+	}
+	return nil
 }
 
 // InputSchema infers all template references used inside the output properties'
@@ -68,6 +99,14 @@ func (n *OutputNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 
 	for _, name := range keys {
 		prop := n.Data.Properties[name]
+		if prop.Value == nil {
+			userErr := spi.NewUserError(
+				"OUTPUT_VALUE_MISSING",
+				fmt.Sprintf("output %q requires a value", name),
+				nil,
+			)
+			return n.createErrorResult(ctx.Inputs, userErr, startTime), userErr
+		}
 		resolved, err := resolver.Resolve(prop.Value)
 		if err != nil {
 			userErr := spi.NewUserError(
@@ -77,7 +116,8 @@ func (n *OutputNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 			)
 			return n.createErrorResult(ctx.Inputs, userErr, startTime), userErr
 		}
-		if validateErr := validateSchemaProperty(name, resolved, prop); validateErr != nil {
+		constraint := schemaConstraint{Type: prop.Type, Format: prop.Format, Enum: prop.Enum}
+		if validateErr := validateSchemaProperty(name, resolved, constraint); validateErr != nil {
 			userErr := spi.NewUserError("OUTPUT_INVALID", validateErr.Error(), validateErr)
 			return n.createErrorResult(ctx.Inputs, userErr, startTime), userErr
 		}

@@ -200,6 +200,9 @@ func registerContractNodeKinds() {
 			if err := json.Unmarshal(data, &n); err != nil {
 				return nil, err
 			}
+			if err := n.Validate(); err != nil {
+				return nil, err
+			}
 			applyRunWhenDefault(&n.BaseNode)
 			return &n, nil
 		},

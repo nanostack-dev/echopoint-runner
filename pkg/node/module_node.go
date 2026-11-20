@@ -101,9 +101,10 @@ func (n *ModuleNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 	maps.Copy(childInputs, moduleInputs)
 
 	result, err := ctx.ModuleExecutor.ExecuteModule(spi.ModuleExecutionRequest{
-		FlowID:         flowID,
-		FlowDefinition: resolvedFlow.FlowDefinition,
-		Inputs:         childInputs,
+		FlowID:             flowID,
+		FlowDefinition:     resolvedFlow.FlowDefinition,
+		Inputs:             childInputs,
+		AllowContractNodes: true,
 	})
 	if err != nil {
 		return n.createErrorResult(ctx.Inputs, flowID, err, startTime, result), err
@@ -150,9 +151,16 @@ func (n *ModuleNode) resolveModuleInputs(parentInputs map[string]any) (map[strin
 func (n *ModuleNode) exportOutputs(result *spi.FlowExecutionResult) (map[string]any, error) {
 	if len(n.Data.OutputBindings) == 0 && result != nil {
 		outputs := make(map[string]any)
-		for _, nodeRes := range result.ExecutionResults {
-			if nodeRes == nil || nodeRes.GetNodeType() != spi.KindOutput || nodeRes.GetError() != nil {
+		for childNodeID, nodeRes := range result.ExecutionResults {
+			if nodeRes == nil || nodeRes.GetNodeType() != spi.KindOutput {
 				continue
+			}
+			if nodeRes.GetError() != nil {
+				return nil, fmt.Errorf(
+					"child output node %q failed: %w",
+					childNodeID,
+					nodeRes.GetError(),
+				)
 			}
 			maps.Copy(outputs, nodeRes.GetOutputs())
 		}
