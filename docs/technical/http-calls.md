@@ -20,6 +20,21 @@ A request node sends a request up to three times when its connection fails befor
 
 A `POST` or `PATCH` without an idempotency key is not resent after a reset: the target may already have run it, and a second send could create a duplicate. HTTP statuses and assertion failures are left to the flow. The motivating failures were Cloudflare connection resets that failed about 1% of the dev gate-flow runs in November 2026.
 
+### SSE reconnects
+
+An SSE node opens at most three connections ([`sse_reconnect.go`](../../pkg/node/sse_reconnect.go)). It reconnects after a connect failure, and after a stream the transport cuts (a reset or an unexpected EOF) before `max_events`, `completion_event` or an assertion stopped it. The same table decides: a `GET` stream reconnects, a `POST` stream without an idempotency key does not. The waits are 100 ms, then 200 ms, and every connection shares the node's `timeout_ms`; the `retry:` field is ignored. A clean end of stream, an HTTP status, an assertion failure and the deadline never reconnect. Each connection is its own call.
+
+What happens to the events already collected depends on whether the stream gave event ids:
+
+| Stream | Reconnect | Events after the reconnect |
+| --- | --- | --- |
+| Gave an `id:` | Resume: sends `Last-Event-ID` with the last id | Kept; an event whose id was already collected is dropped, so a server that ignores `Last-Event-ID` and replays is not counted twice |
+| Gave no id | Restart | Discarded with their assertion results; the node collects the new connection's events only |
+
+Restart fits servers that replay the stream on every connect, such as Echopoint's execution stream: it sends no ids, ignores `Last-Event-ID` and replays every stored event, then the live ones. On a live-only server without ids, a restart loses the events sent before the cut. A restart never runs when an event assertion already failed under `stop_on_assertion_failure: false`, because it would erase that failure; the node fails with `SSE stream read error` as before. After the last attempt the node fails with that error and the last connection's events.
+
+The motivating failure was a gate run on 2026-11-19 whose SSE nodes failed on `connection reset by peer` from Cloudflare while the API logged the streams as 200.
+
 ## Format
 
 Calls are grouped by sending node, method, host and path template ([`spi.HTTPCallGroup`](../../pkg/spi/http_call.go)). The fixed fields are stored once; the varying ones are parallel arrays where index `i` is call `i`, in start order.
