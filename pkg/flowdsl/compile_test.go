@@ -13,7 +13,7 @@ import (
 
 const loginYAML = `
 name: "anchor: login (reusable)"
-role: module
+role: function
 id: eac266b3-2f3f-41b4-b061-f63b92b7b80e
 folder: Anchor/Modules
 inputs: [email, password]
@@ -36,7 +36,7 @@ nodes:
 
 const memberYAML = `
 name: "echopoint: organization member role"
-role: standalone
+role: test
 tags: [echopoint]
 folder: 11111111-1111-4111-8111-111111111111
 nodes:
@@ -119,7 +119,7 @@ func assertCompiledLogin(t *testing.T, login wire.CreateFlowRequest) {
 	if login.FolderId != nil {
 		t.Fatalf("folder path was sent: %v", login.FolderId)
 	}
-	if login.Role == nil || *login.Role != wire.FlowRoleModule {
+	if login.Role == nil || *login.Role != wire.FlowRoleFunction {
 		t.Fatalf("role: %v", login.Role)
 	}
 	request := nodeByID(t, login, "request")
@@ -141,7 +141,7 @@ func TestModuleFileWithoutAnIDStillCompilesOnItsOwn(t *testing.T) {
 	root := t.TempDir()
 	writeFlow(t, root, "anchor/login.flow.yaml", `
 name: "anchor: login (reusable)"
-role: module
+role: function
 nodes:
   request:
     request:
@@ -422,7 +422,7 @@ func TestModuleWarnsOnARepeatedPublicOutput(t *testing.T) {
 	root := t.TempDir()
 	writeFlow(t, root, "mod.flow.yaml", `
 name: mod
-role: module
+role: function
 nodes:
   first:
     request:

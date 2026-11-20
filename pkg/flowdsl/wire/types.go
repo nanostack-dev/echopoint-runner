@@ -50,8 +50,8 @@ const (
 )
 
 const (
-	FlowRoleModule     FlowRole = "module"
-	FlowRoleStandalone FlowRole = "standalone"
+	FlowRoleFunction FlowRole = "function"
+	FlowRoleTest     FlowRole = "test"
 )
 
 const (

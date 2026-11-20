@@ -119,6 +119,9 @@ const (
 	kindInput   = "input"
 	kindOutput  = "output"
 
+	roleTest     = "test"
+	roleFunction = "function"
+
 	// kindIntegration is a request or webhook_wait node that an integration fills at launch.
 	kindIntegration = "integration"
 )

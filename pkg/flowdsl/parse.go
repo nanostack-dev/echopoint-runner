@@ -103,8 +103,8 @@ func (g *graph) readFile(m ymap) {
 	if g.name == "" {
 		g.add(Error, orLine(m, "name"), "name is required")
 	}
-	if g.role != "" && g.role != "standalone" && g.role != kindModule {
-		g.add(Error, m.keyLine("role"), "role must be standalone or module")
+	if g.role != "" && g.role != roleTest && g.role != roleFunction {
+		g.add(Error, m.keyLine("role"), "role must be test or function")
 	}
 	if g.id != "" && !isFlowID(g.id) {
 		g.add(Error, m.keyLine("id"), "id %q is not a flow id", g.id)

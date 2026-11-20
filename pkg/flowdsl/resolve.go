@@ -508,7 +508,7 @@ func (g *graph) publicName(name string) bool {
 	if len(g.public) > 0 {
 		return slices.Contains(g.public, name)
 	}
-	return g.role == kindModule
+	return g.role == roleFunction
 }
 
 func nodeExports(n *dslNode) map[string]string {

@@ -247,7 +247,7 @@ func TestFillIntegrationsSetsTheOperationTarget(t *testing.T) {
 const integrationJSON = `{
   "id": "44444444-4444-4444-8444-444444444444",
   "name": "integration shapes",
-  "role": "standalone",
+  "role": "test",
   "version": "1.0",
   "flow_definition": {
     "name": "integration shapes",

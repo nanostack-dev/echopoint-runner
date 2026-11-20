@@ -13,7 +13,7 @@ func TestCompileAndDecompileContractNodes(t *testing.T) {
 	t.Parallel()
 
 	source := `name: Provision user
-role: module
+role: function
 nodes:
   in:
     input:
@@ -89,7 +89,7 @@ func TestContractNodeDiagnostics(t *testing.T) {
 	t.Run("missing output value", func(t *testing.T) {
 		t.Parallel()
 		source := `name: Bad output
-role: module
+role: function
 nodes:
   out:
     output:
