@@ -58,9 +58,18 @@ const CapabilityFormBody = "form_body"
 // reads the run inbox and derives the text, links and code of a message.
 const CapabilityEmailWait = "email_wait"
 
+// CapabilityContractNodes declares that this runner parses and executes
+// `input` and `output` contract nodes (ADR-0037).
+const CapabilityContractNodes = "contract_nodes"
+
 // Capabilities lists what this runner build supports, declared on every claim.
 func Capabilities() []string {
-	return []string{CapabilitySecretOutputs, CapabilityFormBody, CapabilityEmailWait}
+	return []string{
+		CapabilitySecretOutputs,
+		CapabilityFormBody,
+		CapabilityEmailWait,
+		CapabilityContractNodes,
+	}
 }
 
 // claimNextBody is the wire form of a claim: the request plus the capabilities

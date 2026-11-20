@@ -12,4 +12,6 @@ import (
 func TestCapabilitiesIncludeSecretOutputs(t *testing.T) {
 	assert.Contains(t, jobrunner.Capabilities(), "secret_outputs")
 	assert.Contains(t, jobrunner.Capabilities(), "form_body")
+	assert.Contains(t, jobrunner.Capabilities(), "email_wait")
+	assert.Contains(t, jobrunner.Capabilities(), "contract_nodes")
 }
