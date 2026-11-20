@@ -22,7 +22,7 @@ const libraryJSON = `{
   "id": "33333333-3333-4333-8333-333333333333",
   "name": "library shapes",
   "description": "round trip",
-  "role": "standalone",
+  "role": "test",
   "tags": ["echopoint"],
   "version": "1.0",
   "folder_id": "22222222-2222-4222-8222-222222222222",
@@ -199,7 +199,7 @@ nodes:
 func TestDecompileRoundTripsAFilterAndAnInlineBody(t *testing.T) {
 	assertRoundTrip(t, []byte(`{
 	  "name": "filter",
-	  "role": "standalone",
+	  "role": "test",
 	  "version": "1.0",
 	  "flow_definition": {
 	    "name": "filter",
@@ -232,7 +232,7 @@ func TestDecompileRoundTripsAFilterAndAnInlineBody(t *testing.T) {
 	}`))
 	assertRoundTrip(t, []byte(`{
 	  "name": "wait",
-	  "role": "standalone",
+	  "role": "test",
 	  "version": "1.0",
 	  "flow_definition": {
 	    "name": "wait",
@@ -259,7 +259,7 @@ func TestDecompileRoundTripsAFilterAndAnInlineBody(t *testing.T) {
 	}`))
 	assertRoundTrip(t, []byte(`{
 	  "name": "empty object",
-	  "role": "standalone",
+	  "role": "test",
 	  "version": "1.0",
 	  "flow_definition": {
 	    "name": "empty object",
@@ -718,7 +718,7 @@ func preview(value any) string {
 func TestDecompileRoundTripsAFormBody(t *testing.T) {
 	assertRoundTrip(t, []byte(`{
   "name": "form body",
-  "role": "standalone",
+  "role": "test",
   "version": "1.0",
   "flow_definition": {
     "name": "form body",

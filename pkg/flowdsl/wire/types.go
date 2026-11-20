@@ -50,8 +50,8 @@ const (
 )
 
 const (
-	FlowRoleModule     FlowRole = "module"
-	FlowRoleStandalone FlowRole = "standalone"
+	FlowRoleFunction FlowRole = "function"
+	FlowRoleTest     FlowRole = "test"
 )
 
 const (
@@ -179,7 +179,7 @@ type CreateFlowRequest struct {
 	// Examples: User API Test Flow
 	Name string `json:"name"`
 
-	// Role How the flow may be run. Omitted defaults to `standalone`.
+	// Role How the flow may be run. Omitted defaults to `test`.
 	Role *FlowRole `json:"role,omitempty"`
 
 	// Tags Optional flat tags for the flow. Lowercased, normalized, deduplicated, and sorted on write. Omitted defaults to an empty list.
@@ -225,10 +225,11 @@ type Flow struct {
 	// Examples: org_123
 	OrganizationId string `json:"organization_id"`
 
-	// Role How a flow may be run. A `standalone` flow is a test of its own. A `module` flow is a
-	// reusable building block that other flows call through a module node: you can still
-	// launch it directly to test it, but schedules skip it when their tags match it unless
-	// the schedule sets `ignore_modules` to false.
+	// Role How a flow may be run. A `test` flow verifies a scenario and produces a
+	// pass/fail verdict. A `function` flow is a reusable parameterized building block
+	// that other flows call through a module (`Function call`) step: you can still
+	// launch it directly to test it, but schedules skip it when their tags match it
+	// unless told otherwise.
 	Role FlowRole `json:"role"`
 
 	// Tags Flat canonical tags associated with the flow (lowercase, normalized, deduplicated, sorted).
@@ -336,10 +337,9 @@ type FlowNode struct {
 // FlowNodeRunWhen Controls whether a node runs only in the normal success path or also after the main flow has already failed.
 type FlowNodeRunWhen string
 
-// FlowRole How a flow may be run. A `standalone` flow is a test of its own. A `module` flow is a
-// reusable building block that other flows call through a module node: you can still
-// launch it directly to test it, but schedules skip it when their tags match it unless
-// the schedule sets `ignore_modules` to false.
+// FlowRole How a flow may be run. A `test` flow verifies a scenario and produces a
+// pass/fail verdict. A `function` flow is a reusable parameterized building block
+// that other flows call through a module (`Function call`) step.
 type FlowRole string
 
 // HttpMethod HTTP method
