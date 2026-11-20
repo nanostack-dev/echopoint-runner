@@ -174,66 +174,21 @@ func (n *SseNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 	streamCtx, cancel := context.WithTimeout(ctx.Context(), timeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(streamCtx, method, url, nil)
+	stream := sseStream{
+		node: n, method: method, url: url, headers: headers,
+		parser: &sseParser{node: n, assertions: assertions, seenIDs: map[string]struct{}{}},
+	}
+	exchange, err := stream.run(streamCtx)
 	if err != nil {
-		wrapped := spi.NewUserError(
-			"SSE_FAILED", fmt.Sprintf("Could not build the SSE request for %s", requestHost(url)), err,
-		)
-		return n.createErrorResult(ctx.Inputs, sseExchange{Method: method, URL: url}, wrapped, startTime), wrapped
-	}
-	req.Header.Set("Accept", "text/event-stream")
-	req.Header.Set("Cache-Control", "no-cache")
-	for key, value := range headers {
-		req.Header.Set(key, value)
-	}
-
-	// No client-level timeout: streaming is bounded by streamCtx instead, so a
-	// long-lived stream is not aborted mid-read by an http.Client deadline.
-	client := recordingClient(n.GetID(), n.Data.URL, true)
-	resp, err := client.Do(req)
-	if err != nil {
-		if userErr, ok := spi.AsUserError(err); ok {
-			return n.createErrorResult(ctx.Inputs, sseExchange{Method: method, URL: url}, userErr, startTime), userErr
-		}
-		// The overall deadline can elapse during the connect/header phase (a slow
-		// producer that has not yet sent the status line). That is the configured
-		// timeout_ms stop condition, not a node failure — return a clean,
-		// empty-event success result so callers see "timeout", not an error.
-		if contextDone(streamCtx) {
-			result := n.createSuccessResult(
-				ctx.Inputs,
-				sseExchange{Method: method, URL: url, StopReason: sseStopTimeout},
-				startTime,
-			)
-			return result, nil
-		}
-		wrapped := classifyRequestError(url, err)
-		return n.createErrorResult(ctx.Inputs, sseExchange{Method: method, URL: url}, wrapped, startTime), wrapped
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		statusErr := spi.NewUserError(
-			"SSE_FAILED", fmt.Sprintf("SSE endpoint returned non-2xx status: %d", resp.StatusCode), nil,
-		)
-		return n.createErrorResult(ctx.Inputs, sseExchange{Method: method, URL: url}, statusErr, startTime), statusErr
-	}
-
-	events, assertionResults, stopReason, streamErr := n.consume(streamCtx, resp.Body, assertions)
-	exchange := sseExchange{
-		Method: method, URL: url, Events: events, AssertionResults: assertionResults, StopReason: stopReason,
-	}
-	if streamErr != nil {
-		return n.createErrorResult(
-			ctx.Inputs, exchange, streamErr, startTime,
-		), streamErr
+		return n.createErrorResult(ctx.Inputs, exchange, err, startTime), err
 	}
 
 	result := n.createSuccessResult(ctx.Inputs, exchange, startTime)
 	log.Info().
 		Str("nodeID", n.GetID()).
-		Int("eventCount", len(events)).
-		Str("stopReason", stopReason).
+		Int("eventCount", len(exchange.Events)).
+		Str("stopReason", exchange.StopReason).
+		Int("connections", stream.connections).
 		Int64("durationMs", result.DurationMs).
 		Msg("SSE node executed successfully")
 	return result, nil
@@ -285,6 +240,25 @@ type sseParser struct {
 	haveData         bool
 	events           []any
 	assertionResults []spi.AssertionResult
+	// eventID is the explicit id field of the event being buffered, if any.
+	eventID    string
+	hasEventID bool
+	// idBuffer is the spec's last event ID buffer: set by an id field, it
+	// survives id-less events. lastEventID is the id committed at the last
+	// dispatch, sent as Last-Event-ID when the stream resumes; an id whose
+	// event the cut left unfinished is never committed.
+	idBuffer    string
+	lastEventID string
+	// idlessEvents records a collected event without its own id: a resume
+	// could not recognise its replay, so the stream restarts instead.
+	idlessEvents bool
+	// seenIDs holds the explicit ids of every collected event; skipSeen drops a
+	// repeated id on a resumed connection whose server ignored Last-Event-ID.
+	seenIDs  map[string]struct{}
+	skipSeen bool
+	// assertionFailed records a failing event assertion the stream survived
+	// (stop_on_assertion_failure off); a restart would erase it.
+	assertionFailed bool
 }
 
 // feed processes one stream line. It returns a stop reason (empty when the
@@ -307,8 +281,15 @@ func (p *sseParser) feed(line string) (string, error) {
 		p.haveData = true
 	case "event":
 		p.eventName = value
-	case "id", "retry":
-		// Recorded by the spec but not needed for assertion/accumulation.
+	case "id":
+		// Per the spec, an id containing NULL is ignored and an empty id resets
+		// the last event ID.
+		if !strings.ContainsRune(value, 0) {
+			p.eventID, p.hasEventID = value, true
+			p.idBuffer = value
+		}
+	case "retry":
+		// The reconnect delay is the runner's own bounded backoff.
 	default:
 		// Unknown field — ignore per the SSE spec.
 	}
@@ -318,13 +299,26 @@ func (p *sseParser) feed(line string) (string, error) {
 // dispatch finalizes the buffered event, runs its assertions, and reports any
 // stop condition triggered by it.
 func (p *sseParser) dispatch() (string, error) {
+	// The spec commits the last event ID at every dispatch, even of an
+	// event that carries no data.
+	p.lastEventID = p.idBuffer
 	if !p.haveData && p.eventName == "" {
+		p.eventID, p.hasEventID = "", false
 		return "", nil
 	}
 	ev := sseEvent{name: p.eventName, data: strings.Join(p.dataLines, "\n")}
-	p.dataLines = nil
-	p.eventName = ""
-	p.haveData = false
+	eventID, hasEventID := p.eventID, p.hasEventID && p.eventID != ""
+	p.clearBuffer()
+
+	if hasEventID {
+		if _, seen := p.seenIDs[eventID]; seen && p.skipSeen {
+			// A replay of an event this node already collected.
+			return "", nil
+		}
+		p.seenIDs[eventID] = struct{}{}
+	} else {
+		p.idlessEvents = true
+	}
 
 	parsed := parseSseData(ev.data)
 	p.events = append(p.events, parsed)
@@ -332,8 +326,11 @@ func (p *sseParser) dispatch() (string, error) {
 
 	results, assertErr := p.node.evaluateEventAssertions(p.assertions, parsed, eventIndex)
 	p.assertionResults = append(p.assertionResults, results...)
-	if assertErr != nil && p.node.stopOnAssertionFailure() {
-		return sseStopAssertionFailure, assertErr
+	if assertErr != nil {
+		if p.node.stopOnAssertionFailure() {
+			return sseStopAssertionFailure, assertErr
+		}
+		p.assertionFailed = true
 	}
 
 	if p.node.Data.CompletionEvent != "" &&
@@ -344,6 +341,16 @@ func (p *sseParser) dispatch() (string, error) {
 		return sseStopMaxEvents, nil
 	}
 	return "", nil
+}
+
+// clearBuffer drops the event being buffered. Every connection ends with it,
+// so an id line of an event the cut left unfinished is forgotten too.
+func (p *sseParser) clearBuffer() {
+	p.dataLines = nil
+	p.eventName = ""
+	p.haveData = false
+	p.eventID, p.hasEventID = "", false
+	p.idBuffer = p.lastEventID
 }
 
 // contextDone reports whether ctx has been cancelled or has hit its deadline.
@@ -359,34 +366,34 @@ func contextDone(ctx context.Context) bool {
 	}
 }
 
-// consume stream-parses the SSE body, dispatching events and running per-event
-// assertions until a stop condition is met. It returns the collected event data
-// (parsed), the accumulated assertion results (Index = event index), the stop
-// reason, and a non-nil error only when streaming failed (read error or an
-// assertion failure with stop_on_assertion_failure).
-func (n *SseNode) consume(
-	ctx context.Context, body io.Reader, assertions []CompositeAssertion,
-) ([]any, []spi.AssertionResult, string, error) {
+// consume stream-parses one connection's body into p, dispatching events and
+// running per-event assertions until a stop condition is met. It returns the
+// stop reason, a failing assertion under stop_on_assertion_failure, and the raw
+// error that ended the read when the target closed or reset the stream. An
+// event left half-received by a cut connection is dropped, as the spec says.
+func (n *SseNode) consume(ctx context.Context, body io.Reader, p *sseParser) (string, error, error) {
 	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, 0, sseScannerInitBytes), sseScannerBufferBytes)
-
-	p := &sseParser{node: n, assertions: assertions, events: make([]any, 0)}
+	defer p.clearBuffer()
+	if p.events == nil {
+		p.events = make([]any, 0)
+	}
 
 	for scanner.Scan() {
 		// Honor cancellation/deadline between lines so a slow producer cannot
 		// keep us reading past the overall timeout. A done context is the
 		// configured timeout_ms stop condition, not a node failure.
 		if contextDone(ctx) {
-			return p.events, p.assertionResults, sseStopTimeout, nil
+			return sseStopTimeout, nil, nil
 		}
 
 		line := strings.TrimRight(scanner.Text(), "\r")
 		stopReason, err := p.feed(line)
 		if err != nil {
-			return p.events, p.assertionResults, stopReason, err
+			return stopReason, err, nil
 		}
 		if stopReason != "" {
-			return p.events, p.assertionResults, stopReason, nil
+			return stopReason, nil, nil
 		}
 	}
 
@@ -394,14 +401,9 @@ func (n *SseNode) consume(
 	// read error; in both cases treat it as a clean timeout-bounded stop rather
 	// than a node failure.
 	if contextDone(ctx) {
-		return p.events, p.assertionResults, sseStopTimeout, nil
+		return sseStopTimeout, nil, nil
 	}
-	if err := scanner.Err(); err != nil {
-		// The target closed or reset the stream; the cause stays off the log line.
-		readErr := spi.NewUserError("SSE_FAILED", "SSE stream read error", err)
-		return p.events, p.assertionResults, sseStopEOF, readErr
-	}
-	return p.events, p.assertionResults, sseStopEOF, nil
+	return sseStopEOF, nil, scanner.Err()
 }
 
 // evaluateEventAssertions runs every node assertion against a single event's
