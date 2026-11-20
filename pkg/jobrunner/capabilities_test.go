@@ -9,7 +9,9 @@ import (
 
 // A caller that claims jobs itself, such as the CLI's ephemeral run, declares
 // what the runner it embeds supports.
-func TestCapabilitiesIncludeSecretOutputs(t *testing.T) {
+func TestCapabilitiesDeclareThisBuildsFeatures(t *testing.T) {
 	assert.Contains(t, jobrunner.Capabilities(), "secret_outputs")
 	assert.Contains(t, jobrunner.Capabilities(), "form_body")
+	assert.Contains(t, jobrunner.Capabilities(), "email_wait")
+	assert.Contains(t, jobrunner.Capabilities(), "contract_nodes")
 }

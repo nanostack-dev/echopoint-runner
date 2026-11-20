@@ -1,6 +1,6 @@
 # Input and output nodes
 
-`input` (`spi.KindInput`) and `output` (`spi.KindOutput`) declare a flow's typed caller contract using JSON Schema properties.
+`input` (`spi.KindInput`) and `output` (`spi.KindOutput`) declare a flow's typed caller contract using JSON Schema properties. The runner declares `contract_nodes` on every claim (`controlplane.CapabilityContractNodes`); the control plane refuses contract-node jobs to older runners with `RUNNER_UPGRADE_REQUIRED`.
 
 ## Parse-time gates
 
