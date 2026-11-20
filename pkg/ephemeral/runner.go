@@ -28,6 +28,8 @@ func Run(pkg *Package, opts ...runner.Option) Result {
 
 	flowDef, err := flowpkg.ParseFromJSONWithOptions(pkg.FlowDefinition, flowpkg.ParseOptions{
 		AllowedInitialInputKeys: inputKeys,
+		AllowInputNodes:         pkg.AllowInputNodes,
+		AllowOutputNodes:        pkg.AllowOutputNodes,
 	})
 	if err != nil {
 		log.Warn().

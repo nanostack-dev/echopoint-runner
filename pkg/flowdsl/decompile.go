@@ -193,6 +193,10 @@ func addKind(body *mapBuilder, shell nodeShell, node wire.FlowNode) error {
 		return addEmail(body, node)
 	case kindSSE:
 		return addSSE(body, node)
+	case kindInput:
+		return addInput(body, node)
+	case kindOutput:
+		return addOutput(body, node)
 	default:
 		return fmt.Errorf("unknown kind %q", shell.kind)
 	}

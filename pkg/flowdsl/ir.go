@@ -116,6 +116,8 @@ const (
 	kindWebhook = "webhook_wait"
 	kindEmail   = "email_wait"
 	kindSSE     = "sse"
+	kindInput   = "input"
+	kindOutput  = "output"
 
 	// kindIntegration is a request or webhook_wait node that an integration fills at launch.
 	kindIntegration = "integration"
@@ -125,7 +127,7 @@ const (
 // set_variable node.
 var kindKeys = []string{
 	"request", kindModule, "delay", "set", "assert", "branch", "poll", "loop", "webhook_wait", kindEmail,
-	"sse", kindIntegration,
+	"sse", kindIntegration, kindInput, kindOutput,
 }
 
 func canonicalKind(key string) string {
@@ -222,6 +224,8 @@ type dslNode struct {
 	mail    *mailSpec
 	sse     *sseSpec
 	integ   *integSpec
+	input   *inputSpec
+	output  *outputSpec
 }
 
 type outDecl struct {
@@ -342,4 +346,35 @@ type sseSpec struct {
 	maxEvents  *int
 	completion *string
 	stop       *bool
+}
+
+type inputPropSpec struct {
+	name        string
+	schemaType  string
+	format      string
+	description string
+	enum        []any
+	hasDefault  bool
+	defaultVal  any
+	required    bool
+	secret      bool
+}
+
+type inputSpec struct {
+	properties []inputPropSpec
+	required   []string
+}
+
+type outputPropSpec struct {
+	name        string
+	schemaType  string
+	format      string
+	description string
+	enum        []any
+	value       any
+	secret      bool
+}
+
+type outputSpec struct {
+	properties []outputPropSpec
 }

@@ -20,6 +20,10 @@ type Package struct {
 	ReferencedFlows flowpkg.ReferencedFlowRegistry `json:"referenced_flows,omitempty"`
 	// MaxHTTPCallsPerExecution is the HTTP call limit; zero records without one.
 	MaxHTTPCallsPerExecution int `json:"max_http_calls_per_execution,omitempty"`
+	// AllowInputNodes permits an input contract node in FlowDefinition.
+	AllowInputNodes bool `json:"allow_input_nodes,omitempty"`
+	// AllowOutputNodes permits an output contract node in FlowDefinition.
+	AllowOutputNodes bool `json:"allow_output_nodes,omitempty"`
 }
 
 // Result is the ephemeral execution result the runner writes to stdout or a

@@ -35,6 +35,10 @@ func (g *graph) parseKind(node *dslNode, key string, body *yaml.Node) {
 		g.parseSSE(node, body)
 	case kindIntegration:
 		g.parseIntegration(node, body)
+	case kindInput:
+		g.parseInput(node, body)
+	case kindOutput:
+		g.parseOutput(node, body)
 	default:
 		g.add(Error, lineOf(body), "node %q: unknown kind %q", node.id, key)
 	}
