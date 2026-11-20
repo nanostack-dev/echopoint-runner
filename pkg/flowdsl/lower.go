@@ -144,6 +144,10 @@ func lowerNode(n *dslNode) (wire.FlowNode, error) {
 		return lowerSSE(n)
 	case kindIntegration:
 		return lowerIntegration(n)
+	case kindInput:
+		return lowerInput(n)
+	case kindOutput:
+		return lowerOutput(n)
 	default:
 		return wire.FlowNode{}, fmt.Errorf("node %q has no kind", n.id)
 	}

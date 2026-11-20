@@ -35,6 +35,8 @@ const (
 
 const (
 	EmailWaitFlowNodeTypeEmailWait EmailWaitFlowNodeType = "email_wait"
+	InputFlowNodeTypeInput         InputFlowNodeType     = "input"
+	OutputFlowNodeTypeOutput       OutputFlowNodeType    = "output"
 )
 
 const (
@@ -1227,6 +1229,100 @@ func (t *FlowNode) FromEmailWaitFlowNode(v EmailWaitFlowNode) error {
 
 func (t FlowNode) AsEmailWaitFlowNode() (EmailWaitFlowNode, error) {
 	var body EmailWaitFlowNode
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// InputFlowNode declares the typed input contract of a function flow.
+type InputFlowNode struct {
+	Data        InputNodeData     `json:"data"`
+	DisplayName string            `json:"display_name"`
+	Id          string            `json:"id"`
+	RunWhen     *FlowNodeRunWhen  `json:"run_when,omitempty"`
+	Type        InputFlowNodeType `json:"type"`
+}
+
+// InputFlowNodeType defines model for InputFlowNode.Type.
+type InputFlowNodeType string
+
+// InputNodeData configures an input contract node.
+type InputNodeData struct {
+	Properties map[string]InputProperty `json:"properties"`
+	Required   *[]string                `json:"required,omitempty"`
+}
+
+// InputProperty describes one JSON Schema property on an input node.
+type InputProperty struct {
+	Type        *string `json:"type,omitempty"`
+	Format      *string `json:"format,omitempty"`
+	Description *string `json:"description,omitempty"`
+	Enum        *[]any  `json:"enum,omitempty"`
+	Default     *any    `json:"default,omitempty"`
+	Required    *bool   `json:"required,omitempty"`
+	Secret      *bool   `json:"secret,omitempty"`
+}
+
+// OutputFlowNode declares the typed output contract of a function flow.
+type OutputFlowNode struct {
+	Data        OutputNodeData     `json:"data"`
+	DisplayName string             `json:"display_name"`
+	Id          string             `json:"id"`
+	RunWhen     *FlowNodeRunWhen   `json:"run_when,omitempty"`
+	Type        OutputFlowNodeType `json:"type"`
+}
+
+// OutputFlowNodeType defines model for OutputFlowNode.Type.
+type OutputFlowNodeType string
+
+// OutputNodeData configures an output contract node.
+type OutputNodeData struct {
+	Properties map[string]OutputProperty `json:"properties"`
+}
+
+// OutputProperty describes one JSON Schema property on an output node.
+type OutputProperty struct {
+	Type        *string `json:"type,omitempty"`
+	Format      *string `json:"format,omitempty"`
+	Description *string `json:"description,omitempty"`
+	Enum        *[]any  `json:"enum,omitempty"`
+	Value       any     `json:"value"`
+	Secret      *bool   `json:"secret,omitempty"`
+}
+
+func (t *FlowNode) FromInputFlowNode(v InputFlowNode) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = jsonMerge(b, []byte(`{"type":"input"}`))
+	if err != nil {
+		return err
+	}
+	t.union = b
+	return nil
+}
+
+func (t FlowNode) AsInputFlowNode() (InputFlowNode, error) {
+	var body InputFlowNode
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+func (t *FlowNode) FromOutputFlowNode(v OutputFlowNode) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = jsonMerge(b, []byte(`{"type":"output"}`))
+	if err != nil {
+		return err
+	}
+	t.union = b
+	return nil
+}
+
+func (t FlowNode) AsOutputFlowNode() (OutputFlowNode, error) {
+	var body OutputFlowNode
 	err := json.Unmarshal(t.union, &body)
 	return body, err
 }

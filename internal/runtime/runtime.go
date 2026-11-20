@@ -247,6 +247,8 @@ func (r *Runtime) executeClaimedJob(ctx context.Context, active *activeJob) (Out
 
 	flowDef, err := flowpkg.ParseFromJSONWithOptions(active.job.FlowDefinition, flowpkg.ParseOptions{
 		AllowedInitialInputKeys: sortedInputKeys(active.job.Inputs),
+		AllowInputNodes:         true,
+		AllowOutputNodes:        true,
 	})
 	if err != nil {
 		parseErr := spi.NewUserError("FLOW_DEFINITION_INVALID", "parse flow definition", err)

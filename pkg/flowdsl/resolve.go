@@ -396,6 +396,18 @@ func declaredOutputs(n *dslNode) map[string]bool {
 		}
 		addWebhookOutputs(out)
 		addDeclared(out, n.outputs)
+	case kindInput:
+		if n.input != nil {
+			for _, prop := range n.input.properties {
+				out[prop.name] = true
+			}
+		}
+	case kindOutput:
+		if n.output != nil {
+			for _, prop := range n.output.properties {
+				out[prop.name] = true
+			}
+		}
 	default:
 		addDeclared(out, n.outputs)
 	}
@@ -512,6 +524,12 @@ func nodeExports(n *dslNode) map[string]string {
 		for _, item := range n.vars {
 			out[item.key] = n.id + "." + item.key
 		}
+	case kindOutput:
+		if n.output != nil {
+			for _, prop := range n.output.properties {
+				out[prop.name] = n.id + "." + prop.name
+			}
+		}
 	}
 	return out
 }
@@ -558,6 +576,11 @@ func nodeTexts(n *dslNode) []string {
 	if n.sse != nil {
 		add(n.sse.url)
 		add(pairValues(n.sse.headers))
+	}
+	if n.output != nil {
+		for _, prop := range n.output.properties {
+			add(prop.value)
+		}
 	}
 	for _, item := range n.expects {
 		add(item.OperatorData)
