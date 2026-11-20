@@ -103,12 +103,15 @@ func (s *sseStream) connectFailed(
 		exchange, failure := s.outOfTime(cutErr)
 		return false, exchange, failure
 	}
-	if attempt >= sseConnectAttempts || !retryableTransportError(s.method, req.Header, err) {
+	if attempt >= sseConnectAttempts ||
+		!retryableTransportError(s.method, req.Header, err) ||
+		waitBeforeRetry(ctx, attempt) != nil {
+		// A deadline that elapses during the backoff leaves this failure as
+		// the outcome, not a clean timeout: no stream was read.
+		if cutErr != nil {
+			return false, s.exchange(sseStopEOF), cutErr
+		}
 		return false, s.exchange(""), classifyRequestError(s.url, err)
-	}
-	if waitBeforeRetry(ctx, attempt) != nil {
-		exchange, failure := s.outOfTime(cutErr)
-		return false, exchange, failure
 	}
 	s.logReconnect(attempt, "connect", "")
 	return true, sseExchange{}, nil
@@ -149,8 +152,8 @@ func (s *sseStream) newRequest(ctx context.Context) (*http.Request, error) {
 	for key, value := range s.headers {
 		req.Header.Set(key, value)
 	}
-	// Set only once the stream gave an id, so a configured Last-Event-ID still
-	// opens the first connection.
+	// Set only once the stream committed an id, so a configured Last-Event-ID
+	// still opens the first connection.
 	if s.parser.lastEventID != "" {
 		req.Header.Set("Last-Event-ID", s.parser.lastEventID)
 	}
@@ -180,25 +183,34 @@ func (s *sseStream) logReconnect(attempt int, phase, mode string) {
 	event.Msg("SSE node reconnecting after a transport failure")
 }
 
+// resumable reports whether the next connection can resume: every collected
+// event carried its own id, so a replay is recognised, and the last one was
+// committed.
+func (p *sseParser) resumable() bool {
+	return p.lastEventID != "" && !p.idlessEvents
+}
+
 // canReconnect reports whether a cut stream may reopen without hiding an
 // outcome: a restart would erase a failing event assertion the node survived.
 func (p *sseParser) canReconnect() bool {
-	return p.lastEventID != "" || !p.assertionFailed
+	return p.resumable() || !p.assertionFailed
 }
 
 // prepareReconnect readies the parser for the next connection and returns its
-// mode. With a last event id the collected events stay and repeated ids are
-// dropped; without one the collected events and their assertion results are
-// discarded, so a server that replays its stream (as Echopoint's execution
-// stream does) is not counted twice.
+// mode. When resumable, the collected events stay and repeated ids are
+// dropped; otherwise the collected events and their assertion results are
+// discarded and no Last-Event-ID is sent, so a server that replays its stream
+// (as Echopoint's execution stream does) is not counted twice.
 func (p *sseParser) prepareReconnect() string {
-	if p.lastEventID != "" {
+	if p.resumable() {
 		p.skipSeen = true
 		return sseReconnectResume
 	}
-	p.events = make([]any, 0)
+	p.events = nil
 	p.assertionResults = nil
 	p.seenIDs = map[string]struct{}{}
 	p.skipSeen = false
+	p.idlessEvents = false
+	p.idBuffer, p.lastEventID = "", ""
 	return sseReconnectRestart
 }

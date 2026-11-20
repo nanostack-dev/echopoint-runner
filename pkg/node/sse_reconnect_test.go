@@ -239,3 +239,76 @@ func TestSseNode_ReconnectsWhenTheFirstConnectionIsReset(t *testing.T) {
 	assert.Equal(t, seqs(1), res.Events)
 	assert.Equal(t, 2, hits)
 }
+
+// An id is committed only when its event is dispatched: a cut inside an event,
+// or inside its id line, must not move Last-Event-ID past the last full event.
+func TestSseNode_ResumesFromTheLastDispatchedEvent(t *testing.T) {
+	cases := map[string]string{
+		"cut inside the event data": "id: 2\ndata: {\"se",
+		"cut inside the id line":    "id: 2",
+	}
+	for name, tail := range cases {
+		t.Run(name, func(t *testing.T) {
+			srv, headers := scriptedSseServer(t,
+				sseConn{frames: []string{idFrame("1", seq(1)), tail}, cut: cutShort},
+				sseConn{frames: []string{idFrame("2", seq(2)), idFrame("3", seq(3))}},
+			)
+			n := sseNode(t, srv.URL, node.SseData{TimeoutMs: 5000, MaxEvents: 3})
+
+			res, _, err := executeSse(t, n)
+
+			require.NoError(t, err)
+			assert.Equal(t, seqs(1, 2, 3), res.Events)
+			require.Len(t, headers(), 2)
+			assert.Equal(t, "1", headers()[1].Get("Last-Event-ID"))
+		})
+	}
+}
+
+// A collected event without its own id cannot be recognised in a replay, so
+// the stream restarts instead of resuming.
+func TestSseNode_RestartsWhenACollectedEventHadNoID(t *testing.T) {
+	srv, headers := scriptedSseServer(t,
+		sseConn{frames: []string{idFrame("1", seq(1)), dataFrame(seq(2))}, cut: cutShort},
+		sseConn{frames: []string{idFrame("1", seq(1)), dataFrame(seq(2)), dataFrame(seq(3))}},
+	)
+	n := sseNode(t, srv.URL, node.SseData{TimeoutMs: 5000, MaxEvents: 3})
+
+	res, _, err := executeSse(t, n)
+
+	require.NoError(t, err)
+	assert.Equal(t, seqs(1, 2, 3), res.Events)
+	require.Len(t, headers(), 2)
+	assert.Empty(t, headers()[1].Get("Last-Event-ID"))
+}
+
+// A deadline that elapses during the backoff keeps the transport failure: no
+// stream was read, so it is not a clean timeout.
+func TestSseNode_DeadlineDuringBackoffKeepsTheFailure(t *testing.T) {
+	t.Run("connect refused", func(t *testing.T) {
+		listener, err := net.Listen("tcp", "127.0.0.1:0")
+		require.NoError(t, err)
+		addr := listener.Addr().String()
+		require.NoError(t, listener.Close())
+
+		res, collector, err := executeSse(t, sseNode(t, "http://"+addr+"/stream", node.SseData{TimeoutMs: 250}))
+
+		userErr, ok := spi.AsUserError(err)
+		require.True(t, ok, "got %v", err)
+		assert.Equal(t, "CONNECTION_REFUSED", userErr.Code)
+		assert.Nil(t, res.Events)
+		require.Len(t, collector.Groups(), 1)
+		assert.Equal(t, 2, collector.Groups()[0].Count())
+	})
+	t.Run("stream cut", func(t *testing.T) {
+		srv, headers := scriptedSseServer(t, sseConn{frames: []string{dataFrame(seq(1))}, cut: cutShort})
+
+		res, _, err := executeSse(t, sseNode(t, srv.URL, node.SseData{TimeoutMs: 80}))
+
+		userErr, ok := spi.AsUserError(err)
+		require.True(t, ok, "got %v", err)
+		assert.Equal(t, "SSE stream read error", userErr.Message)
+		assert.Equal(t, "eof", res.StopReason)
+		assert.Len(t, headers(), 1)
+	})
+}

@@ -176,7 +176,7 @@ func (n *SseNode) Execute(ctx spi.ExecutionContext) (spi.AnyResult, error) {
 
 	stream := sseStream{
 		node: n, method: method, url: url, headers: headers,
-		parser: &sseParser{node: n, assertions: assertions, events: make([]any, 0), seenIDs: map[string]struct{}{}},
+		parser: &sseParser{node: n, assertions: assertions, seenIDs: map[string]struct{}{}},
 	}
 	exchange, err := stream.run(streamCtx)
 	if err != nil {
@@ -243,9 +243,15 @@ type sseParser struct {
 	// eventID is the explicit id field of the event being buffered, if any.
 	eventID    string
 	hasEventID bool
-	// lastEventID is the spec's last event ID buffer: it survives id-less
-	// events and is sent as Last-Event-ID when the stream is resumed.
+	// idBuffer is the spec's last event ID buffer: set by an id field, it
+	// survives id-less events. lastEventID is the id committed at the last
+	// dispatch, sent as Last-Event-ID when the stream resumes; an id whose
+	// event the cut left unfinished is never committed.
+	idBuffer    string
 	lastEventID string
+	// idlessEvents records a collected event without its own id: a resume
+	// could not recognise its replay, so the stream restarts instead.
+	idlessEvents bool
 	// seenIDs holds the explicit ids of every collected event; skipSeen drops a
 	// repeated id on a resumed connection whose server ignored Last-Event-ID.
 	seenIDs  map[string]struct{}
@@ -280,7 +286,7 @@ func (p *sseParser) feed(line string) (string, error) {
 		// the last event ID.
 		if !strings.ContainsRune(value, 0) {
 			p.eventID, p.hasEventID = value, true
-			p.lastEventID = value
+			p.idBuffer = value
 		}
 	case "retry":
 		// The reconnect delay is the runner's own bounded backoff.
@@ -293,7 +299,11 @@ func (p *sseParser) feed(line string) (string, error) {
 // dispatch finalizes the buffered event, runs its assertions, and reports any
 // stop condition triggered by it.
 func (p *sseParser) dispatch() (string, error) {
+	// The spec commits the last event ID at every dispatch, even of an
+	// event that carries no data.
+	p.lastEventID = p.idBuffer
 	if !p.haveData && p.eventName == "" {
+		p.eventID, p.hasEventID = "", false
 		return "", nil
 	}
 	ev := sseEvent{name: p.eventName, data: strings.Join(p.dataLines, "\n")}
@@ -306,6 +316,8 @@ func (p *sseParser) dispatch() (string, error) {
 			return "", nil
 		}
 		p.seenIDs[eventID] = struct{}{}
+	} else {
+		p.idlessEvents = true
 	}
 
 	parsed := parseSseData(ev.data)
@@ -331,12 +343,14 @@ func (p *sseParser) dispatch() (string, error) {
 	return "", nil
 }
 
-// clearBuffer drops the event being buffered.
+// clearBuffer drops the event being buffered. Every connection ends with it,
+// so an id line of an event the cut left unfinished is forgotten too.
 func (p *sseParser) clearBuffer() {
 	p.dataLines = nil
 	p.eventName = ""
 	p.haveData = false
 	p.eventID, p.hasEventID = "", false
+	p.idBuffer = p.lastEventID
 }
 
 // contextDone reports whether ctx has been cancelled or has hit its deadline.
@@ -361,6 +375,9 @@ func (n *SseNode) consume(ctx context.Context, body io.Reader, p *sseParser) (st
 	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, 0, sseScannerInitBytes), sseScannerBufferBytes)
 	defer p.clearBuffer()
+	if p.events == nil {
+		p.events = make([]any, 0)
+	}
 
 	for scanner.Scan() {
 		// Honor cancellation/deadline between lines so a slow producer cannot
