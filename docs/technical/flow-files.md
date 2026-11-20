@@ -12,7 +12,7 @@ A CLI that embeds a flowdsl older than this field refuses a file that carries it
 
 ## Flow header: absent and empty differ
 
-`description` and `tags` lower only when the file writes them. An absent key leaves `description` and `tags` out of the create request. A key written empty (`description: ""`, a YAML null such as `description:` or `description: ~`, or `tags: []`) lowers to `"description": ""` (on the request and its `flow_definition`) and `"tags": []`, so an update can tell "clear it" from "keep it". Only `tags: []` clears tags: a YAML null `tags:` or `tags: ~` is the compile error `tags: line N: expected a list`, because a stray empty key that cleared tags could drop a flow from a tag-selected monitor. `role` needs no empty form: write `role: standalone` to stop a flow being a module.
+`description` and `tags` lower only when the file writes them. An absent key leaves `description` and `tags` out of the create request. A key written empty (`description: ""`, a YAML null such as `description:` or `description: ~`, or `tags: []`) lowers to `"description": ""` (on the request and its `flow_definition`) and `"tags": []`, so an update can tell "clear it" from "keep it". Only `tags: []` clears tags: a YAML null `tags:` or `tags: ~` is the compile error `tags: line N: expected a list`, because a stray empty key that cleared tags could drop a flow from a tag-selected monitor. `role` needs no empty form: write `role: test` to stop a flow being a function.
 
 Echopoint decides what an update from a file does with an absent key; flowdsl only keeps the difference.
 

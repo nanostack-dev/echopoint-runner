@@ -6,6 +6,8 @@ import (
 	"io"
 	"strings"
 
+	"github.com/nanostack-dev/echopoint-runner/pkg/flowdsl/wire"
+
 	"gopkg.in/yaml.v3"
 )
 
@@ -103,7 +105,7 @@ func (g *graph) readFile(m ymap) {
 	if g.name == "" {
 		g.add(Error, orLine(m, "name"), "name is required")
 	}
-	if g.role != "" && g.role != roleTest && g.role != roleFunction {
+	if g.role != "" && g.role != string(wire.FlowRoleTest) && g.role != string(wire.FlowRoleFunction) {
 		g.add(Error, m.keyLine("role"), "role must be test or function")
 	}
 	if g.id != "" && !isFlowID(g.id) {

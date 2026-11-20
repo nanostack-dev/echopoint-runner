@@ -125,4 +125,16 @@ nodes:
 			t.Fatalf("expected inline body rejection, got %v", errs)
 		}
 	})
+
+	t.Run("legacy role names refused", func(t *testing.T) {
+		t.Parallel()
+		for _, legacy := range []string{"standalone", "module"} {
+			source := "name: Legacy\nrole: " + legacy + "\nnodes:\n  wait:\n    delay: 10\n"
+			outcome := flowdsl.CompileSource("legacy.yaml", []byte(source))
+			errs := outcome.Errors()
+			if len(errs) == 0 || !strings.Contains(errs[0].Message, "role must be test or function") {
+				t.Fatalf("role %q: expected role error, got %v", legacy, errs)
+			}
+		}
+	})
 }
