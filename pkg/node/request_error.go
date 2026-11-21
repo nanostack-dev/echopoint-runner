@@ -79,6 +79,22 @@ func classifyTransportError(rawURL string, err error) *spi.UserError {
 		)
 	}
 
+	// net/http refuses some requests before it dials, and wraps that refusal
+	// in a *url.Error, which is a net.Error. Classed as CONNECTION_FAILED, a
+	// header name that is not an HTTP token read "Could not connect to <host>",
+	// and suites and gates reran it as a network failure (2026-11-20 postmortem,
+	// infra docs/postmortems/2026-11-21-gate-flows-pinned-role-rename.md).
+	if refusedBeforeSending(err) {
+		return spi.NewUserError(
+			"INVALID_REQUEST",
+			fmt.Sprintf(
+				"Request to %s was not sent: it is invalid (check header names, header values and the URL scheme)",
+				host,
+			),
+			err,
+		)
+	}
+
 	if _, ok := errors.AsType[net.Error](err); ok {
 		return spi.NewUserError(
 			"CONNECTION_FAILED",
@@ -98,6 +114,25 @@ func requestHost(rawURL string) string {
 	}
 	unparseable, _, _ := strings.Cut(rawURL, "?")
 	return unparseable
+}
+
+// refusedBeforeSending reports an error net/http returns, as plain text, for a
+// request it refuses to send: nothing was dialed, so a retry fails the same way.
+func refusedBeforeSending(err error) bool {
+	text := withoutURL(err).Error()
+	for _, prefix := range []string{
+		"net/http: invalid header field name",
+		"net/http: invalid header field value",
+		"net/http: invalid trailer",
+		"net/http: invalid method",
+		"unsupported protocol scheme",
+		"http: no Host in request URL",
+	} {
+		if strings.HasPrefix(text, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func isTimeout(err error) bool {

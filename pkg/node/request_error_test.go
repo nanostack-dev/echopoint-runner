@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
 	"net/url"
 	"strings"
 	"syscall"
@@ -168,5 +169,41 @@ func TestClassifyRequestError_KeepsTheCodeOfAnUnknownErrorInsideAURLError(t *tes
 	}
 	if got.Error() != "Could not connect to x.example: boom" {
 		t.Errorf("error text: got %q", got.Error())
+	}
+}
+
+// net/http refuses some requests before it dials and wraps the refusal in a
+// *url.Error, a net.Error. A quoted header name once read "Could not connect to
+// <host>" and suites reran it as a network failure. These are the real errors
+// the client returns, so a Go release that rewords one fails this test.
+func TestClassifyRequestError_RequestRefusedBeforeSendingIsInvalidRequest(t *testing.T) {
+	const target = "http://127.0.0.1:1/v1"
+
+	badHeader, _ := http.NewRequest(http.MethodGet, target, nil)
+	badHeader.Header["\"X-Api-Key\""] = []string{"k"}
+
+	badValue, _ := http.NewRequest(http.MethodGet, target, nil)
+	badValue.Header["X-Api-Key"] = []string{"a\nb"}
+
+	noScheme, _ := http.NewRequest(http.MethodGet, "/v1", nil)
+
+	for name, req := range map[string]*http.Request{
+		"header name":  badHeader,
+		"header value": badValue,
+		"no scheme":    noScheme,
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := http.DefaultClient.Do(req)
+			if err == nil {
+				t.Fatal("expected net/http to refuse the request")
+			}
+			got := node.ClassifyRequestErrorForTest(req.URL.String(), err)
+			if got.Code != "INVALID_REQUEST" {
+				t.Fatalf("code: got %q want INVALID_REQUEST (%v)", got.Code, err)
+			}
+			if strings.Contains(got.Message, "Could not connect") {
+				t.Fatalf("message reads as a connection failure: %q", got.Message)
+			}
+		})
 	}
 }
