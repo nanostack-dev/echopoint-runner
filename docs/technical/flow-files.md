@@ -6,7 +6,7 @@ The full key reference for authors lives with the consumers: Echopoint's MCP flo
 
 ## `on_failure`
 
-`on_failure: <node>` compiles to an edge of type `failure`. The target runs only when the source node fails; when the source succeeds or is skipped, the target is skipped as `routed_away_by_branch`, and so is a chain reached only through it. The target needs `run_when: always`, because an on_success node is skipped after any upstream failure; compile warns otherwise. The [parallel execution model](../parallel-execution-model.md#failure-edges-on_failure) owns the scheduling rule.
+`on_failure: <node>` compiles to an edge of type `failure`. The target runs only when the source node fails; when the source succeeds or is skipped, the target is skipped as `routed_away_by_branch`, and a chain reached only through it is skipped too (with `not_reachable_after_main_phase`, as below a routed-away branch arm). The target needs `run_when: always`, because an on_success node is skipped after any upstream failure; compile warns otherwise. The [parallel execution model](../parallel-execution-model.md#failure-edges-on_failure) owns the scheduling rule.
 
 ## Request fields
 

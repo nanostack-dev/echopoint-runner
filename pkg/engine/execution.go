@@ -888,8 +888,7 @@ func (engine *FlowEngine) resolveBlockedAlwaysNodes(scheduler *phaseScheduler, s
 		if _, exists := state.remainingInputs[currentNode]; !exists {
 			continue
 		}
-		if engine.hasRemainingAlwaysPredecessor(currentNode, state) ||
-			engine.hasPendingFailureSource(currentNode, state) {
+		if engine.hasRemainingAlwaysPredecessor(currentNode, state) {
 			continue
 		}
 		if !engine.isRoutedAway(currentNode, state) &&
@@ -923,19 +922,6 @@ func (engine *FlowEngine) hasRemainingAlwaysPredecessor(
 			continue
 		}
 		if predecessor.GetRunWhen() == spi.RunWhenAlways {
-			return true
-		}
-	}
-	return false
-}
-
-// hasPendingFailureSource reports whether a failure edge into currentNode comes
-// from a node that has not ended yet. Whether that edge is live depends on the
-// source's outcome, so the node waits for it.
-func (engine *FlowEngine) hasPendingFailureSource(currentNode node.AnyNode, state *executionState) bool {
-	for _, predecessor := range engine.nodeEdgeSource[currentNode] {
-		if engine.isPending(predecessor, state) &&
-			engine.isFailureEdge(predecessor.GetID(), currentNode.GetID()) {
 			return true
 		}
 	}

@@ -241,9 +241,9 @@ func TestFailureEdge_FromAnAlwaysNode(t *testing.T) {
 	}
 }
 
-// A failure edge out of an on_success node placed after an always node is
-// judged only once that node ends, not when the always phase first stalls.
-func TestFailureEdge_WaitsForAPendingSourceAfterACleanup(t *testing.T) {
+// An on_success step placed after a cleanup runs in the always phase; its
+// failure edge is judged there like any other.
+func TestFailureEdge_FromAStepAfterACleanup(t *testing.T) {
 	server, calls := failingPathServer(t, "/a")
 	nodes := []string{
 		requestNode("a", "", "POST", server.URL+"/a"),

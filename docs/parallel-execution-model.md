@@ -94,7 +94,8 @@ An edge of type `failure` (what a flow file's `on_failure` compiles to) is live 
 fails. When the source succeeds, or is skipped (for example because an earlier step failed), the edge
 is dead. A node whose every incoming edge is dead is skipped with `routed_away_by_branch` and the
 message `Skipped because step "<source>" did not fail; this step runs only on its failure`. Nodes
-reached only through it are skipped too. A node also reached by a live edge (a `next`/success edge,
+reached only through it are skipped too; like nodes below a routed-away branch arm, they carry no
+routing reason of their own (an always node gets `not_reachable_after_main_phase`). A node also reached by a live edge (a `next`/success edge,
 or another failure edge whose source failed) still runs. When one source has both a failure and a
 success edge to the same node, the success edge keeps it live. The engine judges a failure edge only
 once its source has ended ([`edgeDead`](../pkg/engine/execution.go)).
