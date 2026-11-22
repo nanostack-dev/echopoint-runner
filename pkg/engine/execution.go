@@ -153,21 +153,44 @@ func (engine *FlowEngine) upstreamFailure(n node.AnyNode, state *executionState)
 	return "", false
 }
 
+// edgeDead reports whether the edge from predecessor to n can no longer carry
+// execution: a branch routed away from it, or it is a failure edge (on_failure)
+// whose source ended without failing. A failure edge stays live while its
+// source is still pending, and when the source failed.
+func (engine *FlowEngine) edgeDead(predecessor, n node.AnyNode, state *executionState) bool {
+	predID, nodeID := predecessor.GetID(), n.GetID()
+	if state.deadEdges[predID][nodeID] {
+		return true
+	}
+	return engine.isFailureEdge(predID, nodeID) &&
+		!engine.isPending(predecessor, state) &&
+		!state.failedNodes[predID]
+}
+
+// isFailureEdge reports whether source reaches target only through failure
+// edges.
+func (engine *FlowEngine) isFailureEdge(sourceID, targetID string) bool {
+	return engine.failureOnly[sourceID][targetID]
+}
+
+func (engine *FlowEngine) isPending(n node.AnyNode, state *executionState) bool {
+	_, pending := state.remainingInputs[n]
+	return pending
+}
+
 // isFullyDead reports whether a node can never run because routing/skip/failure
 // eliminated all of its incoming paths. A node is fully dead when it has at
-// least one predecessor AND every predecessor p satisfies: the edge p -> n was
-// routed away (deadEdges), or p was skipped, or p failed. Root nodes (no
-// predecessors) are never dead.
+// least one predecessor AND every predecessor p satisfies: the edge p -> n is
+// dead (edgeDead), or p was skipped, or p failed. Root nodes (no predecessors)
+// are never dead.
 func (engine *FlowEngine) isFullyDead(n node.AnyNode, state *executionState) bool {
 	predecessors := engine.nodeEdgeSource[n]
 	if len(predecessors) == 0 {
 		return false
 	}
-	nodeID := n.GetID()
 	for _, predecessor := range predecessors {
 		predID := predecessor.GetID()
-		edgeDead := state.deadEdges[predID][nodeID]
-		if edgeDead || state.skippedNodes[predID] || state.failedNodes[predID] {
+		if engine.edgeDead(predecessor, n, state) || state.skippedNodes[predID] || state.failedNodes[predID] {
 			continue
 		}
 		return false
@@ -245,18 +268,17 @@ func (engine *FlowEngine) skipRoutedAwayAlwaysNodes(scheduler *phaseScheduler, s
 	return skipped
 }
 
-// isRoutedAway reports whether every incoming path of n was routed away by a
-// branch: each predecessor's edge to n is dead, or the predecessor was itself
+// isRoutedAway reports whether every incoming path of n was routed away: each
+// predecessor's edge to n is dead (a branch routed away from it, or it is a
+// failure edge whose source did not fail), or the predecessor was itself
 // routed away.
 func (engine *FlowEngine) isRoutedAway(n node.AnyNode, state *executionState) bool {
 	predecessors := engine.nodeEdgeSource[n]
 	if len(predecessors) == 0 {
 		return false
 	}
-	nodeID := n.GetID()
 	for _, predecessor := range predecessors {
-		predID := predecessor.GetID()
-		if !state.deadEdges[predID][nodeID] && !state.routedAway[predID] {
+		if !engine.edgeDead(predecessor, n, state) && !state.routedAway[predecessor.GetID()] {
 			return false
 		}
 	}
@@ -866,7 +888,8 @@ func (engine *FlowEngine) resolveBlockedAlwaysNodes(scheduler *phaseScheduler, s
 		if _, exists := state.remainingInputs[currentNode]; !exists {
 			continue
 		}
-		if engine.hasRemainingAlwaysPredecessor(currentNode, state) {
+		if engine.hasRemainingAlwaysPredecessor(currentNode, state) ||
+			engine.hasPendingFailureSource(currentNode, state) {
 			continue
 		}
 		if !engine.isRoutedAway(currentNode, state) &&
@@ -900,6 +923,19 @@ func (engine *FlowEngine) hasRemainingAlwaysPredecessor(
 			continue
 		}
 		if predecessor.GetRunWhen() == spi.RunWhenAlways {
+			return true
+		}
+	}
+	return false
+}
+
+// hasPendingFailureSource reports whether a failure edge into currentNode comes
+// from a node that has not ended yet. Whether that edge is live depends on the
+// source's outcome, so the node waits for it.
+func (engine *FlowEngine) hasPendingFailureSource(currentNode node.AnyNode, state *executionState) bool {
+	for _, predecessor := range engine.nodeEdgeSource[currentNode] {
+		if engine.isPending(predecessor, state) &&
+			engine.isFailureEdge(predecessor.GetID(), currentNode.GetID()) {
 			return true
 		}
 	}

@@ -30,10 +30,14 @@ type Options struct {
 }
 
 type FlowEngine struct {
-	flow            flow.Flow
-	nodeEdgeOutput  map[node.AnyNode][]node.AnyNode
-	nodeEdgeSource  map[node.AnyNode][]node.AnyNode
-	nodeEdgeInput   map[node.AnyNode]int
+	flow           flow.Flow
+	nodeEdgeOutput map[node.AnyNode][]node.AnyNode
+	nodeEdgeSource map[node.AnyNode][]node.AnyNode
+	nodeEdgeInput  map[node.AnyNode]int
+	// failureOnly holds, per source ID, the targets that source reaches only
+	// through failure edges (on_failure). Such an edge is live only when the
+	// source fails.
+	failureOnly     map[string]map[string]bool
 	nodeMap         map[string]node.AnyNode
 	observer        ExecutionObserver
 	moduleResolver  spi.ModuleResolver
@@ -178,6 +182,7 @@ func NewFlowEngine(flowInstance flow.Flow, options *Options) (*FlowEngine, error
 		nodeEdgeOutput:  nodeEdgeOutput,
 		nodeEdgeSource:  nodeEdgeSource,
 		nodeEdgeInput:   nodeEdgeInput,
+		failureOnly:     failureOnlyEdges(flowInstance),
 		nodeMap:         nodeMap,
 		observer:        observer,
 		moduleResolver:  nilIfNoModuleResolverFromOptions(options),
@@ -458,4 +463,30 @@ func parseDataRef(ref string) (string, string, error) {
 	return "", "", fmt.Errorf(
 		"invalid reference format, expected 'nodeId.outputKey' or 'variableName', got '%s'", ref,
 	)
+}
+
+// failureOnlyEdges returns, per source ID, the targets reached only through
+// failure edges. A pair that also has a normal or success edge is left out, so
+// that edge keeps the target live whatever the source's outcome.
+func failureOnlyEdges(flowInstance flow.Flow) map[string]map[string]bool {
+	failure := make(map[string]map[string]bool)
+	other := make(map[string]map[string]bool)
+	for _, e := range flowInstance.Edges {
+		byType := other
+		if e.IsFailure() {
+			byType = failure
+		}
+		if byType[e.Source] == nil {
+			byType[e.Source] = make(map[string]bool)
+		}
+		byType[e.Source][e.Target] = true
+	}
+	for source, targets := range failure {
+		for target := range targets {
+			if other[source][target] {
+				delete(targets, target)
+			}
+		}
+	}
+	return failure
 }
