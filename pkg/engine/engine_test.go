@@ -397,7 +397,7 @@ func TestFlowEngine_Execute_BranchingFlow(t *testing.T) {
 	require.True(t, result.Success)
 	assert.True(t, node1.executed, "node1 should be executed")
 	assert.True(t, node2.executed, "node2 should be executed")
-	assert.True(t, node3.executed, "node3 should be executed")
+	assert.False(t, node3.executed, "node3 is on node1's failure path and node1 succeeded")
 }
 
 func TestFlowEngine_Execute_NodeFailsWithError(t *testing.T) {

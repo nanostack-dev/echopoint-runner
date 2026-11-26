@@ -64,9 +64,14 @@ func (engine *FlowEngine) describeSkipCause(
 	// A node skipped purely because a branch routed every incoming edge away
 	// (with no failed/skipped dependency to blame and no missing runtime inputs)
 	// is an intentional routing outcome, not an error — name the branch.
-	if branchName, ok := engine.routedAwayBy(n, state); ok {
+	if routedBy, ok := engine.routedAwayBy(n, state); ok {
+		if engine.isFailureEdge(routedBy.id, n.GetID()) {
+			return skipReasonRoutedAway,
+				fmt.Sprintf("Skipped because step %q did not fail; this step runs only on its failure", routedBy.name),
+				missingInputs
+		}
 		return skipReasonRoutedAway,
-			fmt.Sprintf("Skipped because branch %q routed execution down a different path", branchName),
+			fmt.Sprintf("Skipped because branch %q routed execution down a different path", routedBy.name),
 			missingInputs
 	}
 
@@ -111,27 +116,34 @@ func (engine *FlowEngine) describeSkipCause(
 	}
 }
 
-// routedAwayBy reports the display name of a branch that routed every live
-// incoming edge of n away, when that is the reason n was skipped. It returns
-// false when n has a failed or skipped predecessor (those are reported with a
-// more specific reason) or when no predecessor edge was routed away.
-func (engine *FlowEngine) routedAwayBy(n node.AnyNode, state *executionState) (string, bool) {
-	nodeID := n.GetID()
+// routingSource names the predecessor whose dead edge explains a routed-away
+// skip: a branch, or the source of a failure edge that did not fail.
+type routingSource struct {
+	id   string
+	name string
+}
+
+// routedAwayBy reports the predecessor whose dead edge (a branch routed away
+// from it, or a failure edge whose source did not fail) left n with no live
+// incoming edge, when that is the reason n was skipped. It returns false when
+// n has a failed or skipped predecessor (those are reported with a more
+// specific reason) or when no predecessor edge is dead.
+func (engine *FlowEngine) routedAwayBy(n node.AnyNode, state *executionState) (routingSource, bool) {
 	predecessors := engine.nodeEdgeSource[n]
 	if len(predecessors) == 0 {
-		return "", false
+		return routingSource{}, false
 	}
 
-	routedBy := ""
+	var routedBy routingSource
 	for _, predecessor := range predecessors {
 		predID := predecessor.GetID()
 		switch {
 		case state.failedNodes[predID]:
 			// A failed dependency is a more specific, higher-priority reason.
-			return "", false
-		case state.deadEdges[predID][nodeID]:
-			if routedBy == "" {
-				routedBy = engine.nodeDisplayName(predID)
+			return routingSource{}, false
+		case engine.edgeDead(predecessor, n, state):
+			if routedBy.id == "" {
+				routedBy = routingSource{id: predID, name: engine.nodeDisplayName(predID)}
 			}
 		case state.skippedNodes[predID]:
 			// Skipped dependency: keep looking; a sibling dead edge may still
@@ -139,11 +151,11 @@ func (engine *FlowEngine) routedAwayBy(n node.AnyNode, state *executionState) (s
 		default:
 			// A live predecessor that neither failed, was skipped, nor routed
 			// away means this node was not eliminated by routing.
-			return "", false
+			return routingSource{}, false
 		}
 	}
-	if routedBy == "" {
-		return "", false
+	if routedBy.id == "" {
+		return routingSource{}, false
 	}
 	return routedBy, true
 }

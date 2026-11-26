@@ -4,6 +4,10 @@
 
 The full key reference for authors lives with the consumers: Echopoint's MCP flow-file reference (`internal/mcp/reference.go`) and the CLI's `docs/flows.md`.
 
+## `on_failure`
+
+`on_failure: <node>` compiles to an edge of type `failure`. The target runs only when the source node fails; when the source succeeds or is skipped, the target is skipped as `routed_away_by_branch`, and a chain reached only through it is skipped too (with `not_reachable_after_main_phase`, as below a routed-away branch arm). The target needs `run_when: always`, because an on_success node is skipped after any upstream failure; compile warns otherwise. The [parallel execution model](../parallel-execution-model.md#failure-edges-on_failure) owns the scheduling rule.
+
 ## Request fields
 
 A `request` node takes `method`, `url`, `headers`, `query`, `body`, `body_encoding` and `timeout_ms`. `body_encoding` accepts only `form` and lowers to the node's `data.body_encoding` ([request bodies](request-bodies.md)); any other value is a compile error. Decompile writes it back when the stored node has it.
